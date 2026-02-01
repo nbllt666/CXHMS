@@ -936,34 +936,60 @@ def create_settings_tab():
                 llm_save_btn.click(update_llm_config, [llm_provider, llm_host, llm_model, llm_temperature, llm_max_tokens], llm_result)
 
             with gr.TabItem("🔍 向量设置"):
-                with gr.Row():
-                    with gr.Column():
-                        vector_enabled = gr.Checkbox(label="启用向量搜索", value=True)
-                        vector_backend = gr.Dropdown(
-                            ["milvus_lite", "qdrant"],
-                            label="向量存储后端",
-                            value="milvus_lite"
-                        )
-                        
-                        with gr.Group(visible=True):
-                            milvus_db_path = gr.Textbox(label="Milvus Lite 数据库路径", value="data/milvus_lite.db")
-                            milvus_vector_size = gr.Number(label="向量维度", value=768, precision=0)
-                        
-                        with gr.Group(visible=False):
-                            vector_host = gr.Textbox(label="Qdrant Host", value="localhost")
-                            vector_port = gr.Number(label="Qdrant Port", value=6333, precision=0)
-                        
-                        vector_model = gr.Textbox(label="Embedding模型", value="nomic-embed-text")
-                        vector_save_btn = gr.Button("保存向量配置", variant="primary")
-                        vector_result = gr.Textbox(label="结果", interactive=False)
+                gr.Markdown("### 向量存储配置")
+                gr.Markdown("选择并配置向量存储后端")
+                
+                vector_backend = gr.Dropdown(
+                    ["milvus_lite", "qdrant"],
+                    label="向量存储后端",
+                    value="milvus_lite"
+                )
+                
+                gr.Markdown("#### Milvus Lite 配置", visible=True)
+                milvus_db_path = gr.Textbox(
+                    label="数据库路径", 
+                    value="data/milvus_lite.db",
+                    visible=True
+                )
+                milvus_vector_size = gr.Number(
+                    label="向量维度", 
+                    value=768, 
+                    precision=0,
+                    visible=True
+                )
+                
+                gr.Markdown("#### Qdrant 配置", visible=False)
+                vector_host = gr.Textbox(
+                    label="Host", 
+                    value="localhost",
+                    visible=False
+                )
+                vector_port = gr.Number(
+                    label="Port", 
+                    value=6333, 
+                    precision=0,
+                    visible=False
+                )
+                
+                vector_model = gr.Textbox(label="Embedding模型", value="nomic-embed-text")
+                vector_save_btn = gr.Button("保存向量配置", variant="primary")
+                vector_result = gr.Textbox(label="结果", interactive=False)
 
                 def update_vector_backend_visibility(backend):
-                    return {
-                        milvus_db_path: gr.Group(visible=(backend == "milvus_lite")),
-                        milvus_vector_size: gr.Group(visible=(backend == "milvus_lite")),
-                        vector_host: gr.Group(visible=(backend == "qdrant")),
-                        vector_port: gr.Group(visible=(backend == "qdrant"))
-                    }
+                    if backend == "milvus_lite":
+                        return {
+                            milvus_db_path: gr.update(visible=True),
+                            milvus_vector_size: gr.update(visible=True),
+                            vector_host: gr.update(visible=False),
+                            vector_port: gr.update(visible=False)
+                        }
+                    else:
+                        return {
+                            milvus_db_path: gr.update(visible=False),
+                            milvus_vector_size: gr.update(visible=False),
+                            vector_host: gr.update(visible=True),
+                            vector_port: gr.update(visible=True)
+                        }
 
                 vector_backend.change(
                     update_vector_backend_visibility,
