@@ -939,6 +939,8 @@ def create_settings_tab():
                 gr.Markdown("### 向量存储配置")
                 gr.Markdown("选择并配置向量存储后端")
                 
+                vector_enabled = gr.Checkbox(label="启用向量搜索", value=True)
+                
                 vector_backend = gr.Dropdown(
                     ["milvus_lite", "qdrant"],
                     label="向量存储后端",
@@ -997,7 +999,11 @@ def create_settings_tab():
                     [milvus_db_path, milvus_vector_size, vector_host, vector_port]
                 )
 
-                vector_save_btn.click(update_vector_config, [vector_enabled, vector_backend, milvus_db_path, milvus_vector_size, vector_host, vector_port, vector_model], vector_result)
+                vector_save_btn.click(
+                    update_vector_config, 
+                    [vector_enabled, vector_backend, milvus_db_path, milvus_vector_size, vector_host, vector_port, vector_model], 
+                    vector_result
+                )
 
             with gr.TabItem("🔗 ACP设置"):
                 with gr.Row():
