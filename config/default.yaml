@@ -1,0 +1,111 @@
+server:
+  host: "0.0.0.0"
+  port: 8000
+  debug: true
+  cors_origins:
+    - "*"
+  cors_methods:
+    - "*"
+  cors_headers:
+    - "*"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/app.log"
+  max_bytes: 10485760
+  backup_count: 5
+
+database:
+  type: "sqlite"
+  path: "data/cxhms.db"
+  echo: false
+
+llm:
+  provider: "ollama"
+  model: "llama3.2:3b"
+  base_url: "http://localhost:11434"
+  api_key: ""
+  timeout: 60
+  max_retries: 3
+  temperature: 0.7
+  max_tokens: 2048
+
+agent:
+  agent_id: "cxhms_agent_001"
+  name: "CXHMS Agent"
+  version: "1.0.0"
+  description: "一个智能记忆管理系统"
+  capabilities:
+    - "memory"
+    - "tools"
+    - "chat"
+    - "context"
+
+memory:
+  enabled: true
+  max_memories: 10000
+  default_importance: 3
+  decay_enabled: true
+  decay_rate: 0.1
+  decay_interval_days: 7
+  reactivation_boost: 0.2
+  emotion_enabled: true
+  vector_enabled: true
+  vector_backend: "milvus_lite"
+  milvus_lite:
+    db_path: "data/milvus_lite.db"
+    vector_size: 768
+  qdrant:
+    host: "localhost"
+    port: 6333
+    vector_size: 768
+  hybrid_search_enabled: false
+
+context:
+  enabled: true
+  max_context_length: 4000
+  context_window: 10
+  include_memories: true
+  max_memories_in_context: 5
+
+tools:
+  enabled: true
+  auto_discovery: true
+  mcp_enabled: false
+  builtin_tools:
+    - "calculator"
+    - "datetime"
+    - "weather"
+
+acp:
+  enabled: true
+  local_agent_id: "cxhms_agent_001"
+  local_agent_name: "CXHMS Agent"
+  discovery_enabled: true
+  discovery_port: 9999
+  broadcast_port: 9998
+  broadcast_address: "255.255.255.255"
+  discovery_interval: 30
+
+webui:
+  enabled: true
+  host: "0.0.0.0"
+  port: 7860
+  share: false
+  auth_enabled: false
+  auth_username: "admin"
+  auth_password: "admin"
+
+security:
+  api_key_enabled: false
+  api_key: ""
+  rate_limit_enabled: false
+  rate_limit_requests: 100
+  rate_limit_period: 60
+
+monitoring:
+  enabled: true
+  metrics_enabled: true
+  health_check_enabled: true
+  performance_logging: true
