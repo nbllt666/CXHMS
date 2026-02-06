@@ -41,6 +41,59 @@ class ApiClient {
     )
   }
 
+  // Service Management
+  async getServiceStatus() {
+    const response = await this.client.get('/api/service/status')
+    return response.data
+  }
+
+  async startService(config: {
+    host?: string
+    port?: number
+    log_level?: string
+    reload?: boolean
+    use_conda?: boolean
+  }) {
+    const response = await this.client.post('/api/service/start', config)
+    return response.data
+  }
+
+  async stopService() {
+    const response = await this.client.post('/api/service/stop')
+    return response.data
+  }
+
+  async restartService(config: {
+    host?: string
+    port?: number
+    log_level?: string
+    reload?: boolean
+    use_conda?: boolean
+  }) {
+    const response = await this.client.post('/api/service/restart', config)
+    return response.data
+  }
+
+  async getServiceLogs(lines: number = 100) {
+    const response = await this.client.get('/api/service/logs', { params: { lines } })
+    return response.data
+  }
+
+  async getServiceConfig() {
+    const response = await this.client.get('/api/service/config')
+    return response.data
+  }
+
+  async updateServiceConfig(config: Record<string, any>) {
+    const response = await this.client.post('/api/service/config', config)
+    return response.data
+  }
+
+  async getEnvironmentInfo() {
+    const response = await this.client.get('/api/service/environment')
+    return response.data
+  }
+
   // Memories
   async getMemories(params?: {
     type?: string

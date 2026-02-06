@@ -6,7 +6,7 @@ import logging
 import asyncio
 
 from config.settings import settings
-from backend.api.routers import chat, memory, context, tools, acp, admin, archive
+from backend.api.routers import chat, memory, context, tools, acp, admin, archive, service
 
 # 配置日志
 def setup_logging():
@@ -244,6 +244,7 @@ app.include_router(tools.router)
 app.include_router(acp.router)
 app.include_router(admin.router)
 app.include_router(archive.router)
+app.include_router(service.router)
 
 
 @app.exception_handler(Exception)

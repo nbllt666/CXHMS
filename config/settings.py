@@ -167,7 +167,7 @@ class VectorConfig:
 @dataclass
 class ACPDiscoveryConfig:
     enabled: bool = True
-    port: int = 9999
+    discovery_port: int = 9999
     broadcast_port: int = 9998
     broadcast_address: str = "255.255.255.255"
     interval: int = 30
@@ -176,7 +176,7 @@ class ACPDiscoveryConfig:
     def from_dict(cls, data: Dict[str, Any]) -> "ACPDiscoveryConfig":
         return cls(
             enabled=data.get("enabled", True),
-            port=data.get("port", 9999),
+            discovery_port=data.get("discovery_port", 9999),
             broadcast_port=data.get("broadcast_port", 9998),
             broadcast_address=data.get("broadcast_address", "255.255.255.255"),
             interval=data.get("interval", 30)
