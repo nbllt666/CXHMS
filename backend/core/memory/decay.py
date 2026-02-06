@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import math
 import logging
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -269,7 +270,6 @@ class DecayCalculator:
             try:
                 memory_embedding = memory.get("embedding")
                 if memory_embedding:
-                    import numpy as np
                     similarity = np.dot(query_embedding, memory_embedding) / (
                         np.linalg.norm(query_embedding) * np.linalg.norm(memory_embedding)
                     )

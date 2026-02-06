@@ -5,6 +5,7 @@ import json
 import logging
 import threading
 import time
+from backend.core.exceptions import DatabaseError, MemoryError, VectorStoreError
 
 try:
     import orjson
@@ -23,10 +24,29 @@ logger = logging.getLogger(__name__)
 
 
 class MemoryManager:
+    """记忆管理器
+    
+    负责记忆的创建、查询、更新、删除等操作，支持向量搜索和衰减计算
+    
+    Attributes:
+        db_path: 数据库文件路径
+        _vector_store: 向量存储实例
+        _embedding_model: 嵌入模型实例
+        _hybrid_search: 混合搜索实例
+    """
+    
     _instance = None
     _lock = threading.Lock()
 
-    def __new__(cls, db_path: str = "data/memories.db"):
+    def __new__(cls, db_path: str = "data/memories.db") -> "MemoryManager":
+        """创建单例实例
+        
+        Args:
+            db_path: 数据库文件路径
+            
+        Returns:
+            MemoryManager实例
+        """
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -34,7 +54,12 @@ class MemoryManager:
                     cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self, db_path: str = "data/memories.db"):
+    def __init__(self, db_path: str = "data/memories.db") -> None:
+        """初始化记忆管理器
+        
+        Args:
+            db_path: 数据库文件路径
+        """
         if self._initialized:
             return
 
@@ -43,7 +68,7 @@ class MemoryManager:
 
         self._lock = threading.Lock()
         self._local = threading.local()
-        self._connection_pool = {}
+        self._connection_pool: Dict[int, Dict] = {}
 
         self._vector_store = None
         self._embedding_model = None
@@ -173,10 +198,13 @@ class MemoryManager:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 content TEXT NOT NULL,
                 importance_score FLOAT DEFAULT 1.0,
+                emotion_score FLOAT DEFAULT 0.0,
                 tags TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP,
-                metadata TEXT
+                metadata TEXT,
+                source VARCHAR(50) DEFAULT 'user',
+                verified BOOLEAN DEFAULT TRUE
             )
         ''')
 
@@ -265,12 +293,30 @@ class MemoryManager:
         content: str,
         memory_type: str = "long_term",
         importance: int = 3,
-        tags: List[str] = None,
-        metadata: Dict = None,
+        tags: Optional[List[str]] = None,
+        metadata: Optional[Dict] = None,
         permanent: bool = False,
         emotion_score: float = 0.0,
         workspace_id: str = "default"
     ) -> int:
+        """写入记忆
+        
+        Args:
+            content: 记忆内容
+            memory_type: 记忆类型（long_term, short_term, permanent）
+            importance: 重要性等级（1-5）
+            tags: 标签列表
+            metadata: 元数据
+            permanent: 是否为永久记忆
+            emotion_score: 情感分数
+            workspace_id: 工作区ID
+            
+        Returns:
+            记忆ID
+            
+        Raises:
+            DatabaseError: 数据库操作失败
+        """
         with self._lock:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -313,6 +359,15 @@ class MemoryManager:
             return memory_id
 
     def get_memory(self, memory_id: int, include_deleted: bool = False) -> Optional[Dict]:
+        """获取记忆
+        
+        Args:
+            memory_id: 记忆ID
+            include_deleted: 是否包含已删除的记忆
+            
+        Returns:
+            记忆字典，如果不存在则返回None
+        """
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -330,14 +385,28 @@ class MemoryManager:
 
     def search_memories(
         self,
-        query: str = None,
-        memory_type: str = None,
-        tags: List[str] = None,
-        time_range: str = None,
+        query: Optional[str] = None,
+        memory_type: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        time_range: Optional[str] = None,
         limit: int = 10,
         include_deleted: bool = False,
         workspace_id: str = "default"
     ) -> List[Dict]:
+        """搜索记忆
+        
+        Args:
+            query: 搜索关键词
+            memory_type: 记忆类型
+            tags: 标签列表
+            time_range: 时间范围（today, last_week, last_month）
+            limit: 返回数量限制
+            include_deleted: 是否包含已删除的记忆
+            workspace_id: 工作区ID
+            
+        Returns:
+            记忆列表
+        """
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -773,8 +842,8 @@ class MemoryManager:
 
     def _row_to_permanent_memory(self, row) -> Dict:
         try:
-            metadata = json_loads(row[3] or "{}")
-            tags = json_loads(row[6] or "[]")
+            metadata = json_loads(row[6] or "{}")
+            tags = json_loads(row[4] or "[]")
         except Exception:
             metadata = {}
             tags = []
@@ -782,15 +851,13 @@ class MemoryManager:
         return {
             "id": row[0],
             "content": row[1],
-            "vector_id": row[2],
-            "metadata": metadata,
-            "importance_score": row[3],
-            "emotion_score": row[4],
+            "importance_score": row[2],
+            "emotion_score": row[3],
             "tags": tags,
-            "created_at": row[7],
-            "updated_at": row[8],
-            "source": row[9],
-            "verified": bool(row[10])
+            "created_at": row[5],
+            "updated_at": row[6],
+            "metadata": metadata,
+            "source": row[8]
         }
 
     def search_memories_3d(
@@ -1153,3 +1220,5 @@ class MemoryManager:
                 "avg_reactivation_count": round(reactivation_stats["avg_count"], 2)
             }
         }
+
+        

@@ -40,7 +40,86 @@ class MessageType(str, Enum):
 
 
 @dataclass
+class ModelConfig:
+    """单个模型配置"""
+    provider: str = "ollama"
+    host: str = "http://localhost:11434"
+    port: int = 8000
+    model: str = "llama3.2:3b"
+    temperature: float = 0.7
+    max_tokens: int = 2048
+    timeout: int = 60
+    api_key: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ModelConfig":
+        return cls(
+            provider=data.get("provider", "ollama"),
+            host=data.get("host", "http://localhost:11434"),
+            port=data.get("port", 8000),
+            model=data.get("model", "llama3.2:3b"),
+            temperature=data.get("temperature", 0.7),
+            max_tokens=data.get("max_tokens", 2048),
+            timeout=data.get("timeout", 60),
+            api_key=data.get("api_key")
+        )
+
+
+@dataclass
+class ModelsConfig:
+    """多模型配置管理"""
+    main: ModelConfig = field(default_factory=ModelConfig)
+    summary: ModelConfig = field(default_factory=ModelConfig)
+    memory: ModelConfig = field(default_factory=ModelConfig)
+    defaults: Dict[str, str] = field(default_factory=lambda: {
+        "summary": "main",
+        "memory": "main"
+    })
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ModelsConfig":
+        models_data = data.get("models", {})
+        defaults_data = data.get("model_defaults", {
+            "summary": "main",
+            "memory": "main"
+        })
+        
+        return cls(
+            main=ModelConfig.from_dict(models_data.get("main", {})),
+            summary=ModelConfig.from_dict(models_data.get("summary", {})),
+            memory=ModelConfig.from_dict(models_data.get("memory", {})),
+            defaults=defaults_data
+        )
+
+    def get_model_config(self, model_type: str) -> ModelConfig:
+        """获取指定类型的模型配置，支持默认跟随机制"""
+        model_type = model_type.lower()
+        
+        # 检查是否有默认跟随配置
+        if model_type in self.defaults:
+            target = self.defaults[model_type]
+            if target == "main":
+                return self.main
+            elif target == "summary":
+                return self.summary
+            elif target == "memory":
+                return self.memory
+        
+        # 返回指定类型的配置
+        if model_type == "main":
+            return self.main
+        elif model_type == "summary":
+            return self.summary
+        elif model_type == "memory":
+            return self.memory
+        else:
+            # 未知类型返回主模型配置
+            return self.main
+
+
+@dataclass
 class LLMConfig:
+    """向后兼容的旧版LLM配置"""
     provider: str = "ollama"
     host: str = "http://localhost:11434"
     model: str = "llama3.2"
@@ -201,6 +280,29 @@ class QdrantConfig:
 
 
 @dataclass
+class WeaviateConfig:
+    host: str = "localhost"
+    port: int = 8080
+    grpc_port: int = 50051
+    embedded: bool = False
+    vector_size: int = 768
+    schema_class: str = "CXHMSMemory"
+    api_key: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "WeaviateConfig":
+        return cls(
+            host=data.get("host", "localhost"),
+            port=data.get("port", 8080),
+            grpc_port=data.get("grpc_port", 50051),
+            embedded=data.get("embedded", False),
+            vector_size=data.get("vector_size", 768),
+            schema_class=data.get("schema_class", "CXHMSMemory"),
+            api_key=data.get("api_key")
+        )
+
+
+@dataclass
 class MemoryConfig:
     decay_enabled: bool = True
     batch_interval: int = 3600
@@ -211,6 +313,11 @@ class MemoryConfig:
     vector_backend: str = "milvus_lite"
     milvus_lite: MilvusLiteConfig = field(default_factory=MilvusLiteConfig)
     qdrant: QdrantConfig = field(default_factory=QdrantConfig)
+    weaviate: WeaviateConfig = field(default_factory=WeaviateConfig)
+    # 高级归档配置
+    archive_enabled: bool = True
+    dedup_threshold: float = 0.85
+    archive_compression_enabled: bool = True
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "MemoryConfig":
@@ -223,7 +330,11 @@ class MemoryConfig:
             vector_enabled=data.get("vector_enabled", True),
             vector_backend=data.get("vector_backend", "milvus_lite"),
             milvus_lite=MilvusLiteConfig.from_dict(data.get("milvus_lite", {})),
-            qdrant=QdrantConfig.from_dict(data.get("qdrant", {}))
+            qdrant=QdrantConfig.from_dict(data.get("qdrant", {})),
+            weaviate=WeaviateConfig.from_dict(data.get("weaviate", {})),
+            archive_enabled=data.get("archive_enabled", True),
+            dedup_threshold=data.get("dedup_threshold", 0.85),
+            archive_compression_enabled=data.get("archive_compression_enabled", True)
         )
 
 
@@ -292,6 +403,7 @@ class SystemConfig:
 @dataclass
 class CXHMSConfig:
     llm: LLMConfig = field(default_factory=LLMConfig)
+    models: ModelsConfig = field(default_factory=ModelsConfig)
     vector: VectorConfig = field(default_factory=VectorConfig)
     acp: ACPConfig = field(default_factory=ACPConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
@@ -305,6 +417,7 @@ class CXHMSConfig:
     def from_dict(cls, data: Dict[str, Any]) -> "CXHMSConfig":
         return cls(
             llm=LLMConfig.from_dict(data.get("llm", {})),
+            models=ModelsConfig.from_dict(data),
             vector=VectorConfig.from_dict(data.get("vector", {})),
             acp=ACPConfig.from_dict(data.get("acp", {})),
             database=DatabaseConfig.from_dict(data.get("database", {})),

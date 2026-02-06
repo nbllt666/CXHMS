@@ -21,6 +21,41 @@ database:
   path: "data/cxhms.db"
   echo: false
 
+# 多模型配置
+models:
+  main:
+    provider: "ollama"           # 提供商: ollama, vllm
+    host: "http://localhost:11434"  # Ollama地址
+    port: 8000                    # VLLM端口（使用vllm时有效）
+    model: "llama3.2:3b"          # 模型名称
+    temperature: 0.7
+    max_tokens: 2048
+    timeout: 60
+  
+  summary:
+    provider: "ollama"
+    host: "http://localhost:11434"
+    port: 8000
+    model: "llama3.2:3b"
+    temperature: 0.7
+    max_tokens: 2048
+    timeout: 60
+  
+  memory:
+    provider: "ollama"
+    host: "http://localhost:11434"
+    port: 8000
+    model: "llama3.2:3b"
+    temperature: 0.7
+    max_tokens: 2048
+    timeout: 60
+
+# 模型默认配置（指定某个模型跟随另一个模型）
+model_defaults:
+  summary: "main"    # 摘要模型跟随主模型
+  memory: "main"     # 记忆模型跟随主模型
+
+# 向后兼容的旧版LLM配置（已废弃，请使用models配置）
 llm:
   provider: "ollama"
   model: "llama3.2:3b"
@@ -52,7 +87,7 @@ memory:
   reactivation_boost: 0.2
   emotion_enabled: true
   vector_enabled: true
-  vector_backend: "milvus_lite"
+  vector_backend: "milvus_lite"  # 可选: milvus_lite, qdrant, weaviate, weaviate_embedded
   milvus_lite:
     db_path: "data/milvus_lite.db"
     vector_size: 768
@@ -60,7 +95,19 @@ memory:
     host: "localhost"
     port: 6333
     vector_size: 768
+  weaviate:
+    host: "localhost"
+    port: 8080
+    grpc_port: 50051
+    embedded: false  # true 使用 Embedded Weaviate
+    vector_size: 768
+    schema_class: "CXHMSMemory"
+    api_key: null
   hybrid_search_enabled: false
+  # 高级归档配置
+  archive_enabled: true
+  dedup_threshold: 0.85  # 去重相似度阈值
+  archive_compression_enabled: true
 
 context:
   enabled: true

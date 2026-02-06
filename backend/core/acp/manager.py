@@ -6,6 +6,7 @@ import logging
 import asyncio
 from pathlib import Path
 import aiofiles
+from backend.core.exceptions import ACPError
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,26 @@ class ACPMessageInfo:
 
 
 class ACPManager:
-    def __init__(self, data_dir: str = "data/acp"):
+    """ACP管理器
+    
+    负责管理Agents、连接、群组和消息
+    
+    Attributes:
+        data_dir: 数据目录路径
+        agents: Agent字典
+        connections: 连接字典
+        groups: 群组字典
+        messages: 消息字典
+        _local_agent_id: 本地Agent ID
+        _local_agent_name: 本地Agent名称
+    """
+    
+    def __init__(self, data_dir: str = "data/acp") -> None:
+        """初始化ACP管理器
+        
+        Args:
+            data_dir: 数据目录路径
+        """
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -146,19 +166,47 @@ class ACPManager:
         self._discovery_task = None
         self._broadcast_task = None
         self._heartbeat_task = None
+        self._discovery = None
 
         self._load_data()
 
-    def initialize(self, agent_id: str, agent_name: str):
+    def initialize(self, agent_id: str, agent_name: str) -> None:
+        """初始化本地Agent信息
+        
+        Args:
+            agent_id: Agent ID
+            agent_name: Agent名称
+        """
         self._local_agent_id = agent_id
         self._local_agent_name = agent_name
         logger.info(f"ACP管理器初始化: agent_id={agent_id}, agent_name={agent_name}")
 
-    async def start(self):
+    async def start(self) -> None:
+        """启动ACP管理器"""
         self._load_data()
+        
+        from backend.core.acp.discover import ACPLanDiscovery
+        from config.settings import settings
+        
+        if settings.config.acp.discovery.enabled:
+            self._discovery = ACPLanDiscovery(
+                acp_manager=self,
+                broadcast_port=settings.config.acp.discovery.broadcast_port,
+                discovery_port=settings.config.acp.discovery.discovery_port,
+                broadcast_address=settings.config.acp.discovery.broadcast_address,
+                interval=settings.config.acp.discovery.interval
+            )
+            await self._discovery.start()
+            logger.info("ACP Discovery服务已启动")
+        
         logger.info("ACP管理器已启动")
 
-    async def stop(self):
+    async def stop(self) -> None:
+        """停止ACP管理器"""
+        if self._discovery:
+            await self._discovery.stop()
+            logger.info("ACP Discovery服务已停止")
+        
         self._save_data()
         logger.info("ACP管理器已停止")
 

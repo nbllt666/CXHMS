@@ -5,12 +5,26 @@ import json
 import logging
 from pathlib import Path
 from functools import lru_cache
+from backend.core.exceptions import ContextError, DatabaseError
 
 logger = logging.getLogger(__name__)
 
 
 class ContextManager:
-    def __init__(self, db_path: str = "data/memories.db"):
+    """上下文管理器
+    
+    负责管理对话会话和消息历史，支持Mono上下文和LRU缓存
+    
+    Attributes:
+        db_path: 数据库文件路径
+    """
+    
+    def __init__(self, db_path: str = "data/memories.db") -> None:
+        """初始化上下文管理器
+        
+        Args:
+            db_path: 数据库文件路径
+        """
         self.db_path = db_path
         self._init_db()
 
@@ -84,8 +98,19 @@ class ContextManager:
         workspace_id: str = "default",
         title: str = "",
         user_id: Optional[str] = None,
-        metadata: Dict = None
+        metadata: Optional[Dict] = None
     ) -> str:
+        """创建会话
+        
+        Args:
+            workspace_id: 工作区ID
+            title: 会话标题
+            user_id: 用户ID
+            metadata: 元数据
+            
+        Returns:
+            会话ID
+        """
         session_id = str(uuid.uuid4())
         conn = self._get_connection()
         cursor = conn.cursor()

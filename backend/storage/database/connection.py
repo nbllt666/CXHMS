@@ -106,7 +106,8 @@ class SyncConnectionPool:
         self.db_path = db_path
         self.pool_size = pool_size
         self._connections: Dict[int, aiosqlite.Connection] = {}
-        self._lock = asyncio.Lock()
+        import threading
+        self._lock = threading.Lock()
         self._last_used: Dict[int, float] = {}
         self._initialized = False
 

@@ -193,16 +193,18 @@ class QdrantVectorStore(VectorStoreBase):
                 query_filter=search_filter
             )
 
-            filtered_results = [
-                {
-                    "memory_id": r.id,
-                    "score": r.score,
-                    "content": r.payload.get("content"),
-                    "metadata": r.payload
-                }
-                for r in results
-                if r.score >= min_score
-            ]
+            # Qdrant返回的是距离，距离越小越相似，所以需要转换为相似度分数
+            # 使用 1/(1+distance) 转换为相似度分数，这样分数越大越相似
+            filtered_results = []
+            for r in results:
+                similarity_score = 1 / (1 + r.score)  # 将距离转换为相似度
+                if similarity_score >= min_score:
+                    filtered_results.append({
+                        "memory_id": r.id,
+                        "score": similarity_score,
+                        "content": r.payload.get("content"),
+                        "metadata": r.payload
+                    })
 
             return filtered_results
         except Exception as e:
@@ -373,7 +375,7 @@ def create_vector_store(
     创建向量存储实例
     
     Args:
-        backend: 向量存储后端类型 ("milvus_lite", "qdrant")
+        backend: 向量存储后端类型 ("milvus_lite", "qdrant", "weaviate", "weaviate_embedded")
         **kwargs: 向量存储配置参数
     
     Returns:
@@ -384,6 +386,12 @@ def create_vector_store(
         return MilvusLiteVectorStore(**kwargs)
     elif backend == "qdrant":
         return QdrantVectorStore(**kwargs)
+    elif backend == "weaviate":
+        from .weaviate_store import WeaviateVectorStore
+        return WeaviateVectorStore(embedded=False, **kwargs)
+    elif backend == "weaviate_embedded":
+        from .weaviate_store import WeaviateVectorStore
+        return WeaviateVectorStore(embedded=True, **kwargs)
     else:
         logger.warning(f"未知的向量存储后端: {backend}, 使用Milvus Lite")
         from .milvus_lite_store import MilvusLiteVectorStore

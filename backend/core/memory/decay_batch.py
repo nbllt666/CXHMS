@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +16,53 @@ class BatchDecayResult:
 
 
 class DecayBatchProcessor:
-    def __init__(self, memory_manager, decay_calculator):
+    def __init__(self, memory_manager, interval_hours: int = 24):
         self.memory_manager = memory_manager
-        self.decay_calculator = decay_calculator
+        self.interval_hours = interval_hours
         self._batch_size = 100
+        self._task = None
+        self._stop_event = asyncio.Event()
+        self.decay_calculator = None
+
+    async def start(self):
+        """启动批量衰减处理器"""
+        if self._task is None:
+            self._stop_event.clear()
+            self._task = asyncio.create_task(self._run_periodically())
+            logger.info(f"批量衰减处理器已启动，间隔: {self.interval_hours}小时")
+
+    async def stop(self):
+        """停止批量衰减处理器"""
+        if self._task:
+            self._stop_event.set()
+            try:
+                await asyncio.wait_for(self._task, timeout=5.0)
+            except asyncio.TimeoutError:
+                self._task.cancel()
+                try:
+                    await self._task
+                except asyncio.CancelledError:
+                    pass
+            self._task = None
+            logger.info("批量衰减处理器已停止")
+
+    async def _run_periodically(self):
+        """定期运行衰减处理"""
+        while not self._stop_event.is_set():
+            try:
+                await self.process_batch()
+                logger.info("批量衰减处理完成")
+            except Exception as e:
+                logger.error(f"批量衰减处理失败: {e}")
+
+            # 等待下一次执行或停止信号
+            try:
+                await asyncio.wait_for(
+                    self._stop_event.wait(),
+                    timeout=self.interval_hours * 3600
+                )
+            except asyncio.TimeoutError:
+                continue
 
     async def process_batch(
         self,
@@ -26,12 +70,14 @@ class DecayBatchProcessor:
         sync: bool = False,
         dry_run: bool = False
     ) -> BatchDecayResult:
+        from backend.core.memory.decay import DecayCalculator
+
         if batch_size > 0:
             self._batch_size = batch_size
 
+        decay_calculator = DecayCalculator()
         memories = self.memory_manager.search_memories(
-            limit=self._batch_size,
-            filters={"archived": False}
+            limit=self._batch_size
         )
 
         if not memories:
@@ -49,7 +95,12 @@ class DecayBatchProcessor:
         for memory in memories:
             memory_id = memory["id"]
             try:
-                decayed_value = self.decay_calculator.calculate_decay(memory)
+                decayed_value = decay_calculator.calculate_decay(
+                    importance=memory.get("importance_score", 0.6),
+                    created_at=memory.get("created_at", datetime.now().isoformat()),
+                    decay_type=memory.get("decay_type", "exponential"),
+                    decay_params=memory.get("decay_params")
+                )
 
                 if dry_run:
                     results.append({
@@ -60,9 +111,14 @@ class DecayBatchProcessor:
                     })
                     updated_count += 1
                 else:
+                    # 更新记忆的重要性和元数据
+                    from backend.core.memory.decay import score_to_importance
+                    new_importance = score_to_importance(decayed_value)
+                    
                     success = self.memory_manager.update_memory(
                         memory_id=memory_id,
-                        new_importance_score=decayed_value
+                        new_importance=new_importance,
+                        new_metadata={"importance_score": decayed_value, "decay_updated_at": datetime.now().isoformat()}
                     )
 
                     if success:

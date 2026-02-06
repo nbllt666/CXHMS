@@ -3,35 +3,44 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 import uuid
+import logging
+from backend.core.exceptions import ACPError
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class ACPDiscoverRequest(BaseModel):
+    """ACP发现请求"""
     timeout: float = 5.0
 
 
 class ACPConnectRequest(BaseModel):
+    """ACP连接请求"""
     agent_id: str
     host: str
     port: int
 
 
 class ACPGroupCreateRequest(BaseModel):
+    """ACP群组创建请求"""
     name: str
     description: str = ""
     max_members: int = 50
 
 
 class ACPGroupJoinRequest(BaseModel):
+    """ACP群组加入请求"""
     group_id: str
 
 
 class ACPGroupLeaveRequest(BaseModel):
+    """ACP群组退出请求"""
     group_id: str
 
 
 class ACPSendMessageRequest(BaseModel):
+    """ACP发送消息请求"""
     to_agent_id: Optional[str] = None
     to_group_id: Optional[str] = None
     content: Dict
@@ -40,23 +49,25 @@ class ACPSendMessageRequest(BaseModel):
 
 @router.post("/api/acp/discover")
 async def discover_agents(request: ACPDiscoverRequest = None):
+    """发现Agents"""
     from backend.api.app import get_acp_manager
     from backend.core.acp.discover import ACPLanDiscovery
 
     try:
         acp_mgr = get_acp_manager()
-
         discovery = ACPLanDiscovery(acp_mgr=acp_mgr)
         agents = await discovery.discover_once(timeout=request.timeout if request else 5.0)
-
         return {
             "status": "success",
             "agents": agents,
             "scanned_count": len(agents),
             "message": f"发现 {len(agents)} 个Agents"
         }
+    except ACPError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"发现Agents失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
 @router.get("/api/acp/agents")
@@ -128,7 +139,8 @@ async def disconnect_from_agent(connection_id: str):
 
 @router.get("/api/acp/connections")
 async def list_connections(local_only: bool = True):
-    from api.app import get_acp_manager
+    """列出连接"""
+    from backend.api.app import get_acp_manager
 
     try:
         acp_mgr = get_acp_manager()
@@ -138,13 +150,17 @@ async def list_connections(local_only: bool = True):
             "connections": connections,
             "total": len(connections)
         }
+    except ACPError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"列出连接失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
 @router.post("/api/acp/groups")
 async def create_group(request: ACPGroupCreateRequest):
-    from api.app import get_acp_manager
+    """创建群组"""
+    from backend.api.app import get_acp_manager
     from backend.core.acp.group import ACPGroupManager
 
     try:
@@ -164,8 +180,11 @@ async def create_group(request: ACPGroupCreateRequest):
             "group": group.to_dict(),
             "message": "群组创建成功"
         }
+    except ACPError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"创建群组失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
 @router.get("/api/acp/groups")
@@ -244,7 +263,7 @@ async def leave_group(group_id: str):
 
 @router.post("/api/acp/send")
 async def send_message(request: ACPSendMessageRequest):
-    from api.app import get_acp_manager
+    from backend.api.app import get_acp_manager
     from backend.core.acp.manager import ACPMessageInfo
 
     try:
@@ -275,8 +294,8 @@ async def send_message(request: ACPSendMessageRequest):
 
 @router.post("/api/acp/send/group")
 async def send_group_message(group_id: str, content: Dict):
-    from api.app import get_acp_manager
-    from core.acp.group import ACPGroupManager
+    from backend.api.app import get_acp_manager
+    from backend.core.acp.group import ACPGroupManager
 
     try:
         acp_mgr = get_acp_manager()

@@ -2,11 +2,16 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Dict, List, Optional
 from pydantic import BaseModel
 from datetime import datetime
+from backend.core.exceptions import MemoryError, ValidationError
+from backend.core.memory.secondary_router import SecondaryInstruction
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class MemoryCreateRequest(BaseModel):
+    """创建记忆请求"""
     content: str
     type: str = "long_term"
     importance: int = 3
@@ -17,6 +22,7 @@ class MemoryCreateRequest(BaseModel):
 
 
 class MemoryUpdateRequest(BaseModel):
+    """更新记忆请求"""
     content: Optional[str] = None
     importance: Optional[int] = None
     tags: Optional[List[str]] = None
@@ -24,6 +30,7 @@ class MemoryUpdateRequest(BaseModel):
 
 
 class MemorySearchRequest(BaseModel):
+    """搜索记忆请求"""
     query: Optional[str] = None
     memory_type: Optional[str] = None
     tags: Optional[List[str]] = None
@@ -39,6 +46,7 @@ async def list_memories(
     limit: int = 20,
     offset: int = 0
 ):
+    """列出记忆"""
     from backend.api.app import get_memory_manager
 
     try:
@@ -53,8 +61,11 @@ async def list_memories(
             "memories": memories[offset:offset+limit],
             "total": len(memories)
         }
+    except MemoryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"列出记忆失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
 @router.post("/api/memories")
@@ -157,7 +168,7 @@ async def delete_memory(memory_id: int, soft_delete: bool = True):
 
 @router.post("/api/memories/search")
 async def search_memories(request: MemorySearchRequest):
-    from api.app import get_memory_manager
+    from backend.api.app import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -181,7 +192,9 @@ async def search_memories(request: MemorySearchRequest):
 
 @router.post("/api/memories/rag")
 async def rag_search(query: str, workspace_id: str = "default", limit: int = 5):
-    from api.app import get_memory_manager
+    """RAG搜索"""
+    from backend.api.app import get_memory_manager
+    from backend.core.exceptions import VectorStoreError
 
     try:
         memory_mgr = get_memory_manager()
@@ -205,8 +218,11 @@ async def rag_search(query: str, workspace_id: str = "default", limit: int = 5):
             "results": results,
             "total": len(results)
         }
+    except VectorStoreError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"RAG搜索失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
 @router.get("/api/memories/stats")
@@ -518,8 +534,6 @@ async def execute_secondary_command(
 
         if not secondary_router:
             raise HTTPException(status_code=503, detail="副模型路由器未初始化")
-
-        from backend.core.memory.secondary_router import SecondaryInstruction
 
         instruction = SecondaryInstruction(
             command=command,

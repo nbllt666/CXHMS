@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from typing import Dict, List, Optional
 from pydantic import BaseModel
+import json
 
 router = APIRouter()
 
@@ -90,25 +92,87 @@ async def chat(request: ChatRequest):
 
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
-    from backend.api.app import get_context_manager, get_llm_client
+    """流式聊天响应"""
+    from backend.api.app import get_context_manager, get_llm_client, get_memory_manager
 
     try:
         context_mgr = get_context_manager()
         llm = get_llm_client()
+        memory_mgr = get_memory_manager()
 
         session_id = request.session_id or context_mgr.create_session(
             workspace_id=request.workspace_id
         )
 
+        # 添加用户消息到上下文
         context_mgr.add_message(
             session_id=session_id,
             role="user",
             content=request.message
         )
 
+        # 获取历史消息
         messages = context_mgr.get_messages(session_id, limit=10)
+        formatted_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
 
-        return {"status": "success", "session_id": session_id}
+        # 如果启用记忆，添加记忆上下文
+        if request.use_memory and memory_mgr:
+            from backend.core.memory.router import MemoryRouter
+            memory_router = MemoryRouter(memory_manager=memory_mgr)
+            routing_result = await memory_router.route(
+                query=request.message,
+                session_id=session_id,
+                scene_type="chat"
+            )
+            if routing_result.memories:
+                memory_context = "\n".join([
+                    f"[记忆] {m['content']}"
+                    for m in routing_result.memories[:5]
+                ])
+                formatted_messages = [
+                    {"role": "system", "content": f"相关记忆:\n{memory_context}"}
+                ] + formatted_messages
+
+        async def generate_stream():
+            """生成流式响应"""
+            full_response = ""
+
+            # 发送会话ID作为第一个事件
+            yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
+
+            try:
+                # 调用LLM流式接口
+                async for chunk in llm.stream_chat(
+                    messages=formatted_messages,
+                    temperature=0.7,
+                    max_tokens=4096
+                ):
+                    if chunk:
+                        full_response += chunk
+                        yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
+
+                # 流结束，保存完整响应到上下文
+                if full_response:
+                    context_mgr.add_message(
+                        session_id=session_id,
+                        role="assistant",
+                        content=full_response
+                    )
+
+                # 发送完成事件
+                yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
+
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+        return StreamingResponse(
+            generate_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            }
+        )
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

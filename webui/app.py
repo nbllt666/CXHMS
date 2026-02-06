@@ -1,6 +1,7 @@
 import gradio as gr
 import httpx
 import asyncio
+import json
 from datetime import datetime
 
 API_BASE = "http://localhost:8000"
@@ -125,7 +126,7 @@ def search_memories_3d(query: str, memory_type: str = "all", weights: str = "def
 def recall_memory(memory_id: str, emotion_intensity: float = 0.5):
     try:
         mid = int(memory_id)
-    except:
+    except (ValueError, TypeError):
         return "✗ 无效的记忆ID"
     
     data = {"emotion_intensity": emotion_intensity}
@@ -245,9 +246,9 @@ def get_memory_list(memory_type: str = "all"):
 def delete_memory(memory_id: str):
     try:
         mid = int(memory_id)
-    except:
+    except (ValueError, TypeError):
         return "✗ 无效的ID"
-    result = asyncio.get_event_loop().run_until_complete(call_api(f"/api/memories/{mid}", method="DELETE"))
+    result = run_async(call_api(f"/api/memories/{mid}", method="DELETE"))
     if result.get("status") == "success":
         return "✓ 记忆已删除"
     return f"✗ 删除失败: {result.get('error', '未知错误')}"
@@ -428,7 +429,16 @@ def create_memory_tab():
         search_3d_btn.click(search_memories_3d, [search_3d_query, search_3d_type, search_3d_weights], search_3d_result)
         recall_btn.click(recall_memory, [recall_id, recall_emotion], recall_result)
         perm_list_btn.click(get_permanent_memories, None, perm_list)
-        perm_add_btn.click(add_memory, [perm_content, "permanent", 5, perm_tags], perm_add_result)
+        
+        # 创建隐藏组件来传递固定值
+        perm_type_hidden = gr.Textbox(value="permanent", visible=False)
+        perm_importance_hidden = gr.Number(value=5, visible=False)
+        
+        perm_add_btn.click(
+            add_memory, 
+            [perm_content, perm_type_hidden, perm_importance_hidden, perm_tags], 
+            perm_add_result
+        )
         batch_add_btn.click(batch_add_memories, [batch_memories_text], batch_result)
         decay_stats_btn.click(get_decay_stats, None, decay_stats_result)
         sec_cmds_btn.click(get_secondary_commands, None, sec_cmds_result)
@@ -866,7 +876,26 @@ def create_settings_tab():
             return "✓ LLM配置已更新"
         return f"✗ 更新失败: {result.get('error', '未知错误')}"
 
-    def update_vector_config(enabled: bool, backend: str, milvus_db_path: str, milvus_vector_size: int, qdrant_host: str, qdrant_port: int, embedding_model: str):
+    def update_vector_config(
+        enabled: bool, 
+        backend: str, 
+        milvus_db_path: str, 
+        milvus_vector_size: int, 
+        qdrant_host: str, 
+        qdrant_port: int,
+        provider: str,
+        ollama_model: str,
+        ollama_host: str,
+        hf_model: str,
+        hf_device: str,
+        hf_normalize: bool,
+        openai_model: str,
+        openai_api_key: str,
+        openai_dimensions: int,
+        custom_type: str,
+        custom_endpoint: str,
+        custom_dimensions: int
+    ):
         config = {
             "memory": {
                 "vector_enabled": enabled,
@@ -878,6 +907,28 @@ def create_settings_tab():
                 "qdrant": {
                     "host": qdrant_host,
                     "port": qdrant_port
+                }
+            },
+            "embedding": {
+                "provider": provider,
+                "ollama": {
+                    "model": ollama_model,
+                    "host": ollama_host
+                },
+                "huggingface": {
+                    "model": hf_model,
+                    "device": hf_device,
+                    "normalize": hf_normalize
+                },
+                "openai": {
+                    "model": openai_model,
+                    "api_key": openai_api_key,
+                    "dimensions": openai_dimensions
+                },
+                "custom": {
+                    "type": custom_type,
+                    "endpoint": custom_endpoint,
+                    "dimensions": custom_dimensions
                 }
             }
         }
@@ -973,7 +1024,91 @@ def create_settings_tab():
                     visible=False
                 )
                 
-                vector_model = gr.Textbox(label="Embedding模型", value="nomic-embed-text")
+                gr.Markdown("#### Embedding 模型配置")
+                gr.Markdown("选择并配置Embedding模型")
+                
+                # Embedding模型选项卡
+                with gr.Tabs():
+                    with gr.TabItem("🤖 Ollama Embeddings"):
+                        gr.Markdown("使用Ollama本地Embedding模型")
+                        ollama_embedding_model = gr.Textbox(
+                            label="模型名称", 
+                            value="nomic-embed-text",
+                            placeholder="例如: nomic-embed-text, mxbai-embed-large"
+                        )
+                        ollama_embedding_host = gr.Textbox(
+                            label="Ollama Host", 
+                            value="http://localhost:11434"
+                        )
+                    
+                    with gr.TabItem("🤗 HuggingFace Embeddings"):
+                        gr.Markdown("使用HuggingFace预训练模型")
+                        hf_embedding_model = gr.Dropdown(
+                            [
+                                "sentence-transformers/all-MiniLM-L6-v2",
+                                "sentence-transformers/all-mpnet-base-v2",
+                                "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+                                "BAAI/bge-small-en-v1.5",
+                                "BAAI/bge-base-en-v1.5",
+                                "Thenlie/StreamTivation"
+                            ],
+                            label="选择模型",
+                            value="sentence-transformers/all-MiniLM-L6-v2"
+                        )
+                        hf_embedding_device = gr.Dropdown(
+                            ["cpu", "cuda"],
+                            label="运行设备",
+                            value="cpu"
+                        )
+                        hf_embedding_normalize = gr.Checkbox(
+                            label="归一化向量", 
+                            value=True
+                        )
+                    
+                    with gr.TabItem("🌐 OpenAI Embeddings"):
+                        gr.Markdown("使用OpenAI API Embedding模型")
+                        openai_embedding_model = gr.Dropdown(
+                            ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"],
+                            label="选择模型",
+                            value="text-embedding-3-small"
+                        )
+                        openai_embedding_api_key = gr.Textbox(
+                            label="API Key", 
+                            value="",
+                            placeholder="sk-...",
+                            type="password"
+                        )
+                        openai_embedding_dimensions = gr.Number(
+                            label="向量维度 (可选)", 
+                            value=1536,
+                            precision=0
+                        )
+                    
+                    with gr.TabItem("📝 本地/自定义"):
+                        gr.Markdown("使用本地自定义Embedding模型")
+                        custom_embedding_type = gr.Dropdown(
+                            ["api", "local"],
+                            label="类型",
+                            value="api"
+                        )
+                        custom_embedding_endpoint = gr.Textbox(
+                            label="API端点", 
+                            value="http://localhost:8001/embed",
+                            placeholder="http://localhost:8001/embed"
+                        )
+                        custom_embedding_dimensions = gr.Number(
+                            label="向量维度", 
+                            value=768,
+                            precision=0
+                        )
+                
+                # 当前选中的Embedding模型类型
+                embedding_provider = gr.Dropdown(
+                    ["ollama", "huggingface", "openai", "custom"],
+                    label="当前使用的Embedding提供商",
+                    value="ollama"
+                )
+                
                 vector_save_btn = gr.Button("保存向量配置", variant="primary")
                 vector_result = gr.Textbox(label="结果", interactive=False)
 
@@ -1001,7 +1136,26 @@ def create_settings_tab():
 
                 vector_save_btn.click(
                     update_vector_config, 
-                    [vector_enabled, vector_backend, milvus_db_path, milvus_vector_size, vector_host, vector_port, vector_model], 
+                    [
+                        vector_enabled, 
+                        vector_backend, 
+                        milvus_db_path, 
+                        milvus_vector_size, 
+                        vector_host, 
+                        vector_port,
+                        embedding_provider,
+                        ollama_embedding_model,
+                        ollama_embedding_host,
+                        hf_embedding_model,
+                        hf_embedding_device,
+                        hf_embedding_normalize,
+                        openai_embedding_model,
+                        openai_embedding_api_key,
+                        openai_embedding_dimensions,
+                        custom_embedding_type,
+                        custom_embedding_endpoint,
+                        custom_embedding_dimensions
+                    ], 
                     vector_result
                 )
 
