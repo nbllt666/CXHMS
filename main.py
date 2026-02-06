@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from backend.api.app import app
 from config.settings import settings
+import uvicorn
 
 def main():
     host = settings.config.system.host
