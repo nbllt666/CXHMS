@@ -1,12 +1,12 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict
-import logging
 import os
 import threading
+from backend.core.logging_config import get_contextual_logger
 
 os.environ["HF_HUB_DOWNLOAD_PROGRESS"] = "1"
 
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 
 class EmbeddingModel(ABC):

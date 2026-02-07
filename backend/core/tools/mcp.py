@@ -2,14 +2,14 @@ import os
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 import json
-import logging
 import httpx
 import asyncio
 import subprocess
 from datetime import datetime
 from backend.core.exceptions import MCPError
+from backend.core.logging_config import get_contextual_logger
 
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 
 @dataclass
@@ -173,9 +173,28 @@ class MCPManager:
             env = os.environ.copy()
             env.update(server.env)
             
+            # 验证命令和参数，防止命令注入
+            if not server.command or not isinstance(server.command, str):
+                raise MCPError(f"无效的命令: {server.command}")
+            
+            # 检查命令是否包含危险字符
+            dangerous_chars = ['|', '&', ';', '$', '`', '(', ')', '<', '>']
+            if any(char in server.command for char in dangerous_chars):
+                raise MCPError(f"命令包含危险字符: {server.command}")
+            
+            # 验证参数
+            if server.args:
+                if not isinstance(server.args, list):
+                    raise MCPError(f"参数必须是列表: {type(server.args)}")
+                for arg in server.args:
+                    if not isinstance(arg, str):
+                        raise MCPError(f"参数必须是字符串: {arg}")
+                    if any(char in arg for char in dangerous_chars):
+                        raise MCPError(f"参数包含危险字符: {arg}")
+            
             # 启动进程
             process = subprocess.Popen(
-                [server.command] + server.args,
+                [server.command] + (server.args or []),
                 env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE

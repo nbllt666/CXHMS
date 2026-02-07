@@ -1,11 +1,11 @@
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
-import logging
 import threading
 import os
+from backend.core.logging_config import get_contextual_logger
 
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 
 @dataclass
@@ -158,6 +158,10 @@ class MilvusLiteVectorStore:
             return None
 
         try:
+            if not isinstance(memory_id, int):
+                logger.warning(f"无效的memory_id类型: {type(memory_id)}, 期望int")
+                return None
+
             results = self._client.query(
                 collection_name=self.collection_name,
                 filter=f"memory_id == {memory_id}",

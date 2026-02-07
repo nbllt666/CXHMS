@@ -2,10 +2,10 @@ from typing import Dict, Optional, Tuple, List
 from dataclasses import dataclass
 from datetime import datetime
 import math
-import logging
 import numpy as np
+from backend.core.logging_config import get_contextual_logger
 
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 
 @dataclass
@@ -173,11 +173,12 @@ class DecayCalculator:
         importance: float,
         created_at: str,
         decay_type: str = "exponential",
-        decay_params: Optional[Dict] = None
+        decay_params: Optional[Dict] = None,
+        permanent: bool = False
     ) -> float:
         days_elapsed = self.calculate_days_elapsed(created_at)
 
-        if decay_type == "zero" or importance >= 0.95:
+        if decay_type == "zero" or importance >= 0.95 or permanent:
             return self.calculate_permanent_decay(importance)
 
         if decay_params:

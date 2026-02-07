@@ -32,17 +32,17 @@ export function ArchivePage() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [processResult, setProcessResult] = useState<string | null>(null)
 
-  const { data: stats, refetch: refetchStats } = useQuery<ArchiveStats>(
-    'archiveStats',
-    () => api.getArchiveStats(),
-    { refetchInterval: 10000 }
-  )
+  const { data: stats, refetch: refetchStats } = useQuery<ArchiveStats>({
+    queryKey: ['archiveStats'],
+    queryFn: () => api.getArchiveStats(),
+    refetchInterval: 10000
+  })
 
-  const { data: duplicates, refetch: refetchDuplicates } = useQuery<{ duplicate_groups: DuplicateGroup[] }>(
-    'duplicates',
-    () => api.detectDuplicates(),
-    { enabled: activeTab === 'duplicates' }
-  )
+  const { data: duplicates, refetch: refetchDuplicates } = useQuery<{ duplicate_groups: DuplicateGroup[] }>({
+    queryKey: ['duplicates'],
+    queryFn: () => api.detectDuplicates(),
+    enabled: activeTab === 'duplicates'
+  })
 
   const handleAutoArchive = async () => {
     setIsProcessing(true)
@@ -51,7 +51,7 @@ export function ArchivePage() {
       const result = await api.autoArchiveProcess()
       setProcessResult(`归档完成：归档 ${result.results.archived.length} 条，合并 ${result.results.merged.length} 条`)
       refetchStats()
-    } catch (error) {
+    } catch {
       setProcessResult('归档处理失败')
     } finally {
       setIsProcessing(false)
@@ -93,7 +93,7 @@ export function ArchivePage() {
         ].map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
+            onClick={() => setActiveTab(tab.id as 'overview' | 'duplicates' | 'settings')}
             className={cn(
               'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
               activeTab === tab.id

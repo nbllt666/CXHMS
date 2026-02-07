@@ -1,5 +1,5 @@
 import { useLocation } from 'react-router-dom'
-import { Bell, Search, User } from 'lucide-react'
+import { Bell } from 'lucide-react'
 
 const pageTitles: Record<string, string> = {
   '/': '对话',
@@ -15,25 +15,23 @@ export function Header() {
   return (
     <header className="h-16 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-6">
       <h2 className="text-xl font-semibold">{title}</h2>
-      
+
       <div className="flex items-center gap-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="全局搜索..."
-            className="pl-9 pr-4 py-2 bg-muted rounded-lg text-sm w-64 focus:outline-none focus:ring-2 focus:ring-primary/50"
-          />
-        </div>
-        
-        <button className="p-2 hover:bg-accent rounded-lg relative">
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full" />
-        </button>
-        
-        <button className="p-2 hover:bg-accent rounded-lg">
-          <User className="w-5 h-5" />
-        </button>
+        <a
+          href="https://afdian.com/a/nbllt666"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="p-2 rounded-lg hover:bg-accent transition-colors relative group"
+          title="支持开发者"
+        >
+          <Bell className="w-5 h-5 text-muted-foreground group-hover:text-foreground" />
+          <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-popover text-popover-foreground text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+            支持开发者
+          </span>
+        </a>
+        <span className="text-sm text-muted-foreground">
+          CXHMS v1.0
+        </span>
       </div>
     </header>
   )

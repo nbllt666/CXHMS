@@ -4,10 +4,10 @@ from pydantic import BaseModel
 from datetime import datetime
 from backend.core.exceptions import MemoryError, ValidationError
 from backend.core.memory.secondary_router import SecondaryInstruction
-import logging
+from backend.core.logging_config import get_contextual_logger
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 
 class MemoryCreateRequest(BaseModel):
@@ -244,8 +244,8 @@ async def get_memory_stats(workspace_id: str = "default"):
 @router.post("/api/memories/permanent")
 async def create_permanent_memory(
     content: str,
-    tags: List[str] = [],
-    metadata: Dict = {},
+    tags: List[str] = None,
+    metadata: Dict = None,
     emotion_score: float = 0.0,
     source: str = "user"
 ):
@@ -255,8 +255,8 @@ async def create_permanent_memory(
         memory_mgr = get_memory_manager()
         memory_id = memory_mgr.write_permanent_memory(
             content=content,
-            tags=tags,
-            metadata=metadata,
+            tags=tags or [],
+            metadata=metadata or {},
             emotion_score=emotion_score,
             source=source,
             is_from_main=True

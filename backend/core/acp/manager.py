@@ -2,13 +2,13 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
-import logging
 import asyncio
 from pathlib import Path
 import aiofiles
 from backend.core.exceptions import ACPError
+from backend.core.logging_config import get_contextual_logger
 
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 
 @dataclass

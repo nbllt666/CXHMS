@@ -1,7 +1,7 @@
 from typing import Dict, List, Any
-import logging
+from backend.core.logging_config import get_contextual_logger
 
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 
 class LLMTools:

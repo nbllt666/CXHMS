@@ -3,11 +3,11 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 import uuid
-import logging
 from backend.core.exceptions import ACPError
+from backend.core.logging_config import get_contextual_logger
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 
 class ACPDiscoverRequest(BaseModel):

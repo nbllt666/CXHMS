@@ -2,55 +2,26 @@ from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
-import logging
 import asyncio
 
 from config.settings import settings
 from backend.api.routers import chat, memory, context, tools, acp, admin, archive, service
+from backend.core.logging_config import setup_logging, get_contextual_logger, LogContext
 
-# 配置日志
-def setup_logging():
-    """设置日志配置"""
-    log_level = getattr(logging, settings.config.system.log_level.upper(), logging.INFO)
-    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    
-    # 基础配置
-    logging.basicConfig(
-        level=log_level,
-        format=log_format,
-        handlers=[
-            logging.StreamHandler()
-        ]
-    )
-    
-    log_file_config = getattr(settings.config, 'logging', {})
-    log_file = log_file_config.get('file', None) if isinstance(log_file_config, dict) else None
-    if log_file:
-        from logging.handlers import RotatingFileHandler
-        from pathlib import Path
-        
-        # 确保日志目录存在
-        log_path = Path(log_file)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # 添加轮转文件处理器
-        max_bytes = log_file_config.get('max_bytes', 10*1024*1024) if isinstance(log_file_config, dict) else 10*1024*1024
-        backup_count = log_file_config.get('backup_count', 5) if isinstance(log_file_config, dict) else 5
-        
-        file_handler = RotatingFileHandler(
-            log_file,
-            maxBytes=max_bytes,
-            backupCount=backup_count,
-            encoding='utf-8'
-        )
-        file_handler.setFormatter(logging.Formatter(log_format))
-        
-        # 获取根日志记录器并添加处理器
-        root_logger = logging.getLogger()
-        root_logger.addHandler(file_handler)
+# 配置结构化日志
+log_file_config = getattr(settings.config, 'logging', {})
+log_file = log_file_config.get('file', 'logs/app.log') if isinstance(log_file_config, dict) else 'logs/app.log'
 
-setup_logging()
-logger = logging.getLogger(__name__)
+setup_logging(
+    level=settings.config.system.log_level,
+    log_file=log_file,
+    max_bytes=log_file_config.get('max_bytes', 10*1024*1024) if isinstance(log_file_config, dict) else 10*1024*1024,
+    backup_count=log_file_config.get('backup_count', 5) if isinstance(log_file_config, dict) else 5,
+    structured=False,  # 可以设置为 True 启用 JSON 格式日志
+    console_colors=True
+)
+
+logger = get_contextual_logger(__name__)
 
 memory_manager = None
 context_manager = None

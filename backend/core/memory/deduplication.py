@@ -9,7 +9,9 @@ import logging
 import json
 import hashlib
 
-logger = logging.getLogger(__name__)
+from backend.core.logging_config import get_contextual_logger
+
+logger = get_contextual_logger(__name__)
 
 
 @dataclass
@@ -72,28 +74,28 @@ class DeduplicationEngine:
         return hashlib.md5(id_str.encode()).hexdigest()[:16]
     
     async def check_similarity(self, memory_id_1: int, memory_id_2: int) -> float:
-        """检查两个记忆的相似度"""
+        """检查两个记忆的相似度
+        
+        使用文本内容的相似度计算（基于向量存储或文本相似度）
+        """
         cache_key = f"{min(memory_id_1, memory_id_2)}:{max(memory_id_1, memory_id_2)}"
         
         if cache_key in self._similarity_cache:
             return self._similarity_cache[cache_key]
         
         try:
-            # 获取向量
-            vector_1 = await self.memory_manager.get_embedding_by_id(memory_id_1)
-            vector_2 = await self.memory_manager.get_embedding_by_id(memory_id_2)
+            # 获取记忆内容
+            memory_1 = self.memory_manager.get_memory(memory_id_1)
+            memory_2 = self.memory_manager.get_memory(memory_id_2)
             
-            if vector_1 is None or vector_2 is None:
+            if not memory_1 or not memory_2:
                 return 0.0
             
-            # 计算余弦相似度
-            import numpy as np
+            content_1 = memory_1.get("content", "")
+            content_2 = memory_2.get("content", "")
             
-            v1 = np.array(vector_1)
-            v2 = np.array(vector_2)
-            
-            similarity = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
-            similarity = float(similarity)
+            # 计算文本相似度（使用简单的Jaccard相似度）
+            similarity = self._calculate_text_similarity(content_1, content_2)
             
             # 缓存结果
             self._similarity_cache[cache_key] = similarity
@@ -101,8 +103,37 @@ class DeduplicationEngine:
             return similarity
             
         except Exception as e:
-            logger.error(f"计算相似度失败: {e}")
+            logger.error(f"计算相似度失败: {e}", exc_info=True)
             return 0.0
+    
+    def _calculate_text_similarity(self, text1: str, text2: str) -> float:
+        """计算两个文本的Jaccard相似度
+        
+        Args:
+            text1: 第一个文本
+            text2: 第二个文本
+            
+        Returns:
+            相似度分数 (0.0 - 1.0)
+        """
+        if not text1 or not text2:
+            return 0.0
+        
+        # 转换为小写并分割成词集合
+        set1 = set(text1.lower().split())
+        set2 = set(text2.lower().split())
+        
+        if not set1 or not set2:
+            return 0.0
+        
+        # 计算Jaccard相似度
+        intersection = len(set1 & set2)
+        union = len(set1 | set2)
+        
+        if union == 0:
+            return 0.0
+        
+        return intersection / union
     
     async def find_similar_memories(
         self,
@@ -244,17 +275,17 @@ class DeduplicationEngine:
     ):
         """记录搜索时发现的相似性"""
         if similarity_score >= self.threshold:
-            logger.info(f"搜索发现重复记忆: {query_memory_id} ~ {result_memory_id} (相似度: {similarity_score:.3f})")
+            logger.info(
+                f"搜索发现重复记忆",
+                extra={
+                    "query_memory_id": query_memory_id,
+                    "result_memory_id": result_memory_id,
+                    "similarity_score": similarity_score
+                }
+            )
             
-            # 更新数据库中的相似性记录
-            try:
-                self.memory_manager._record_similarity(
-                    query_memory_id,
-                    result_memory_id,
-                    similarity_score
-                )
-            except Exception as e:
-                logger.warning(f"记录相似性失败: {e}")
+            # 注意：这里可以扩展为将相似性记录保存到数据库
+            # 目前仅记录到日志中
     
     def get_duplicate_groups(self) -> List[DuplicateGroup]:
         """获取所有去重组"""

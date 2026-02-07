@@ -11,15 +11,14 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import psutil
-import logging
 import time
+from backend.core.logging_config import get_contextual_logger
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 # 全局变量存储后端进程
 _backend_process: Optional[subprocess.Popen] = None
-
 
 class ServiceStatus(BaseModel):
     """服务状态"""
@@ -29,7 +28,6 @@ class ServiceStatus(BaseModel):
     uptime: Optional[float] = None  # 运行时间（秒）
     using_conda: bool = False  # 是否使用 Conda 环境
 
-
 class ServiceConfig(BaseModel):
     """服务配置"""
     host: str = "0.0.0.0"
@@ -38,59 +36,65 @@ class ServiceConfig(BaseModel):
     reload: bool = False
     use_conda: bool = True  # 是否优先使用 Conda 环境
 
+def get_project_root() -> str:
+    """获取项目根目录"""
+    # 从 service.py 所在位置向上回溯到项目根目录
+    # service.py 在 backend/api/routers/ 下，所以向上3层
+    current_file = os.path.abspath(__file__)
+    # backend/api/routers/service.py -> 回到项目根目录
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_file))))
+    return project_root
+
 
 def get_conda_python_path() -> Optional[str]:
     """获取内置 Conda 环境的 Python 路径"""
-    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    
+    root_dir = get_project_root()
+
     # 可能的 Conda Python 路径
     possible_paths = [
         os.path.join(root_dir, "Miniconda3", "python.exe"),
         os.path.join(root_dir, "Miniconda3", "envs", "base", "python.exe"),
         os.path.join(root_dir, "Miniconda3", "envs", "cx_o", "python.exe"),
     ]
-    
+
     for path in possible_paths:
         if os.path.exists(path):
-            logger.info(f"找到 Conda Python: {path}")
+            logger.info(f"Found Conda Python: {path}")
             return path
-    
-    return None
 
+    return None
 
 def get_conda_activate_script() -> Optional[str]:
     """获取 Conda 激活脚本路径"""
-    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    
+    root_dir = get_project_root()
+
     activate_script = os.path.join(root_dir, "Miniconda3", "Scripts", "activate.bat")
     if os.path.exists(activate_script):
         return activate_script
-    
-    return None
 
+    return None
 
 def get_backend_process() -> Optional[psutil.Process]:
     """获取后端进程"""
     global _backend_process
     if _backend_process is None:
         return None
-    
+
     try:
         process = psutil.Process(_backend_process.pid)
         if process.is_running():
             return process
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         pass
-    
+
     _backend_process = None
     return None
-
 
 @router.get("/api/service/status", response_model=ServiceStatus)
 async def get_service_status():
     """获取后端服务状态"""
     process = get_backend_process()
-    
+
     if process is None:
         # 尝试查找已存在的 uvicorn 进程
         for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
@@ -108,22 +112,23 @@ async def get_service_status():
                     break
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-    
+
     if process and process.is_running():
         try:
             uptime = time.time() - process.create_time()
-        except:
+        except Exception as e:
+            logger.warning(f"获取运行时间失败: {e}")
             uptime = None
-        
+
         # 检查是否使用了 Conda
         using_conda = False
         try:
             cmdline = process.cmdline()
             if any('miniconda' in arg.lower() or 'conda' in arg.lower() for arg in cmdline):
                 using_conda = True
-        except:
-            pass
-        
+        except Exception as e:
+            logger.warning(f"检查Conda环境失败: {e}")
+
         return ServiceStatus(
             running=True,
             pid=process.pid,
@@ -131,48 +136,46 @@ async def get_service_status():
             uptime=uptime,
             using_conda=using_conda
         )
-    
-    return ServiceStatus(running=False, port=8000)
 
+    return ServiceStatus(running=False, port=8000)
 
 @router.post("/api/service/start")
 async def start_service(config: ServiceConfig):
     """启动后端服务"""
     global _backend_process
-    
+
     # 检查是否已在运行
-    if get_backend_process() is not None:
-        raise HTTPException(status_code=400, detail="服务已在运行中")
-    
+    existing_process = get_backend_process()
+    if existing_process is not None:
+        raise HTTPException(status_code=400, detail="Service is already running")
+
     try:
         # 获取项目根目录
-        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        
+        root_dir = get_project_root()
+
         # 检查是否使用 Conda 环境
         conda_python = get_conda_python_path()
         conda_activate = get_conda_activate_script()
         use_conda = config.use_conda and conda_python is not None
-        
+
         if use_conda and sys.platform == 'win32' and conda_activate:
             # Windows: 使用 activate.bat 激活环境
-            cmd = [
-                "cmd", "/c",
-                f'"{conda_activate}" base && python -m uvicorn backend.api.app:app '
-                f'--host {config.host} --port {config.port} --log-level {config.log_level}'
-            ]
+            cmd = f'"{conda_activate}" base && python -m uvicorn backend.api.app:app --host {config.host} --port {config.port} --log-level {config.log_level}'
             if config.reload:
-                cmd[-1] += " --reload"
-            
+                cmd += " --reload"
+
+            logger.info(f"Starting with Conda activate script: {cmd}")
+
             # 使用 shell=True 执行命令
             _backend_process = subprocess.Popen(
-                ' '.join(cmd),
+                cmd,
                 cwd=root_dir,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 shell=True,
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
             )
-            
+
         elif use_conda and conda_python:
             # 直接使用 Conda Python
             cmd = [
@@ -182,10 +185,12 @@ async def start_service(config: ServiceConfig):
                 "--port", str(config.port),
                 "--log-level", config.log_level
             ]
-            
+
             if config.reload:
                 cmd.append("--reload")
-            
+
+            logger.info(f"Starting with Conda Python: {' '.join(cmd)}")
+
             _backend_process = subprocess.Popen(
                 cmd,
                 cwd=root_dir,
@@ -193,7 +198,7 @@ async def start_service(config: ServiceConfig):
                 stderr=subprocess.PIPE,
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == 'win32' else 0
             )
-            
+
         else:
             # 使用系统 Python
             cmd = [
@@ -203,10 +208,12 @@ async def start_service(config: ServiceConfig):
                 "--port", str(config.port),
                 "--log-level", config.log_level
             ]
-            
+
             if config.reload:
                 cmd.append("--reload")
-            
+
+            logger.info(f"Starting with system Python: {' '.join(cmd)}")
+
             _backend_process = subprocess.Popen(
                 cmd,
                 cwd=root_dir,
@@ -214,29 +221,28 @@ async def start_service(config: ServiceConfig):
                 stderr=subprocess.PIPE,
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == 'win32' else 0
             )
-        
-        logger.info(f"后端服务已启动: PID={_backend_process.pid}, Port={config.port}, Conda={use_conda}")
-        
+
+        logger.info(f"Backend service started: PID={_backend_process.pid}, Port={config.port}, Conda={use_conda}")
+
         return {
             "status": "success",
-            "message": "服务已启动",
+            "message": "Service started",
             "pid": _backend_process.pid,
             "port": config.port,
             "using_conda": use_conda
         }
-        
-    except Exception as e:
-        logger.error(f"启动服务失败: {e}")
-        raise HTTPException(status_code=500, detail=f"启动失败: {str(e)}")
 
+    except Exception as e:
+        logger.error(f"Failed to start service: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to start: {str(e)}")
 
 @router.post("/api/service/stop")
 async def stop_service():
     """停止后端服务"""
     global _backend_process
-    
+
     process = get_backend_process()
-    
+
     if process is None:
         # 尝试查找并停止 uvicorn 进程
         stopped = False
@@ -248,36 +254,35 @@ async def stop_service():
                     stopped = True
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-        
+
         if stopped:
-            return {"status": "success", "message": "服务已停止"}
-        
-        raise HTTPException(status_code=400, detail="服务未在运行")
-    
+            return {"status": "success", "message": "Service stopped"}
+
+        raise HTTPException(status_code=400, detail="Service is not running")
+
     try:
         # 优雅地终止进程
         if sys.platform == 'win32':
             process.terminate()
         else:
             process.send_signal(signal.SIGTERM)
-        
+
         # 等待进程结束
         try:
             process.wait(timeout=5)
         except psutil.TimeoutExpired:
             # 强制终止
             process.kill()
-        
-        _backend_process = None
-        
-        logger.info("后端服务已停止")
-        
-        return {"status": "success", "message": "服务已停止"}
-        
-    except Exception as e:
-        logger.error(f"停止服务失败: {e}")
-        raise HTTPException(status_code=500, detail=f"停止失败: {str(e)}")
 
+        _backend_process = None
+
+        logger.info("Backend service stopped")
+
+        return {"status": "success", "message": "Service stopped"}
+
+    except Exception as e:
+        logger.error(f"Failed to stop service: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to stop: {str(e)}")
 
 @router.post("/api/service/restart")
 async def restart_service(config: ServiceConfig):
@@ -288,14 +293,13 @@ async def restart_service(config: ServiceConfig):
     except HTTPException:
         # 服务可能未运行，忽略错误
         pass
-    
+
     # 等待一下确保端口释放
     import asyncio
     await asyncio.sleep(1)
-    
+
     # 再启动
     return await start_service(config)
-
 
 @router.get("/api/service/logs")
 async def get_service_logs(lines: int = 100):
@@ -310,24 +314,23 @@ async def get_service_logs(lines: int = 100):
                     "status": "success",
                     "logs": ''.join(all_lines[-lines:])
                 }
-        
+
         return {
             "status": "success",
-            "logs": "暂无日志文件"
+            "logs": "No log file available"
         }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"读取日志失败: {str(e)}")
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read logs: {str(e)}")
 
 @router.get("/api/service/config")
 async def get_service_config():
     """获取当前服务配置"""
     from config.settings import settings
-    
+
     # 检查 Conda 环境是否可用
     conda_available = get_conda_python_path() is not None
-    
+
     return {
         "status": "success",
         "config": {
@@ -346,41 +349,40 @@ async def update_service_config(config: dict):
     try:
         # 保存配置到文件
         import yaml
-        
+
         config_path = "config/default.yaml"
-        
+
         # 读取现有配置
         if os.path.exists(config_path):
             with open(config_path, 'r', encoding='utf-8') as f:
                 current_config = yaml.safe_load(f) or {}
         else:
             current_config = {}
-        
+
         # 更新配置
         if 'system' not in current_config:
             current_config['system'] = {}
-        
+
         current_config['system'].update(config)
-        
+
         # 写回文件
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(current_config, f, allow_unicode=True, sort_keys=False)
-        
+
         return {
             "status": "success",
-            "message": "配置已更新，重启服务后生效"
+            "message": "Configuration updated, restart to apply changes"
         }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"保存配置失败: {str(e)}")
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save config: {str(e)}")
 
 @router.get("/api/service/environment")
 async def get_environment_info():
     """获取环境信息"""
     conda_python = get_conda_python_path()
     conda_activate = get_conda_activate_script()
-    
+
     return {
         "status": "success",
         "environment": {
@@ -391,3 +393,55 @@ async def get_environment_info():
             "platform": sys.platform
         }
     }
+
+
+@router.get("/api/service/startup-command")
+async def get_startup_command(use_conda: bool = True):
+    """获取启动命令（供前端直接执行）"""
+    conda_python = get_conda_python_path()
+    conda_activate = get_conda_activate_script()
+    project_root = get_project_root()
+
+    config = {
+        "host": "0.0.0.0",
+        "port": 8000,
+        "log_level": "info"
+    }
+
+    from config.settings import settings
+    try:
+        config["host"] = settings.config.system.host
+        config["port"] = settings.config.system.port
+        config["log_level"] = settings.config.system.log_level
+    except Exception:
+        pass
+
+    startup_info = {
+        "status": "success",
+        "command": None,
+        "args": [],
+        "use_conda": use_conda,
+        "conda_available": conda_python is not None,
+        "project_root": project_root
+    }
+
+    if use_conda and conda_python:
+        startup_info["command"] = conda_python
+        startup_info["args"] = [
+            "-m", "uvicorn",
+            "backend.api.app:app",
+            "--host", config["host"],
+            "--port", str(config["port"]),
+            "--log-level", config["log_level"]
+        ]
+    else:
+        startup_info["command"] = sys.executable
+        startup_info["args"] = [
+            "-m", "uvicorn",
+            "backend.api.app:app",
+            "--host", config["host"],
+            "--port", str(config["port"]),
+            "--log-level", config["log_level"]
+        ]
+
+    return startup_info

@@ -1,13 +1,13 @@
 import asyncio
 import uuid
 import json
-import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from .manager import ACPManager, ACPGroupInfo, ACPMessageInfo
 from backend.models.acp import ACPGroupMember
+from backend.core.logging_config import get_contextual_logger
 
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 
 class ACPGroupManager:

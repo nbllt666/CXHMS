@@ -1,0 +1,101 @@
+0000	40 65 63 68 6f 20 6f 66  66 0a 63 68 63 70 20 36   @echo off.chcp 6
+0010	35 30 30 31 20 3e 6e 75  6c 0a 63 6c 73 0a 74 69   5001 >nul.cls.ti
+0020	74 6c 65 20 43 58 48 4d  53 20 2d 20 46 72 6f 6e   tle CXHMS - Fron
+0030	74 65 6e 64 20 77 69 74  68 20 43 6f 6e 74 72 6f   tend with Contro
+0040	6c 20 53 65 72 76 69 63  65 20 28 43 6f 6e 64 61   l Service (Conda
+0050	29 0a 0a 65 63 68 6f 20  3d 3d 3d 3d 3d 3d 3d 3d   )..echo ========
+0060	3d 3d 3d 3d 3d 3d 3d 3d  3d 3d 3d 3d 3d 3d 3d 3d   ================
+0070	3d 3d 3d 3d 3d 3d 3d 3d  3d 3d 3d 3d 3d 3d 3d 3d   ================
+0080	3d 3d 0a 65 63 68 6f 20  20 20 20 43 58 48 4d 53   ==.echo    CXHMS
+0090	20 2d 20 43 68 65 6e 78  69 20 48 75 6d 61 6e 69    - Chenxi Humani
+00a0	7a 65 64 20 4d 65 6d 6f  72 79 20 53 79 73 74 65   zed Memory Syste
+00b0	6d 0a 65 63 68 6f 20 20  20 20 46 72 6f 6e 74 65   m.echo    Fronte
+00c0	6e 64 20 2b 20 43 6f 6e  74 72 6f 6c 20 53 65 72   nd + Control Ser
+00d0	76 69 63 65 20 28 43 6f  6e 64 61 29 0a 65 63 68   vice (Conda).ech
+00e0	6f 20 3d 3d 3d 3d 3d 3d  3d 3d 3d 3d 3d 3d 3d 3d   o ==============
+00f0	3d 3d 3d 3d 3d 3d 3d 3d  3d 3d 3d 3d 3d 3d 3d 3d   ================
+0100	3d 3d 3d 3d 3d 3d 3d 3d  3d 3d 3d 3d 0a 65 63 68   ============.ech
+0110	6f 2e 0a 0a 73 65 74 20  22 53 43 52 49 50 54 5f   o...set "SCRIPT_
+0120	44 49 52 3d 25 7e 64 70  30 22 0a 63 64 20 2f 64   DIR=%~dp0".cd /d
+0130	20 22 25 53 43 52 49 50  54 5f 44 49 52 25 22 0a    "%SCRIPT_DIR%".
+0140	0a 65 63 68 6f 20 5b 49  4e 46 4f 5d 20 43 68 65   .echo [INFO] Che
+0150	63 6b 69 6e 67 20 43 6f  6e 64 61 20 65 6e 76 69   cking Conda envi
+0160	72 6f 6e 6d 65 6e 74 2e  2e 2e 0a 0a 73 65 74 20   ronment.....set 
+0170	22 43 4f 4e 44 41 5f 50  41 54 48 3d 25 53 43 52   "CONDA_PATH=%SCR
+0180	49 50 54 5f 44 49 52 25  4d 69 6e 69 63 6f 6e 64   IPT_DIR%Minicond
+0190	61 33 22 0a 69 66 20 6e  6f 74 20 65 78 69 73 74   a3".if not exist
+01a0	20 22 25 43 4f 4e 44 41  5f 50 41 54 48 25 5c 53    "%CONDA_PATH%\S
+01b0	63 72 69 70 74 73 5c 61  63 74 69 76 61 74 65 2e   cripts\activate.
+01c0	62 61 74 22 20 28 0a 20  20 20 20 65 63 68 6f 20   bat" (.    echo 
+01d0	5b 45 52 52 4f 52 5d 20  43 6f 6e 64 61 20 6e 6f   [ERROR] Conda no
+01e0	74 20 66 6f 75 6e 64 21  0a 20 20 20 20 65 63 68   t found!.    ech
+01f0	6f 20 50 6c 65 61 73 65  20 75 73 65 20 74 68 65   o Please use the
+0200	20 73 79 73 74 65 6d 20  50 79 74 68 6f 6e 20 76    system Python v
+0210	65 72 73 69 6f 6e 20 69  6e 73 74 65 61 64 2e 0a   ersion instead..
+0220	20 20 20 20 70 61 75 73  65 0a 20 20 20 20 65 78       pause.    ex
+0230	69 74 20 2f 62 20 31 0a  29 0a 0a 65 63 68 6f 20   it /b 1.)..echo 
+0240	5b 49 4e 46 4f 5d 20 41  63 74 69 76 61 74 69 6e   [INFO] Activatin
+0250	67 20 43 6f 6e 64 61 2e  2e 2e 0a 43 41 4c 4c 20   g Conda....CALL 
+0260	22 25 43 4f 4e 44 41 5f  50 41 54 48 25 5c 53 63   "%CONDA_PATH%\Sc
+0270	72 69 70 74 73 5c 61 63  74 69 76 61 74 65 2e 62   ripts\activate.b
+0280	61 74 22 20 22 25 43 4f  4e 44 41 5f 50 41 54 48   at" "%CONDA_PATH
+0290	25 22 20 3e 6e 75 6c 20  32 3e 26 31 0a 65 63 68   %" >nul 2>&1.ech
+02a0	6f 20 5b 4f 4b 5d 20 43  6f 6e 64 61 20 61 63 74   o [OK] Conda act
+02b0	69 76 61 74 65 64 2e 0a  0a 65 63 68 6f 2e 0a 65   ivated...echo..e
+02c0	63 68 6f 20 5b 31 2f 33  5d 20 43 68 65 63 6b 69   cho [1/3] Checki
+02d0	6e 67 20 66 72 6f 6e 74  65 6e 64 20 64 65 70 65   ng frontend depe
+02e0	6e 64 65 6e 63 69 65 73  2e 2e 2e 0a 63 64 20 66   ndencies....cd f
+02f0	72 6f 6e 74 65 6e 64 0a  69 66 20 6e 6f 74 20 65   rontend.if not e
+0300	78 69 73 74 20 22 6e 6f  64 65 5f 6d 6f 64 75 6c   xist "node_modul
+0310	65 73 22 20 28 0a 20 20  20 20 65 63 68 6f 20 5b   es" (.    echo [
+0320	49 4e 46 4f 5d 20 49 6e  73 74 61 6c 6c 69 6e 67   INFO] Installing
+0330	20 66 72 6f 6e 74 65 6e  64 20 64 65 70 65 6e 64    frontend depend
+0340	65 6e 63 69 65 73 2e 2e  2e 0a 20 20 20 20 63 61   encies....    ca
+0350	6c 6c 20 6e 70 6d 20 69  6e 73 74 61 6c 6c 0a 20   ll npm install. 
+0360	20 20 20 69 66 20 65 72  72 6f 72 6c 65 76 65 6c      if errorlevel
+0370	20 31 20 28 0a 20 20 20  20 20 20 20 20 65 63 68    1 (.        ech
+0380	6f 20 5b 45 52 52 4f 52  5d 20 46 61 69 6c 65 64   o [ERROR] Failed
+0390	20 74 6f 20 69 6e 73 74  61 6c 6c 20 66 72 6f 6e    to install fron
+03a0	74 65 6e 64 20 64 65 70  65 6e 64 65 6e 63 69 65   tend dependencie
+03b0	73 21 0a 20 20 20 20 20  20 20 20 70 61 75 73 65   s!.        pause
+03c0	0a 20 20 20 20 20 20 20  20 65 78 69 74 20 2f 62   .        exit /b
+03d0	20 31 0a 20 20 20 20 29  0a 20 20 20 20 65 63 68    1.    ).    ech
+03e0	6f 20 5b 4f 4b 5d 20 44  65 70 65 6e 64 65 6e 63   o [OK] Dependenc
+03f0	69 65 73 20 69 6e 73 74  61 6c 6c 65 64 2e 0a 29   ies installed..)
+0400	20 65 6c 73 65 20 28 0a  20 20 20 20 65 63 68 6f    else (.    echo
+0410	20 5b 4f 4b 5d 20 44 65  70 65 6e 64 65 6e 63 69    [OK] Dependenci
+0420	65 73 20 65 78 69 73 74  2e 0a 29 0a 0a 65 63 68   es exist..)..ech
+0430	6f 2e 0a 65 63 68 6f 20  5b 32 2f 33 5d 20 43 68   o..echo [2/3] Ch
+0440	65 63 6b 69 6e 67 20 63  6f 6e 63 75 72 72 65 6e   ecking concurren
+0450	74 6c 79 2e 2e 2e 0a 63  61 6c 6c 20 6e 70 6d 20   tly....call npm 
+0460	6c 69 73 74 20 63 6f 6e  63 75 72 72 65 6e 74 6c   list concurrentl
+0470	79 20 3e 6e 75 6c 20 32  3e 26 31 0a 69 66 20 65   y >nul 2>&1.if e
+0480	72 72 6f 72 6c 65 76 65  6c 20 31 20 28 0a 20 20   rrorlevel 1 (.  
+0490	20 20 65 63 68 6f 20 5b  49 4e 46 4f 5d 20 49 6e     echo [INFO] In
+04a0	73 74 61 6c 6c 69 6e 67  20 63 6f 6e 63 75 72 72   stalling concurr
+04b0	65 6e 74 6c 79 2e 2e 2e  0a 20 20 20 20 63 61 6c   ently....    cal
+04c0	6c 20 6e 70 6d 20 69 6e  73 74 61 6c 6c 20 2d 44   l npm install -D
+04d0	20 63 6f 6e 63 75 72 72  65 6e 74 6c 79 20 3e 6e    concurrently >n
+04e0	75 6c 20 32 3e 26 31 0a  20 20 20 20 69 66 20 65   ul 2>&1.    if e
+04f0	72 72 6f 72 6c 65 76 65  6c 20 31 20 28 0a 20 20   rrorlevel 1 (.  
+0500	20 20 20 20 20 20 65 63  68 6f 20 5b 45 52 52 4f         echo [ERRO
+0510	52 5d 20 46 61 69 6c 65  64 20 74 6f 20 69 6e 73   R] Failed to ins
+0520	74 61 6c 6c 20 63 6f 6e  63 75 72 72 65 6e 74 6c   tall concurrentl
+0530	79 21 0a 20 20 20 20 20  20 20 20 70 61 75 73 65   y!.        pause
+0540	0a 20 20 20 20 20 20 20  20 65 78 69 74 20 2f 62   .        exit /b
+0550	20 31 0a 20 20 20 20 29  0a 29 0a 65 63 68 6f 20    1.    ).).echo 
+0560	5b 4f 4b 5d 20 43 6f 6e  63 75 72 72 65 6e 74 6c   [OK] Concurrentl
+0570	79 20 72 65 61 64 79 2e  0a 0a 65 63 68 6f 2e 0a   y ready...echo..
+0580	65 63 68 6f 20 5b 33 2f  33 5d 20 53 74 61 72 74   echo [3/3] Start
+0590	69 6e 67 20 73 65 72 76  69 63 65 73 2e 2e 2e 0a   ing services....
+05a0	65 63 68 6f 20 20 20 20  2d 20 43 6f 6e 74 72 6f   echo    - Contro
+05b0	6c 20 53 65 72 76 69 63  65 3a 20 68 74 74 70 3a   l Service: http:
+05c0	2f 2f 6c 6f 63 61 6c 68  6f 73 74 3a 38 37 36 35   //localhost:8765
+05d0	0a 65 63 68 6f 20 20 20  20 2d 20 46 72 6f 6e 74   .echo    - Front
+05e0	65 6e 64 3a 20 68 74 74  70 3a 2f 2f 6c 6f 63 61   end: http://loca
+05f0	6c 68 6f 73 74 3a 35 31  37 33 0a 65 63 68 6f 2e   lhost:5173.echo.
+0600	0a 65 63 68 6f 20 50 72  65 73 73 20 43 74 72 6c   .echo Press Ctrl
+0610	2b 43 20 74 6f 20 73 74  6f 70 2e 0a 65 63 68 6f   +C to stop..echo
+0620	2e 0a 0a 63 61 6c 6c 20  6e 70 6d 20 72 75 6e 20   ...call npm run 
+0630	64 65 76 0a 0a 65 63 68  6f 2e 0a 63 64 20 2e 2e   dev..echo..cd ..
+0640	0a 70 61 75 73 65 0a                               .pause.

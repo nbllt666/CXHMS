@@ -2,12 +2,12 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 import uuid
 import json
-import logging
 from pathlib import Path
 from functools import lru_cache
 from backend.core.exceptions import ContextError, DatabaseError
+from backend.core.logging_config import get_contextual_logger
 
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 
 class ContextManager:

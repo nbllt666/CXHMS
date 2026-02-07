@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { 
   Search, 
@@ -27,9 +27,11 @@ interface Memory {
 }
 
 export function MemoriesPage() {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [filterType, setFilterType] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState<string>('')
+  const [filterType, setFilterType] = useState<'all' | 'long_term' | 'short_term'>('all')
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingMemory, setEditingMemory] = useState<Memory | null>(null)
   const [newMemory, setNewMemory] = useState({
     content: '',
     type: 'long_term',
@@ -37,11 +39,11 @@ export function MemoriesPage() {
     tags: ''
   })
 
-  const { data: memories, isLoading, refetch } = useQuery(
-    ['memories', filterType],
-    () => api.getMemories({ type: filterType === 'all' ? undefined : filterType }),
-    { refetchInterval: 5000 }
-  )
+  const { data: memories, isLoading, refetch } = useQuery({
+    queryKey: ['memories', filterType],
+    queryFn: () => api.getMemories({ type: filterType === 'all' ? undefined : filterType }),
+    refetchInterval: 5000
+  })
 
   const handleCreateMemory = async () => {
     try {
@@ -78,10 +80,31 @@ export function MemoriesPage() {
     }
   }
 
+  const handleEditMemory = (memory: Memory) => {
+    setEditingMemory(memory)
+    setShowEditModal(true)
+  }
+
+  const handleUpdateMemory = async () => {
+    if (!editingMemory) return
+    try {
+      await api.updateMemory(editingMemory.id, {
+        content: editingMemory.content,
+        tags: editingMemory.tags,
+        importance: editingMemory.importance
+      })
+      setShowEditModal(false)
+      setEditingMemory(null)
+      refetch()
+    } catch (error) {
+      console.error('更新记忆失败:', error)
+    }
+  }
+
   const filteredMemories = memories?.memories?.filter((memory: Memory) => {
     if (!searchQuery) return true
     return memory.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-           memory.tags?.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+           (memory.tags && memory.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())))
   }) || []
 
   return (
@@ -104,7 +127,7 @@ export function MemoriesPage() {
             <Filter className="w-4 h-4 text-muted-foreground" />
             <select
               value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
+              onChange={(e) => setFilterType(e.target.value as 'all' | 'long_term' | 'short_term')}
               className="bg-muted rounded-lg px-3 py-2 text-sm focus:outline-none"
             >
               <option value="all">全部类型</option>
@@ -171,6 +194,7 @@ export function MemoriesPage() {
                     <Archive className="w-4 h-4 text-muted-foreground" />
                   </button>
                   <button
+                    onClick={() => handleEditMemory(memory)}
                     className="p-1.5 hover:bg-muted rounded-lg transition-colors"
                     title="编辑"
                   >
@@ -295,6 +319,97 @@ export function MemoriesPage() {
                 className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
               >
                 创建
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Memory Modal */}
+      {showEditModal && editingMemory && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card rounded-xl p-6 w-full max-w-lg mx-4">
+            <h3 className="text-lg font-semibold mb-4">编辑记忆</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">内容</label>
+                <textarea
+                  value={editingMemory.content}
+                  onChange={(e) => setEditingMemory({ ...editingMemory, content: e.target.value })}
+                  placeholder="输入记忆内容..."
+                  className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium mb-1.5 block">类型</label>
+                  <select
+                    value={editingMemory.type}
+                    onChange={(e) => setEditingMemory({ ...editingMemory, type: e.target.value })}
+                    className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none"
+                  >
+                    <option value="long_term">长期记忆</option>
+                    <option value="short_term">短期记忆</option>
+                    <option value="permanent">永久记忆</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium mb-1.5 block">重要性</label>
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        onClick={() => setEditingMemory({ ...editingMemory, importance: star })}
+                        className="p-1"
+                      >
+                        <Star
+                          className={cn(
+                            "w-5 h-5",
+                            star <= editingMemory.importance
+                              ? "fill-yellow-400 text-yellow-400"
+                              : "text-muted-foreground"
+                          )}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">标签（用逗号分隔）</label>
+                <div className="relative">
+                  <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={editingMemory.tags.join(', ')}
+                    onChange={(e) => setEditingMemory({ ...editingMemory, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })}
+                    placeholder="标签1, 标签2, 标签3"
+                    className="w-full pl-9 pr-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowEditModal(false)
+                  setEditingMemory(null)
+                }}
+                className="px-4 py-2 text-muted-foreground hover:bg-muted rounded-lg transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleUpdateMemory}
+                disabled={!editingMemory.content.trim()}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              >
+                保存
               </button>
             </div>
           </div>

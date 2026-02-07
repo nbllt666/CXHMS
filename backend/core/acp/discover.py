@@ -1,12 +1,12 @@
 import asyncio
 import socket
 import json
-import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from .manager import ACPAgentInfo, ACPManager
+from backend.core.logging_config import get_contextual_logger
 
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 
 class ACPLanDiscovery:
@@ -35,18 +35,23 @@ class ACPLanDiscovery:
 
         self._running = True
 
-        self._broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        self._broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        self._broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._broadcast_socket.settimeout(1)
+        try:
+            self._broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+            self._broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            self._broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self._broadcast_socket.settimeout(1)
 
-        self._discovery_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._discovery_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._discovery_socket.bind(("", self.discovery_port))
-        self._discovery_socket.settimeout(1)
+            self._discovery_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self._discovery_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self._discovery_socket.bind(("", self.discovery_port))
+            self._discovery_socket.settimeout(1)
 
-        self._task = asyncio.create_task(self._discovery_loop())
-        logger.info(f"局域网发现服务已启动: discovery_port={self.discovery_port}, broadcast_port={self.broadcast_port}")
+            self._task = asyncio.create_task(self._discovery_loop())
+            logger.info(f"局域网发现服务已启动: discovery_port={self.discovery_port}, broadcast_port={self.broadcast_port}")
+        except Exception as e:
+            logger.error(f"启动局域网发现服务失败: {e}")
+            await self.stop()
+            raise
 
     async def stop(self):
         self._running = False

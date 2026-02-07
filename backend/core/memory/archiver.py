@@ -5,10 +5,11 @@
 from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
-import logging
 import json
 
-logger = logging.getLogger(__name__)
+from backend.core.logging_config import get_contextual_logger
+
+logger = get_contextual_logger(__name__)
 
 
 @dataclass
@@ -221,10 +222,10 @@ class AdvancedArchiver:
         """使用 LLM 压缩内容"""
         if not self.llm_client:
             return content
-        
+
         try:
             level_config = self.ARCHIVE_LEVELS.get(level, self.ARCHIVE_LEVELS[1])
-            
+
             prompt = f"""请将以下内容进行压缩归档，压缩级别：{level_config.name}（{level_config.description}）
 
 原始内容：
@@ -238,13 +239,24 @@ class AdvancedArchiver:
 
 请直接输出压缩后的内容："""
 
-            response = await self.llm_client.generate(prompt)
-            compressed = response.get("text", content).strip()
-            
+            # 使用 chat 方法而不是 generate 方法
+            response = await self.llm_client.chat(
+                messages=[{"role": "user", "content": prompt}],
+                stream=False
+            )
+
+            # 处理 LLMResponse 对象
+            if hasattr(response, 'content'):
+                compressed = response.content.strip()
+            elif isinstance(response, dict):
+                compressed = response.get("content", content).strip()
+            else:
+                compressed = str(response).strip()
+
             return compressed if compressed else content
-            
+
         except Exception as e:
-            logger.error(f"压缩内容失败: {e}")
+            logger.error(f"压缩内容失败: {e}", exc_info=True)
             return content
     
     async def merge_duplicate_memories(
@@ -350,15 +362,15 @@ class AdvancedArchiver:
         if not self.llm_client:
             # 返回最早的记忆内容
             return memories[0].get("content", "") if memories else ""
-        
+
         try:
             # 构建合并提示
             contents = []
             for i, m in enumerate(memories):
                 contents.append(f"记忆 {i+1}:\n{m.get('content', '')}")
-            
+
             all_content = "\n\n---\n\n".join(contents)
-            
+
             prompt = f"""请将以下相似的记忆内容合并为一个连贯的摘要。
 
 {all_content}
@@ -372,13 +384,24 @@ class AdvancedArchiver:
 
 请直接输出合并后的内容："""
 
-            response = await self.llm_client.generate(prompt)
-            merged = response.get("text", "").strip()
-            
+            # 使用 chat 方法而不是 generate 方法
+            response = await self.llm_client.chat(
+                messages=[{"role": "user", "content": prompt}],
+                stream=False
+            )
+
+            # 处理 LLMResponse 对象
+            if hasattr(response, 'content'):
+                merged = response.content.strip()
+            elif isinstance(response, dict):
+                merged = response.get("content", "").strip()
+            else:
+                merged = str(response).strip()
+
             return merged if merged else memories[0].get("content", "")
-            
+
         except Exception as e:
-            logger.error(f"智能合并失败: {e}")
+            logger.error(f"智能合并失败: {e}", exc_info=True)
             return memories[0].get("content", "") if memories else ""
     
     async def archive_of_archives(self, archive_level: int = 4):

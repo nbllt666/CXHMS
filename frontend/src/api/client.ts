@@ -1,13 +1,24 @@
 import axios, { AxiosInstance, AxiosError } from 'axios'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const CONTROL_SERVICE_URL = 'http://localhost:8765'
 
 class ApiClient {
   private client: AxiosInstance
+  private controlClient: AxiosInstance
 
   constructor() {
     this.client = axios.create({
       baseURL: API_BASE_URL,
+      timeout: 30000,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    // Control service client (for managing main backend)
+    this.controlClient = axios.create({
+      baseURL: CONTROL_SERVICE_URL,
       timeout: 30000,
       headers: {
         'Content-Type': 'application/json',
@@ -41,7 +52,41 @@ class ApiClient {
     )
   }
 
-  // Service Management
+  // ========== Control Service APIs (Port 8765) ==========
+
+  // Check control service health
+  async getControlServiceHealth() {
+    const response = await this.controlClient.get('/health')
+    return response.data
+  }
+
+  // Get main backend status via control service
+  async getMainBackendStatus() {
+    const response = await this.controlClient.get('/control/status')
+    return response.data
+  }
+
+  // Start main backend service
+  async startMainBackend() {
+    const response = await this.controlClient.post('/control/start')
+    return response.data
+  }
+
+  // Stop main backend service
+  async stopMainBackend() {
+    const response = await this.controlClient.post('/control/stop')
+    return response.data
+  }
+
+  // Restart main backend service
+  async restartMainBackend() {
+    const response = await this.controlClient.post('/control/restart')
+    return response.data
+  }
+
+  // ========== Main Backend APIs (Port 8000) ==========
+
+  // Service Management (via main backend when running)
   async getServiceStatus() {
     const response = await this.client.get('/api/service/status')
     return response.data
@@ -84,7 +129,7 @@ class ApiClient {
     return response.data
   }
 
-  async updateServiceConfig(config: Record<string, any>) {
+  async updateServiceConfig(config: Record<string, unknown>) {
     const response = await this.client.post('/api/service/config', config)
     return response.data
   }

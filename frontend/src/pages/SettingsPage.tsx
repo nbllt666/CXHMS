@@ -1,18 +1,18 @@
-import { useState, useEffect } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
-import { 
-  Database, 
-  Server, 
-  Brain, 
+import { useState, useEffect, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import {
+  Database,
+  Server,
+  Brain,
   Save,
   CheckCircle2,
   AlertCircle,
   Play,
-  Square,
   RotateCcw,
   Terminal,
   Activity,
-  Package
+  Square,
+  Loader2
 } from 'lucide-react'
 import { api } from '../api/client'
 import { cn } from '../lib/utils'
@@ -46,65 +46,70 @@ const sections: SettingSection[] = [
 ]
 
 export function SettingsPage() {
-  const [activeSection, setActiveSection] = useState('service')
+  const [activeSection, setActiveSection] = useState<'service' | 'vector' | 'llm'>('service')
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [logs, setLogs] = useState('')
-  const [useConda, setUseConda] = useState(true)
+  const [isBackendRunning, setIsBackendRunning] = useState(false)
+  const [isControlServiceReady, setIsControlServiceReady] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
 
-  // Service status query
-  const { data: serviceStatus, refetch: refetchStatus } = useQuery({
-    queryKey: ['serviceStatus'],
-    queryFn: () => api.getServiceStatus(),
-    refetchInterval: 5000
-  })
+  // Check control service health
+  const checkControlService = useCallback(async () => {
+    try {
+      await api.getControlServiceHealth()
+      setIsControlServiceReady(true)
+      return true
+    } catch {
+      setIsControlServiceReady(false)
+      return false
+    }
+  }, [])
 
-  // Service config query
+  // Check main backend status via control service
+  const checkBackendStatus = useCallback(async () => {
+    try {
+      const status = await api.getMainBackendStatus()
+      setIsBackendRunning(status.running)
+      return status.running
+    } catch {
+      setIsBackendRunning(false)
+      return false
+    }
+  }, [])
+
+  // Initial checks
+  useEffect(() => {
+    checkControlService()
+    checkBackendStatus()
+
+    const interval = setInterval(() => {
+      checkControlService()
+      checkBackendStatus()
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [checkControlService, checkBackendStatus])
+
+  // Service config query (only when backend is running)
   const { data: serviceConfig } = useQuery({
     queryKey: ['serviceConfig'],
-    queryFn: () => api.getServiceConfig()
+    queryFn: () => api.getServiceConfig(),
+    enabled: isBackendRunning
   })
 
-  // Environment info query
-  const { data: envInfo } = useQuery({
-    queryKey: ['environmentInfo'],
-    queryFn: () => api.getEnvironmentInfo()
-  })
-
-  // Service mutations
-  const startService = useMutation({
-    mutationFn: () => api.startService({
-      host: serviceConfig?.config?.host || '0.0.0.0',
-      port: serviceConfig?.config?.port || 8000,
-      log_level: serviceConfig?.config?.log_level || 'info',
-      use_conda: useConda
-    }),
-    onSuccess: () => refetchStatus()
-  })
-
-  const stopService = useMutation({
-    mutationFn: () => api.stopService(),
-    onSuccess: () => refetchStatus()
-  })
-
-  const restartService = useMutation({
-    mutationFn: () => api.restartService({
-      host: serviceConfig?.config?.host || '0.0.0.0',
-      port: serviceConfig?.config?.port || 8000,
-      log_level: serviceConfig?.config?.log_level || 'info',
-      use_conda: useConda
-    }),
-    onSuccess: () => refetchStatus()
-  })
-
-  // Load logs
-  const loadLogs = async () => {
+  // Load logs (only when backend is running)
+  const loadLogs = useCallback(async () => {
+    if (!isBackendRunning) {
+      setLogs('后端服务未运行')
+      return
+    }
     try {
       const data = await api.getServiceLogs(50)
       setLogs(data.logs || '暂无日志')
     } catch {
       setLogs('无法加载日志')
     }
-  }
+  }, [isBackendRunning])
 
   useEffect(() => {
     if (activeSection === 'service') {
@@ -112,14 +117,65 @@ export function SettingsPage() {
       const interval = setInterval(loadLogs, 3000)
       return () => clearInterval(interval)
     }
-  }, [activeSection])
+  }, [activeSection, loadLogs])
 
-  // Set default useConda based on availability
-  useEffect(() => {
-    if (serviceConfig?.config?.conda_available !== undefined) {
-      setUseConda(serviceConfig.config.conda_available)
+  // Start main backend service
+  const handleStartBackend = async () => {
+    if (!isControlServiceReady) {
+      alert('控制服务未就绪，请稍后再试')
+      return
     }
-  }, [serviceConfig])
+    setIsProcessing(true)
+    try {
+      await api.startMainBackend()
+      // Wait a moment for the service to start
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      await checkBackendStatus()
+    } catch (error) {
+      console.error('Failed to start backend:', error)
+      alert('启动后端服务失败，请检查控制台日志')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  // Stop main backend service
+  const handleStopBackend = async () => {
+    if (!isControlServiceReady) {
+      alert('控制服务未就绪')
+      return
+    }
+    setIsProcessing(true)
+    try {
+      await api.stopMainBackend()
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      await checkBackendStatus()
+    } catch (error) {
+      console.error('Failed to stop backend:', error)
+      alert('停止后端服务失败')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  // Restart main backend service
+  const handleRestartBackend = async () => {
+    if (!isControlServiceReady) {
+      alert('控制服务未就绪')
+      return
+    }
+    setIsProcessing(true)
+    try {
+      await api.restartMainBackend()
+      await new Promise(resolve => setTimeout(resolve, 3000))
+      await checkBackendStatus()
+    } catch (error) {
+      console.error('Failed to restart backend:', error)
+      alert('重启后端服务失败')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
 
   const [vectorConfig, setVectorConfig] = useState({
     backend: 'weaviate_embedded',
@@ -137,15 +193,41 @@ export function SettingsPage() {
   })
 
   const handleSave = async () => {
+    if (!isBackendRunning) {
+      alert('后端服务未运行，无法保存配置')
+      return
+    }
     setSaveStatus('saving')
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    setSaveStatus('saved')
+    try {
+      // 保存向量配置
+      if (activeSection === 'vector') {
+        await api.updateServiceConfig({
+          vector: {
+            backend: vectorConfig.backend,
+            weaviate_host: vectorConfig.weaviateHost,
+            weaviate_port: vectorConfig.weaviatePort,
+            vector_size: vectorConfig.vectorSize
+          }
+        })
+      }
+      // 保存LLM配置
+      else if (activeSection === 'llm') {
+        await api.updateServiceConfig({
+          llm: {
+            provider: llmConfig.provider,
+            host: llmConfig.host,
+            model: llmConfig.model,
+            temperature: llmConfig.temperature,
+            max_tokens: llmConfig.maxTokens
+          }
+        })
+      }
+      setSaveStatus('saved')
+    } catch {
+      setSaveStatus('error')
+    }
     setTimeout(() => setSaveStatus('idle'), 2000)
   }
-
-  const isRunning = serviceStatus?.running || false
-  const condaAvailable = serviceConfig?.config?.conda_available || false
-  const isUsingConda = serviceStatus?.using_conda || false
 
   return (
     <div className="h-full flex">
@@ -156,7 +238,7 @@ export function SettingsPage() {
           {sections.map((section) => (
             <button
               key={section.id}
-              onClick={() => setActiveSection(section.id)}
+              onClick={() => setActiveSection(section.id as 'service' | 'vector' | 'llm')}
               className={cn(
                 'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left',
                 activeSection === section.id
@@ -184,133 +266,144 @@ export function SettingsPage() {
             <div>
               <h3 className="text-lg font-semibold mb-1">服务管理</h3>
               <p className="text-sm text-muted-foreground">
-                管理 CXHMS 后端服务的启动、停止和重启
+                通过控制服务管理 CXHMS 后端服务的启动、停止和重启
               </p>
             </div>
 
-            {/* Status Card */}
+            {/* Control Service Status */}
+            <div className="bg-card border border-border rounded-xl p-4">
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "w-3 h-3 rounded-full",
+                  isControlServiceReady ? "bg-green-500" : "bg-red-500"
+                )} />
+                <span className="text-sm">
+                  控制服务状态:
+                  <span className={cn(
+                    "font-medium ml-1",
+                    isControlServiceReady ? "text-green-500" : "text-red-500"
+                  )}>
+                    {isControlServiceReady ? '运行中 (端口 8765)' : '未就绪'}
+                  </span>
+                </span>
+              </div>
+              {!isControlServiceReady && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  控制服务随前端自动启动，请等待几秒钟...
+                </p>
+              )}
+            </div>
+
+            {/* Main Backend Status Card */}
             <div className="bg-card border border-border rounded-xl p-6">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-4">
                   <div className={cn(
                     "w-12 h-12 rounded-xl flex items-center justify-center",
-                    isRunning ? "bg-green-500/10" : "bg-red-500/10"
+                    isBackendRunning ? "bg-green-500/10" : "bg-red-500/10"
                   )}>
                     <Activity className={cn(
                       "w-6 h-6",
-                      isRunning ? "text-green-500" : "text-red-500"
+                      isBackendRunning ? "text-green-500" : "text-red-500"
                     )} />
                   </div>
                   <div>
                     <h4 className="font-semibold">
-                      {isRunning ? '服务运行中' : '服务已停止'}
+                      {isBackendRunning ? '主后端服务运行中' : '主后端服务已停止'}
                     </h4>
                     <p className="text-sm text-muted-foreground">
-                      {isRunning 
-                        ? `PID: ${serviceStatus?.pid} | 端口: ${serviceStatus?.port} ${isUsingConda ? '| Conda环境' : '| 系统Python'}`
-                        : '点击启动按钮启动后端服务'
+                      {isBackendRunning
+                        ? `后端服务正在运行，访问 http://localhost:8000`
+                        : '后端服务未运行，点击启动按钮开启服务'
                       }
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {!isRunning ? (
-                    <button
-                      onClick={() => startService.mutate()}
-                      disabled={startService.isPending}
-                      className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 transition-colors"
-                    >
-                      <Play className="w-4 h-4" />
-                      {startService.isPending ? '启动中...' : '启动服务'}
-                    </button>
-                  ) : (
+                  {isBackendRunning ? (
                     <>
                       <button
-                        onClick={() => restartService.mutate()}
-                        disabled={restartService.isPending}
-                        className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                        onClick={handleRestartBackend}
+                        disabled={isProcessing || !isControlServiceReady}
+                        className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <RotateCcw className={cn("w-4 h-4", restartService.isPending && "animate-spin")} />
+                        {isProcessing ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <RotateCcw className="w-4 h-4" />
+                        )}
                         重启
                       </button>
                       <button
-                        onClick={() => stopService.mutate()}
-                        disabled={stopService.isPending}
-                        className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 transition-colors"
+                        onClick={handleStopBackend}
+                        disabled={isProcessing || !isControlServiceReady}
+                        className="flex items-center gap-2 px-4 py-2 bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <Square className="w-4 h-4" />
+                        {isProcessing ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Square className="w-4 h-4" />
+                        )}
                         停止
                       </button>
                     </>
+                  ) : (
+                    <button
+                      onClick={handleStartBackend}
+                      disabled={isProcessing || !isControlServiceReady}
+                      className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isProcessing ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Play className="w-4 h-4" />
+                      )}
+                      启动后端服务
+                    </button>
                   )}
                 </div>
               </div>
-
-              {/* Environment Selection */}
-              {condaAvailable && (
-                <div className="mb-4 p-4 bg-muted rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Package className="w-5 h-5 text-primary" />
-                      <div>
-                        <h5 className="font-medium">Python 环境</h5>
-                        <p className="text-xs text-muted-foreground">
-                          选择启动服务使用的 Python 环境
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="python-env"
-                          checked={useConda}
-                          onChange={() => setUseConda(true)}
-                          disabled={isRunning}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm">Conda 环境</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer ml-4">
-                        <input
-                          type="radio"
-                          name="python-env"
-                          checked={!useConda}
-                          onChange={() => setUseConda(false)}
-                          disabled={isRunning}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm">系统 Python</span>
-                      </label>
-                    </div>
-                  </div>
-                  {envInfo?.environment?.conda_python_path && (
-                    <p className="text-xs text-muted-foreground mt-2 pl-8">
-                      Conda 路径: {envInfo.environment.conda_python_path}
-                    </p>
-                  )}
-                </div>
-              )}
 
               {/* Service Config */}
-              <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg">
-                <div>
-                  <span className="text-xs text-muted-foreground">主机</span>
-                  <p className="font-medium">{serviceConfig?.config?.host || '0.0.0.0'}</p>
+              {isBackendRunning ? (
+                <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg">
+                  <div>
+                    <span className="text-xs text-muted-foreground">主机</span>
+                    <p className="font-medium">{serviceConfig?.config?.host || '0.0.0.0'}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">端口</span>
+                    <p className="font-medium">{serviceConfig?.config?.port || 8000}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">日志级别</span>
+                    <p className="font-medium">{serviceConfig?.config?.log_level || 'info'}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">调试模式</span>
+                    <p className="font-medium">{serviceConfig?.config?.debug ? '开启' : '关闭'}</p>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-xs text-muted-foreground">端口</span>
-                  <p className="font-medium">{serviceConfig?.config?.port || 8000}</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg opacity-60">
+                  <div>
+                    <span className="text-xs text-muted-foreground">主机</span>
+                    <p className="font-medium">0.0.0.0</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">端口</span>
+                    <p className="font-medium">8000</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">日志级别</span>
+                    <p className="font-medium">info</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">调试模式</span>
+                    <p className="font-medium">关闭</p>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-xs text-muted-foreground">日志级别</span>
-                  <p className="font-medium">{serviceConfig?.config?.log_level || 'info'}</p>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground">调试模式</span>
-                  <p className="font-medium">{serviceConfig?.config?.debug ? '开启' : '关闭'}</p>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Logs */}
@@ -335,6 +428,14 @@ export function SettingsPage() {
                 选择并配置向量数据库后端，支持 Weaviate Embedded 和普通 Weaviate
               </p>
             </div>
+
+            {!isBackendRunning && (
+              <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                <p className="text-sm text-yellow-600">
+                  后端服务未运行，配置保存后将在服务启动时生效
+                </p>
+              </div>
+            )}
 
             <div className="space-y-4">
               <div>
@@ -408,6 +509,14 @@ export function SettingsPage() {
                 配置大语言模型提供商和参数
               </p>
             </div>
+
+            {!isBackendRunning && (
+              <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                <p className="text-sm text-yellow-600">
+                  后端服务未运行，配置保存后将在服务启动时生效
+                </p>
+              </div>
+            )}
 
             <div className="space-y-4">
               <div>

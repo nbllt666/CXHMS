@@ -1,8 +1,8 @@
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
-import logging
+from backend.core.logging_config import get_contextual_logger
 
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 
 @dataclass

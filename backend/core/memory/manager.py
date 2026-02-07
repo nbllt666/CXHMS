@@ -2,10 +2,10 @@ from typing import List, Dict, Optional, Any, Tuple
 from datetime import datetime
 from pathlib import Path
 import json
-import logging
 import threading
 import time
 from backend.core.exceptions import DatabaseError, MemoryError, VectorStoreError
+from backend.core.logging_config import get_contextual_logger
 
 try:
     import orjson
@@ -20,7 +20,7 @@ except ImportError:
     def json_loads(s, **kwargs):
         return json.loads(s, **kwargs)
 
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 
 class MemoryManager:
@@ -239,16 +239,16 @@ class MemoryManager:
                     if isinstance(conn_info, dict):
                         conn_info['last_used'] = time.time()
                     return conn
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"验证连接池连接失败: {e}")
 
                 try:
                     if isinstance(conn_info, dict):
                         conn_info['connection'].close()
                     else:
                         conn.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"关闭旧连接失败: {e}")
                 del self._connection_pool[thread_id]
 
         try:
@@ -284,8 +284,8 @@ class MemoryManager:
                         conn_info['connection'].close()
                     else:
                         conn_info.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"关闭连接失败: {e}")
             self._connection_pool.clear()
 
     def write_memory(
@@ -321,42 +321,43 @@ class MemoryManager:
             conn = self._get_connection()
             cursor = conn.cursor()
 
-            cursor.execute('''
-                INSERT INTO memories (
-                    type, content, importance, importance_score,
-                    decay_type, decay_params, reactivation_count,
-                    emotion_score, permanent, psychological_age,
-                    tags, metadata, created_at, workspace_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                memory_type,
-                content,
-                importance,
-                0.6 if not permanent else 1.0,
-                "zero" if permanent else "exponential",
-                json_dumps({}),
-                0,
-                emotion_score,
-                permanent,
-                1.0,
-                json_dumps(tags or [], ensure_ascii=False),
-                json_dumps(metadata or {}, ensure_ascii=False),
-                datetime.now().isoformat(),
-                workspace_id
-            ))
+            try:
+                cursor.execute('''
+                    INSERT INTO memories (
+                        type, content, importance, importance_score,
+                        decay_type, decay_params, reactivation_count,
+                        emotion_score, permanent, psychological_age,
+                        tags, metadata, created_at, workspace_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    memory_type,
+                    content,
+                    importance,
+                    0.6 if not permanent else 1.0,
+                    "zero" if permanent else "exponential",
+                    json_dumps({}),
+                    0,
+                    emotion_score,
+                    permanent,
+                    1.0,
+                    json_dumps(tags or [], ensure_ascii=False),
+                    json_dumps(metadata or {}, ensure_ascii=False),
+                    datetime.now().isoformat(),
+                    workspace_id
+                ))
 
-            memory_id = cursor.lastrowid
+                memory_id = cursor.lastrowid
 
-            cursor.execute('''
-                INSERT INTO audit_logs (operation, memory_id, operator, details)
-                VALUES (?, ?, ?, ?)
-            ''', ("create", memory_id, "system", json_dumps({"type": memory_type})))
+                cursor.execute('''
+                    INSERT INTO audit_logs (operation, memory_id, operator, details)
+                    VALUES (?, ?, ?, ?)
+                ''', ("create", memory_id, "system", json_dumps({"type": memory_type})))
 
-            conn.commit()
-            conn.close()
-
-            logger.info(f"记忆已写入: id={memory_id}, type={memory_type}")
-            return memory_id
+                conn.commit()
+                logger.info(f"记忆已写入: id={memory_id}, type={memory_type}")
+                return memory_id
+            finally:
+                conn.close()
 
     def get_memory(self, memory_id: int, include_deleted: bool = False) -> Optional[Dict]:
         """获取记忆
@@ -371,17 +372,19 @@ class MemoryManager:
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        query = "SELECT * FROM memories WHERE id = ?"
-        if not include_deleted:
-            query += " AND is_deleted = FALSE"
+        try:
+            query = "SELECT * FROM memories WHERE id = ?"
+            if not include_deleted:
+                query += " AND is_deleted = FALSE"
 
-        cursor.execute(query, (memory_id,))
-        row = cursor.fetchone()
-        conn.close()
+            cursor.execute(query, (memory_id,))
+            row = cursor.fetchone()
 
-        if row:
-            return self._row_to_memory(row)
-        return None
+            if row:
+                return self._row_to_memory(row)
+            return None
+        finally:
+            conn.close()
 
     def search_memories(
         self,
@@ -410,51 +413,52 @@ class MemoryManager:
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        conditions = ["workspace_id = ?"]
-        params = [workspace_id]
+        try:
+            conditions = ["workspace_id = ?"]
+            params = [workspace_id]
 
-        if query:
-            conditions.append("content LIKE ?")
-            params.append(f"%{query}%")
+            if query:
+                conditions.append("content LIKE ?")
+                params.append(f"%{query}%")
 
-        if memory_type:
-            conditions.append("type = ?")
-            params.append(memory_type)
+            if memory_type:
+                conditions.append("type = ?")
+                params.append(memory_type)
 
-        if tags:
-            for tag in tags:
-                conditions.append("tags LIKE ?")
-                params.append(f'%"{tag}"%')
+            if tags:
+                for tag in tags:
+                    conditions.append("tags LIKE ?")
+                    params.append(f'%"{tag}"%')
 
-        if time_range:
-            from datetime import timedelta
-            now = datetime.now()
-            if time_range == "today":
-                start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            elif time_range == "last_week":
-                start_time = now - timedelta(days=7)
-            elif time_range == "last_month":
-                start_time = now - timedelta(days=30)
-            else:
-                start_time = now - timedelta(days=1)
-            conditions.append("created_at >= ?")
-            params.append(start_time.isoformat())
+            if time_range:
+                from datetime import timedelta
+                now = datetime.now()
+                if time_range == "today":
+                    start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                elif time_range == "last_week":
+                    start_time = now - timedelta(days=7)
+                elif time_range == "last_month":
+                    start_time = now - timedelta(days=30)
+                else:
+                    start_time = now - timedelta(days=1)
+                conditions.append("created_at >= ?")
+                params.append(start_time.isoformat())
 
-        if not include_deleted:
-            conditions.append("is_deleted = FALSE")
+            if not include_deleted:
+                conditions.append("is_deleted = FALSE")
 
-        where_clause = " AND ".join(conditions) if conditions else "1=1"
-        params.append(limit)
+            where_clause = " AND ".join(conditions) if conditions else "1=1"
+            params.append(limit)
 
-        cursor.execute(
-            f"SELECT * FROM memories WHERE {where_clause} ORDER BY importance DESC, created_at DESC LIMIT ?",
-            params
-        )
+            cursor.execute(
+                f"SELECT * FROM memories WHERE {where_clause} ORDER BY importance DESC, created_at DESC LIMIT ?",
+                params
+            )
 
-        rows = cursor.fetchall()
-        conn.close()
-
-        return [self._row_to_memory(row) for row in rows]
+            rows = cursor.fetchall()
+            return [self._row_to_memory(row) for row in rows]
+        finally:
+            conn.close()
 
     def update_memory(
         self,
@@ -468,92 +472,95 @@ class MemoryManager:
             conn = self._get_connection()
             cursor = conn.cursor()
 
-            updates = []
-            params = []
+            try:
+                updates = []
+                params = []
 
-            if new_content is not None:
-                updates.append("content = ?")
-                params.append(new_content)
+                if new_content is not None:
+                    updates.append("content = ?")
+                    params.append(new_content)
 
-            if new_tags is not None:
-                updates.append("tags = ?")
-                params.append(json_dumps(new_tags, ensure_ascii=False))
+                if new_tags is not None:
+                    updates.append("tags = ?")
+                    params.append(json_dumps(new_tags, ensure_ascii=False))
 
-            if new_importance is not None:
-                updates.append("importance = ?")
-                params.append(new_importance)
+                if new_importance is not None:
+                    updates.append("importance = ?")
+                    params.append(new_importance)
 
-            if new_metadata is not None:
-                updates.append("metadata = ?")
-                params.append(json_dumps(new_metadata, ensure_ascii=False))
+                if new_metadata is not None:
+                    updates.append("metadata = ?")
+                    params.append(json_dumps(new_metadata, ensure_ascii=False))
 
-            if not updates:
-                return False
+                if not updates:
+                    return False
 
-            updates.append("updated_at = ?")
-            params.append(datetime.now().isoformat())
-            params.append(memory_id)
+                updates.append("updated_at = ?")
+                params.append(datetime.now().isoformat())
+                params.append(memory_id)
 
-            query = f"UPDATE memories SET {', '.join(updates)} WHERE id = ? AND is_deleted = FALSE"
-            cursor.execute(query, params)
+                query = f"UPDATE memories SET {', '.join(updates)} WHERE id = ? AND is_deleted = FALSE"
+                cursor.execute(query, params)
 
-            success = cursor.rowcount > 0
-            conn.commit()
-            conn.close()
-
-            return success
+                success = cursor.rowcount > 0
+                conn.commit()
+                return success
+            finally:
+                conn.close()
 
     def delete_memory(self, memory_id: int, soft_delete: bool = True) -> bool:
         with self._lock:
             conn = self._get_connection()
             cursor = conn.cursor()
 
-            if soft_delete:
-                query = "UPDATE memories SET is_deleted = TRUE, updated_at = ? WHERE id = ? AND is_deleted = FALSE"
-                params = (datetime.now().isoformat(), memory_id)
-            else:
-                query = "DELETE FROM memories WHERE id = ?"
-                params = (memory_id,)
+            try:
+                if soft_delete:
+                    query = "UPDATE memories SET is_deleted = TRUE, updated_at = ? WHERE id = ? AND is_deleted = FALSE"
+                    params = (datetime.now().isoformat(), memory_id)
+                else:
+                    query = "DELETE FROM memories WHERE id = ?"
+                    params = (memory_id,)
 
-            cursor.execute(query, params)
+                cursor.execute(query, params)
 
-            success = cursor.rowcount > 0
+                success = cursor.rowcount > 0
 
-            if success:
-                cursor.execute('''
-                    INSERT INTO audit_logs (operation, memory_id, operator, details)
-                    VALUES (?, ?, ?, ?)
-                ''', ("delete" if not soft_delete else "soft_delete", memory_id, "system", json_dumps({"soft_delete": soft_delete})))
+                if success:
+                    cursor.execute('''
+                        INSERT INTO audit_logs (operation, memory_id, operator, details)
+                        VALUES (?, ?, ?, ?)
+                    ''', ("delete" if not soft_delete else "soft_delete", memory_id, "system", json_dumps({"soft_delete": soft_delete})))
 
-            conn.commit()
-            conn.close()
-
-            return success
+                conn.commit()
+                return success
+            finally:
+                conn.close()
 
     def get_statistics(self, workspace_id: str = "default") -> Dict:
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT COUNT(*) FROM memories WHERE is_deleted = FALSE AND workspace_id = ?", (workspace_id,))
-        total = cursor.fetchone()[0]
+        try:
+            cursor.execute("SELECT COUNT(*) FROM memories WHERE is_deleted = FALSE AND workspace_id = ?", (workspace_id,))
+            total = cursor.fetchone()[0]
 
-        cursor.execute("SELECT type, COUNT(*) FROM memories WHERE is_deleted = FALSE AND workspace_id = ? GROUP BY type", (workspace_id,))
-        by_type = {row[0]: row[1] for row in cursor.fetchall()}
+            cursor.execute("SELECT type, COUNT(*) FROM memories WHERE is_deleted = FALSE AND workspace_id = ? GROUP BY type", (workspace_id,))
+            by_type = {row[0]: row[1] for row in cursor.fetchall()}
 
-        cursor.execute("SELECT COUNT(*) FROM memories WHERE is_deleted = TRUE AND workspace_id = ?", (workspace_id,))
-        soft_deleted = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM memories WHERE is_deleted = TRUE AND workspace_id = ?", (workspace_id,))
+            soft_deleted = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM memories WHERE permanent = TRUE AND is_deleted = FALSE AND workspace_id = ?", (workspace_id,))
-        permanent = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM memories WHERE permanent = TRUE AND is_deleted = FALSE AND workspace_id = ?", (workspace_id,))
+            permanent = cursor.fetchone()[0]
 
-        conn.close()
-
-        return {
-            "total": total,
-            "by_type": by_type,
-            "soft_deleted": soft_deleted,
-            "permanent": permanent
-        }
+            return {
+                "total": total,
+                "by_type": by_type,
+                "soft_deleted": soft_deleted,
+                "permanent": permanent
+            }
+        finally:
+            conn.close()
 
     def _row_to_memory(self, row) -> Dict:
         try:
@@ -700,46 +707,49 @@ class MemoryManager:
             conn = self._get_connection()
             cursor = conn.cursor()
 
-            cursor.execute('''
-                INSERT INTO permanent_memories (
-                    content, importance_score, emotion_score,
-                    tags, metadata, created_at, source, verified
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                content,
-                1.0,
-                emotion_score,
-                json_dumps(tags or [], ensure_ascii=False),
-                json_dumps(metadata or {}, ensure_ascii=False),
-                datetime.now().isoformat(),
-                source,
-                is_from_main
-            ))
+            try:
+                cursor.execute('''
+                    INSERT INTO permanent_memories (
+                        content, importance_score, emotion_score,
+                        tags, metadata, created_at, source, verified
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    content,
+                    1.0,
+                    emotion_score,
+                    json_dumps(tags or [], ensure_ascii=False),
+                    json_dumps(metadata or {}, ensure_ascii=False),
+                    datetime.now().isoformat(),
+                    source,
+                    is_from_main
+                ))
 
-            memory_id = cursor.lastrowid
+                memory_id = cursor.lastrowid
 
-            cursor.execute('''
-                INSERT INTO audit_logs (operation, memory_id, memory_type, operator, details)
-                VALUES (?, ?, ?, ?, ?)
-            ''', ("create_permanent", memory_id, "permanent", "main_model" if is_from_main else "secondary_model", json_dumps({"source": source})))
+                cursor.execute('''
+                    INSERT INTO audit_logs (operation, memory_id, session_id, operator, details)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', ("create_permanent", memory_id, None, "main_model" if is_from_main else "secondary_model", json_dumps({"source": source})))
 
-            conn.commit()
-            conn.close()
-
-            logger.info(f"永久记忆已写入: id={memory_id}, source={source}")
-            return memory_id
+                conn.commit()
+                logger.info(f"永久记忆已写入: id={memory_id}, source={source}")
+                return memory_id
+            finally:
+                conn.close()
 
     def get_permanent_memory(self, memory_id: int) -> Optional[Dict]:
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT * FROM permanent_memories WHERE id = ?", (memory_id,))
-        row = cursor.fetchone()
-        conn.close()
+        try:
+            cursor.execute("SELECT * FROM permanent_memories WHERE id = ?", (memory_id,))
+            row = cursor.fetchone()
 
-        if row:
-            return self._row_to_permanent_memory(row)
-        return None
+            if row:
+                return self._row_to_permanent_memory(row)
+            return None
+        finally:
+            conn.close()
 
     def get_permanent_memories(
         self,
@@ -750,22 +760,23 @@ class MemoryManager:
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        query = "SELECT * FROM permanent_memories WHERE 1=1"
-        params = []
+        try:
+            query = "SELECT * FROM permanent_memories WHERE 1=1"
+            params = []
 
-        if tags:
-            for tag in tags:
-                query += " AND tags LIKE ?"
-                params.append(f'%"{tag}"%')
+            if tags:
+                for tag in tags:
+                    query += " AND tags LIKE ?"
+                    params.append(f'%"{tag}"%')
 
-        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
+            query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
 
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-        conn.close()
-
-        return [self._row_to_permanent_memory(row) for row in rows]
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return [self._row_to_permanent_memory(row) for row in rows]
+        finally:
+            conn.close()
 
     def update_permanent_memory(
         self,
@@ -778,43 +789,44 @@ class MemoryManager:
             conn = self._get_connection()
             cursor = conn.cursor()
 
-            updates = []
-            params = []
+            try:
+                updates = []
+                params = []
 
-            if content is not None:
-                updates.append("content = ?")
-                params.append(content)
+                if content is not None:
+                    updates.append("content = ?")
+                    params.append(content)
 
-            if tags is not None:
-                updates.append("tags = ?")
-                params.append(json_dumps(tags, ensure_ascii=False))
+                if tags is not None:
+                    updates.append("tags = ?")
+                    params.append(json_dumps(tags, ensure_ascii=False))
 
-            if metadata is not None:
-                updates.append("metadata = ?")
-                params.append(json_dumps(metadata, ensure_ascii=False))
+                if metadata is not None:
+                    updates.append("metadata = ?")
+                    params.append(json_dumps(metadata, ensure_ascii=False))
 
-            if not updates:
-                return False
+                if not updates:
+                    return False
 
-            updates.append("updated_at = ?")
-            params.append(datetime.now().isoformat())
-            params.append(memory_id)
+                updates.append("updated_at = ?")
+                params.append(datetime.now().isoformat())
+                params.append(memory_id)
 
-            query = f"UPDATE permanent_memories SET {', '.join(updates)} WHERE id = ?"
-            cursor.execute(query, params)
+                query = f"UPDATE permanent_memories SET {', '.join(updates)} WHERE id = ?"
+                cursor.execute(query, params)
 
-            success = cursor.rowcount > 0
+                success = cursor.rowcount > 0
 
-            if success:
-                cursor.execute('''
-                    INSERT INTO audit_logs (operation, memory_id, memory_type, operator, details)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', ("update_permanent", memory_id, "permanent", "system", json_dumps({"updates": updates})))
+                if success:
+                    cursor.execute('''
+                        INSERT INTO audit_logs (operation, memory_id, session_id, operator, details)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', ("update_permanent", memory_id, None, "system", json_dumps({"updates": updates})))
 
-            conn.commit()
-            conn.close()
-
-            return success
+                conn.commit()
+                return success
+            finally:
+                conn.close()
 
     def delete_permanent_memory(self, memory_id: int, is_from_main: bool = True) -> bool:
         if not is_from_main:
@@ -825,20 +837,21 @@ class MemoryManager:
             conn = self._get_connection()
             cursor = conn.cursor()
 
-            cursor.execute("DELETE FROM permanent_memories WHERE id = ?", (memory_id,))
+            try:
+                cursor.execute("DELETE FROM permanent_memories WHERE id = ?", (memory_id,))
 
-            success = cursor.rowcount > 0
+                success = cursor.rowcount > 0
 
-            if success:
-                cursor.execute('''
-                    INSERT INTO audit_logs (operation, memory_id, memory_type, operator, details)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', ("delete_permanent", memory_id, "permanent", "main_model", json_dumps({})))
+                if success:
+                    cursor.execute('''
+                        INSERT INTO audit_logs (operation, memory_id, session_id, operator, details)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', ("delete_permanent", memory_id, None, "main_model", json_dumps({})))
 
-            conn.commit()
-            conn.close()
-
-            return success
+                conn.commit()
+                return success
+            finally:
+                conn.close()
 
     def _row_to_permanent_memory(self, row) -> Dict:
         try:
@@ -874,32 +887,34 @@ class MemoryManager:
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        conditions = ["workspace_id = ?", "is_deleted = FALSE"]
-        params = [workspace_id]
+        try:
+            conditions = ["workspace_id = ?", "is_deleted = FALSE"]
+            params = [workspace_id]
 
-        if query:
-            conditions.append("content LIKE ?")
-            params.append(f"%{query}%")
+            if query:
+                conditions.append("content LIKE ?")
+                params.append(f"%{query}%")
 
-        if memory_type:
-            conditions.append("type = ?")
-            params.append(memory_type)
+            if memory_type:
+                conditions.append("type = ?")
+                params.append(memory_type)
 
-        if tags:
-            for tag in tags:
-                conditions.append("tags LIKE ?")
-                params.append(f'%"{tag}"%')
+            if tags:
+                for tag in tags:
+                    conditions.append("tags LIKE ?")
+                    params.append(f'%"{tag}"%')
 
-        where_clause = " AND ".join(conditions)
-        params.append(limit * 2)
+            where_clause = " AND ".join(conditions)
+            params.append(limit * 2)
 
-        cursor.execute(
-            f"SELECT * FROM memories WHERE {where_clause} ORDER BY importance DESC, created_at DESC LIMIT ?",
-            params
-        )
+            cursor.execute(
+                f"SELECT * FROM memories WHERE {where_clause} ORDER BY importance DESC, created_at DESC LIMIT ?",
+                params
+            )
 
-        rows = cursor.fetchall()
-        conn.close()
+            rows = cursor.fetchall()
+        finally:
+            conn.close()
 
         decay_calculator = DecayCalculator()
         scored_memories = []
@@ -951,57 +966,59 @@ class MemoryManager:
             conn = self._get_connection()
             cursor = conn.cursor()
 
-            cursor.execute("SELECT * FROM memories WHERE id = ? AND is_deleted = FALSE", (memory_id,))
-            row = cursor.fetchone()
+            try:
+                cursor.execute("SELECT * FROM memories WHERE id = ? AND is_deleted = FALSE", (memory_id,))
+                row = cursor.fetchone()
 
-            if not row:
-                conn.close()
-                return None
+                if not row:
+                    return None
 
-            memory = self._row_to_memory(row)
+                memory = self._row_to_memory(row)
 
-            reactivation_count = memory.get("reactivation_count", 0)
-            decay_calculator = DecayCalculator()
-            old_time_score = decay_calculator.calculate_time_score(memory, apply_reactivation=False)
+                reactivation_count = memory.get("reactivation_count", 0)
+                decay_calculator = DecayCalculator()
+                old_time_score = decay_calculator.calculate_time_score(memory, apply_reactivation=False)
 
-            new_time_score = min(1.0, old_time_score * (1 + 0.2 * reactivation_count) + 0.1)
-            emotion_bonus = 0.05 * abs(emotion_intensity)
-            new_time_score = min(new_time_score + emotion_bonus, 1.0)
+                new_time_score = min(1.0, old_time_score * (1 + 0.2 * reactivation_count) + 0.1)
+                emotion_bonus = 0.05 * abs(emotion_intensity)
+                new_time_score = min(new_time_score + emotion_bonus, 1.0)
 
-            new_reactivation_count = reactivation_count + 1
-            new_emotion_score = (memory.get("emotion_score", 0.0) + abs(emotion_intensity)) / 2
+                new_reactivation_count = reactivation_count + 1
+                new_emotion_score = (memory.get("emotion_score", 0.0) + abs(emotion_intensity)) / 2
 
-            cursor.execute('''
-                UPDATE memories
-                SET reactivation_count = ?, emotion_score = ?, updated_at = ?
-                WHERE id = ?
-            ''', (new_reactivation_count, new_emotion_score, datetime.now().isoformat(), memory_id))
+                cursor.execute('''
+                    UPDATE memories
+                    SET reactivation_count = ?, emotion_score = ?, updated_at = ?
+                    WHERE id = ?
+                ''', (new_reactivation_count, new_emotion_score, datetime.now().isoformat(), memory_id))
 
-            cursor.execute('''
-                INSERT INTO audit_logs (operation, memory_id, memory_type, operator, details)
-                VALUES (?, ?, ?, ?, ?)
-            ''', ("recall", memory_id, memory.get("type"), "system", json_dumps({
-                "reactivation_count": new_reactivation_count,
-                "emotion_intensity": emotion_intensity,
-                "old_time_score": old_time_score,
-                "new_time_score": new_time_score
-            })))
-
-            conn.commit()
-            conn.close()
-
-            logger.info(f"记忆已召回: id={memory_id}, reactivation_count={new_reactivation_count}")
-
-            updated_memory = self.get_memory(memory_id)
-            if updated_memory:
-                updated_memory["reactivation_details"] = {
+                cursor.execute('''
+                    INSERT INTO audit_logs (operation, memory_id, session_id, operator, details)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', ("recall", memory_id, None, "system", json_dumps({
+                    "reactivation_count": new_reactivation_count,
+                    "emotion_intensity": emotion_intensity,
                     "old_time_score": old_time_score,
                     "new_time_score": new_time_score,
-                    "emotion_bonus": emotion_bonus,
-                    "reactivation_count": new_reactivation_count
-                }
+                    "memory_type": memory.get("type")
+                })))
 
-            return updated_memory
+                conn.commit()
+
+                logger.info(f"记忆已召回: id={memory_id}, reactivation_count={new_reactivation_count}")
+
+                updated_memory = self.get_memory(memory_id)
+                if updated_memory:
+                    updated_memory["reactivation_details"] = {
+                        "old_time_score": old_time_score,
+                        "new_time_score": new_time_score,
+                        "emotion_bonus": emotion_bonus,
+                        "reactivation_count": new_reactivation_count
+                    }
+
+                return updated_memory
+            finally:
+                conn.close()
 
     def batch_write_memories(
         self,

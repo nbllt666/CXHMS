@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from datetime import datetime
 from typing import Dict
-import logging
+from backend.core.logging_config import get_contextual_logger
 
 router = APIRouter()
 

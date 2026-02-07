@@ -2,10 +2,10 @@ from typing import Dict, List, Optional, Any, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
-import logging
 import uuid
+from backend.core.logging_config import get_contextual_logger
 
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 
 @dataclass
@@ -51,6 +51,13 @@ class Tool:
         }
 
 
+import threading
+from typing import Dict, List, Optional, Callable
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
+
 class ToolRegistry:
     _instance = None
     _tools: Dict[str, Tool] = {}
@@ -60,7 +67,7 @@ class ToolRegistry:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._tools = {}
-            cls._instance._lock = __import__("threading").Lock()
+            cls._instance._lock = threading.Lock()
         return cls._instance
 
     def register(

@@ -5,10 +5,10 @@
 from fastapi import APIRouter, HTTPException
 from typing import Dict, List, Optional
 from pydantic import BaseModel
-import logging
+from backend.core.logging_config import get_contextual_logger
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 
 class MemoryChatRequest(BaseModel):
@@ -57,8 +57,8 @@ async def memory_chat(request: MemoryChatRequest):
                 model_router = get_model_router()
                 if model_router:
                     llm_client = model_router.get_client("memory")
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"获取模型路由器失败: {e}")
             
             memory_mgr.conversation_engine = MemoryConversationEngine(
                 memory_manager=memory_mgr,

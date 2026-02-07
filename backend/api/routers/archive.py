@@ -5,10 +5,10 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, List, Optional
 from pydantic import BaseModel
-import logging
+from backend.core.logging_config import get_contextual_logger
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 
 class ArchiveRequest(BaseModel):
@@ -332,22 +332,23 @@ async def auto_archive_process(
             from config.settings import settings
             threshold = settings.config.memory.dedup_threshold
             
-            groups = await memory_mgr.deduplication_engine.detect_duplicates_batch(
-                threshold=threshold
-            )
-            
-            for group in groups:
-                if not group.merged:
-                    merge_result = await memory_mgr.archiver.merge_duplicate_memories(
-                        memory_ids=group.memory_ids,
-                        strategy="smart"
-                    )
-                    if merge_result.success:
-                        results["merged"].append({
-                            "group_id": group.group_id,
-                            "merged_memory_id": merge_result.merged_memory_id,
-                            "memory_count": len(group.memory_ids)
-                        })
+            if hasattr(memory_mgr, 'deduplication_engine') and memory_mgr.deduplication_engine:
+                groups = await memory_mgr.deduplication_engine.detect_duplicates_batch(
+                    threshold=threshold
+                )
+                
+                for group in groups:
+                    if not group.merged:
+                        merge_result = await memory_mgr.archiver.merge_duplicate_memories(
+                            memory_ids=group.memory_ids,
+                            strategy="smart"
+                        )
+                        if merge_result.success:
+                            results["merged"].append({
+                                "group_id": group.group_id,
+                                "merged_memory_id": merge_result.merged_memory_id,
+                                "memory_count": len(group.memory_ids)
+                            })
         
         # 2. 归档旧记忆
         cutoff_date = (datetime.now() - timedelta(days=min_age_days)).isoformat()

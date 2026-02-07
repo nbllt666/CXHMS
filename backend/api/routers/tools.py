@@ -1,10 +1,10 @@
 from fastapi import APIRouter, HTTPException
 from typing import Dict, List, Optional
 from pydantic import BaseModel
-import logging
 from backend.core.exceptions import ToolError
+from backend.core.logging_config import get_contextual_logger
 
-logger = logging.getLogger(__name__)
+logger = get_contextual_logger(__name__)
 
 router = APIRouter()
 
