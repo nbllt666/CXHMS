@@ -1,11 +1,10 @@
 @echo off
-chcp 65001 >nul
+chcp 437 >nul
 cls
 title CXHMS - Frontend with Control Service (System)
 
 echo ==========================================
 echo    CXHMS - Chenxi Humanized Memory System
-echo    Frontend + Control Service (System)
 echo ==========================================
 echo.
 
@@ -16,65 +15,29 @@ echo [INFO] Checking Python...
 
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Python not found or not in PATH!
-    echo Please install Python 3.8 or higher.
+    echo [ERROR] Python not found!
     pause
     exit /b 1
 )
+
 echo [OK] Python found.
 
 echo.
-echo [1/4] Starting Control Service in new window...
-echo    - URL: http://localhost:8765
+echo [1/2] Starting Control Service in new window...
+echo    URL: http://localhost:8765
 
-start "CXHMS Control Service" cmd.exe /c "cd /d %SCRIPT_DIR% && python backend\control_service.py"
+start "CXHMS Control Service" cmd.exe /k "cd /d %SCRIPT_DIR% && python backend\control_service.py"
 
 echo [OK] Control Service starting...
 
 timeout /t 3 /nobreak >nul
 
 echo.
-echo [2/3] Checking frontend dependencies...
-cd frontend
-if not exist "node_modules" (
-    echo [INFO] Installing frontend dependencies...
-    call npm install
-    if errorlevel 1 (
-        echo [ERROR] Failed to install frontend dependencies!
-        pause
-        exit /b 1
-    )
-    echo [OK] Dependencies installed.
-) else (
-    echo [OK] Dependencies exist.
-)
-
-echo.
-echo [3/3] Checking concurrently...
-call npm list concurrently >nul 2>&1
-if errorlevel 1 (
-    echo [INFO] Installing concurrently...
-    call npm install -D concurrently >nul 2>&1
-    if errorlevel 1 (
-        echo [ERROR] Failed to install concurrently!
-        pause
-        exit /b 1
-    )
-)
-echo [OK] Concurrently ready.
-
-echo.
-echo ==========================================
-echo    Starting Frontend...
-echo ==========================================
-echo    - Frontend: http://localhost:5173
-echo    - Control API: http://localhost:8765
+echo [2/2] Starting Frontend...
+echo    URL: http://localhost:5173
 echo.
 echo Press Ctrl+C to stop frontend.
 echo.
 
+cd frontend
 call npm run dev
-
-echo.
-cd ..
-pause

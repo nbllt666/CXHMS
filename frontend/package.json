@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"python ../backend/control_service.py\" \"vite\"",
+    "dev": "vite",
     "dev:frontend": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",

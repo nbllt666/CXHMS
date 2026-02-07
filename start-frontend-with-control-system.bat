@@ -24,6 +24,13 @@ if errorlevel 1 (
 echo [OK] Python found.
 
 echo.
+echo [INFO] Installing Python dependencies...
+python -m pip install -q fastapi uvicorn psutil pydantic httpx
+if errorlevel 1 (
+    echo [WARNING] Some dependencies may have failed to install.
+)
+
+echo.
 echo [1/4] Starting Control Service in new window...
 echo    - URL: http://localhost:8765
 

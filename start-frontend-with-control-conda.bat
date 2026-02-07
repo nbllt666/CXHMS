@@ -28,7 +28,8 @@ echo.
 echo [1/4] Starting Control Service in new window...
 echo    - URL: http://localhost:8765
 
-start "CXHMS Control Service" "cmd.exe" /c "%CONDA_PATH%\Scripts\activate.bat && cd /d %SCRIPT_DIR% && python backend\control_service.py"
+:: 使用 base 环境启动控制服务
+start "CXHMS Control Service" cmd.exe /c "cd /d %SCRIPT_DIR% && %CONDA_PATH%\Scripts\activate.bat base && python backend\control_service.py"
 
 echo [OK] Control Service starting...
 
