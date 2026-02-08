@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import asyncio
 
 from config.settings import settings
-from backend.api.routers import chat, memory, context, tools, acp, admin, archive, service, agents
+from backend.api.routers import chat, memory, context, tools, acp, admin, archive, service, agents, websocket, backup
 from backend.core.logging_config import setup_logging, get_contextual_logger, LogContext
 
 # 配置结构化日志
@@ -217,6 +217,8 @@ app.include_router(admin.router, prefix="/api")
 app.include_router(archive.router, prefix="/api")
 app.include_router(service.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
+app.include_router(backup.router, prefix="/api")
+app.include_router(websocket.router)
 
 
 @app.exception_handler(Exception)

@@ -22,6 +22,7 @@ import { useChatStore } from '../store/chatStore'
 import { cn } from '../lib/utils'
 import { useState, useEffect, useRef } from 'react'
 import { api } from '../api/client'
+import type { Agent } from '../api/client'
 
 const navigation = [
   { name: '对话', href: '/', icon: MessageSquare, hasSubmenu: true },

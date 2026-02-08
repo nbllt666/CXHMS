@@ -3,6 +3,22 @@ import axios, { AxiosInstance, AxiosError } from 'axios'
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 const CONTROL_SERVICE_URL = ''
 
+// Type definitions
+export interface Agent {
+  id: string
+  name: string
+  description?: string
+  is_default?: boolean
+  model?: string
+  temperature?: number
+  max_tokens?: number
+  system_prompt?: string
+  use_memory?: boolean
+  memory_scene?: string
+  tools?: string[]
+  capabilities?: string[]
+}
+
 class ApiClient {
   private client: AxiosInstance
   private controlClient: AxiosInstance

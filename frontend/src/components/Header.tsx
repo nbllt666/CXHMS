@@ -3,19 +3,23 @@ import { Bell, Bot, ChevronDown } from 'lucide-react'
 import { useChatStore } from '../store/chatStore'
 import { useState, useRef, useEffect } from 'react'
 import { cn } from '../lib/utils'
+import { LanguageSwitcher } from './LanguageSwitcher'
+import { useTranslation } from 'react-i18next'
 
-const pageTitles: Record<string, string> = {
-  '/': '对话',
-  '/agents': '助手管理',
-  '/memories': '记忆管理',
-  '/archive': '归档管理',
-  '/acp': 'ACP管理',
-  '/tools': '工具管理',
-  '/settings': '系统设置',
-}
+const getPageTitles = (t: Function): Record<string, string> => ({
+  '/': t('nav.chat'),
+  '/agents': t('agent.title'),
+  '/memories': t('memory.title'),
+  '/archive': t('archive.title'),
+  '/acp': t('acp.title'),
+  '/tools': t('tools.title'),
+  '/settings': t('settings.title'),
+})
 
 export function Header() {
+  const { t } = useTranslation()
   const location = useLocation()
+  const pageTitles = getPageTitles(t)
   const title = pageTitles[location.pathname] || 'CXHMS'
   const isChatPage = location.pathname === '/'
   
@@ -81,6 +85,9 @@ export function Header() {
             )}
           </div>
         )}
+
+        {/* 语言切换器 */}
+        <LanguageSwitcher />
 
         <a
           href="https://afdian.com/a/nbllt666"
