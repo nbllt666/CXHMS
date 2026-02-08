@@ -1,13 +1,29 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from datetime import datetime
-from typing import Dict
+from typing import Dict, Optional
 from backend.core.logging_config import get_contextual_logger
+import os
 
 router = APIRouter()
+logger = get_contextual_logger(__name__)
+
+# 简单的 API Key 验证
+# 在生产环境中应该使用更安全的认证方式
+ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "chenxi-admin-default-key-change-in-production")
+
+
+def verify_admin_key(x_api_key: Optional[str] = Header(None)) -> bool:
+    """验证管理员 API Key"""
+    if not x_api_key:
+        return False
+    return x_api_key == ADMIN_API_KEY
 
 
 @router.get("/api/admin/dashboard")
-async def get_dashboard():
+async def get_dashboard(x_api_key: Optional[str] = Header(None)):
+    if not verify_admin_key(x_api_key):
+        raise HTTPException(status_code=401, detail="未授权访问")
+
     from backend.api.app import get_memory_manager, get_context_manager, get_acp_manager
 
     stats = {
@@ -42,7 +58,10 @@ async def get_dashboard():
 
 
 @router.get("/api/admin/stats")
-async def get_stats():
+async def get_stats(x_api_key: Optional[str] = Header(None)):
+    if not verify_admin_key(x_api_key):
+        raise HTTPException(status_code=401, detail="未授权访问")
+
     from backend.api.app import get_memory_manager, get_context_manager
     from backend.core.tools.registry import tool_registry
 
@@ -77,6 +96,7 @@ async def get_stats():
 
 @router.get("/api/admin/health")
 async def health_check():
+    """健康检查端点 - 不需要认证"""
     from backend.api.app import get_memory_manager, get_context_manager, get_acp_manager
 
     health = {
@@ -113,128 +133,147 @@ async def health_check():
 
 
 @router.get("/api/admin/config")
-async def get_config():
+async def get_config(x_api_key: Optional[str] = Header(None)):
+    if not verify_admin_key(x_api_key):
+        raise HTTPException(status_code=401, detail="未授权访问")
+
     from config.settings import settings
 
+    # 只返回非敏感配置
     return {
         "status": "success",
         "config": {
             "llm": {
                 "provider": settings.config.llm.provider,
-                "host": settings.config.llm.host,
                 "model": settings.config.llm.model
+                # 注意：不返回 host 和 api_key 等敏感信息
             },
             "vector": {
-                "enabled": settings.config.vector.enabled,
-                "host": settings.config.vector.host,
-                "port": settings.config.vector.port
+                "enabled": settings.config.vector.enabled
+                # 注意：不返回 host 和 port 等敏感信息
             },
             "acp": {
                 "enabled": settings.config.acp.enabled,
-                "agent_id": settings.config.acp.agent_id,
                 "agent_name": settings.config.acp.agent_name
+                # 注意：不返回 agent_id
             },
             "system": {
-                "host": settings.config.system.host,
-                "port": settings.config.system.port,
                 "debug": settings.config.system.debug
+                # 注意：不返回 host 和 port
             }
         }
     }
 
 
 @router.put("/api/admin/config")
-async def update_config(config: Dict):
+async def update_config(config: Dict, x_api_key: Optional[str] = Header(None)):
+    if not verify_admin_key(x_api_key):
+        raise HTTPException(status_code=401, detail="未授权访问")
+
     from config.settings import settings
 
     try:
+        # 验证输入
+        if not isinstance(config, dict):
+            raise HTTPException(status_code=400, detail="配置必须是对象格式")
+
         if "llm" in config:
             if "provider" in config["llm"]:
-                settings.config.llm.provider = config["llm"]["provider"]
-            if "host" in config["llm"]:
-                settings.config.llm.host = config["llm"]["host"]
+                provider = config["llm"]["provider"]
+                if provider not in ["ollama", "vllm"]:
+                    raise HTTPException(status_code=400, detail=f"不支持的LLM提供商: {provider}")
+                settings.config.llm.provider = provider
             if "model" in config["llm"]:
                 settings.config.llm.model = config["llm"]["model"]
 
         if "vector" in config:
             if "enabled" in config["vector"]:
-                settings.config.vector.enabled = config["vector"]["enabled"]
-            if "host" in config["vector"]:
-                settings.config.vector.host = config["vector"]["host"]
-            if "port" in config["vector"]:
-                settings.config.vector.port = config["vector"]["port"]
+                settings.config.vector.enabled = bool(config["vector"]["enabled"])
 
         if "acp" in config:
             if "enabled" in config["acp"]:
-                settings.config.acp.enabled = config["acp"]["enabled"]
-            if "agent_id" in config["acp"]:
-                settings.config.acp.agent_id = config["acp"]["agent_id"]
+                settings.config.acp.enabled = bool(config["acp"]["enabled"])
             if "agent_name" in config["acp"]:
-                settings.config.acp.agent_name = config["acp"]["agent_name"]
+                settings.config.acp.agent_name = str(config["acp"]["agent_name"])
 
         if "system" in config:
-            if "host" in config["system"]:
-                settings.config.system.host = config["system"]["host"]
-            if "port" in config["system"]:
-                settings.config.system.port = config["system"]["port"]
             if "debug" in config["system"]:
-                settings.config.system.debug = config["system"]["debug"]
+                settings.config.system.debug = bool(config["system"]["debug"])
 
         settings.save_config()
+
+        logger.info("管理员更新了系统配置")
 
         return {
             "status": "success",
             "message": "配置已更新"
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"更新配置失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="更新配置失败")
 
 
 @router.get("/api/admin/logs")
-async def get_logs(level: str = "INFO", lines: int = 50):
-    from config.settings import settings
+async def get_logs(level: str = "INFO", lines: int = 50, x_api_key: Optional[str] = Header(None)):
+    if not verify_admin_key(x_api_key):
+        raise HTTPException(status_code=401, detail="未授权访问")
 
-    log_level = getattr(logging, level.upper(), logging.INFO)
-    logger = logging.getLogger()
+    import logging
 
-    logs = []
-    for handler in logger.handlers:
-        if hasattr(handler, 'buffer'):
-            continue
+    # 验证参数
+    if lines > 1000:
+        lines = 1000
+    if lines < 1:
+        lines = 50
+
+    valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    if level.upper() not in valid_levels:
+        level = "INFO"
 
     return {
         "status": "success",
-        "logs": ["日志功能暂未完全实现", "请使用命令行查看日志"],
-        "total": 2
+        "logs": ["日志功能通过服务端日志文件查看", f"当前日志级别: {level}", f"请求行数: {lines}"],
+        "total": 3,
+        "level": level,
+        "lines": lines
     }
 
 
 @router.post("/api/admin/backup")
-async def create_backup():
+async def create_backup(x_api_key: Optional[str] = Header(None)):
+    if not verify_admin_key(x_api_key):
+        raise HTTPException(status_code=401, detail="未授权访问")
+
     import shutil
     import os
-    from datetime import datetime
 
     try:
         data_dir = "data"
         backup_dir = "data/backups"
 
+        if not os.path.exists(data_dir):
+            raise HTTPException(status_code=400, detail="数据目录不存在")
+
         if not os.path.exists(backup_dir):
             os.makedirs(backup_dir)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_file = f"{backup_dir}/backup_{timestamp}.zip"
+        backup_name = f"backup_{timestamp}"
+        backup_path = f"{backup_dir}/{backup_name}"
 
-        shutil.make_archive(
-            backup_file.replace(".zip", ""),
-            'zip',
-            data_dir
-        )
+        shutil.make_archive(backup_path, 'zip', data_dir)
+
+        logger.info(f"创建备份: {backup_path}.zip")
 
         return {
             "status": "success",
-            "path": backup_file,
-            "message": f"备份已创建: {backup_file}"
+            "path": f"{backup_path}.zip",
+            "message": f"备份已创建: {backup_name}.zip"
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"创建备份失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="创建备份失败")

@@ -19,7 +19,7 @@ class MessageCreateRequest(BaseModel):
     metadata: Dict = {}
 
 
-@router.get("/api/context/sessions")
+@router.get("/context/sessions")
 async def list_sessions(
     workspace_id: str = "default",
     limit: int = 20,
@@ -43,7 +43,7 @@ async def list_sessions(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/context/sessions")
+@router.post("/context/sessions")
 async def create_session(request: SessionCreateRequest):
     from backend.api.app import get_context_manager
 
@@ -63,7 +63,7 @@ async def create_session(request: SessionCreateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/context/sessions/{session_id}")
+@router.get("/context/sessions/{session_id}")
 async def get_session(session_id: str):
     from backend.api.app import get_context_manager
 
@@ -84,7 +84,7 @@ async def get_session(session_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/api/context/sessions/{session_id}")
+@router.delete("/context/sessions/{session_id}")
 async def delete_session(session_id: str):
     from backend.api.app import get_context_manager
 
@@ -105,7 +105,7 @@ async def delete_session(session_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/context/messages/{session_id}")
+@router.get("/context/messages/{session_id}")
 async def get_messages(
     session_id: str,
     limit: int = 50,
@@ -130,7 +130,7 @@ async def get_messages(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/context/messages")
+@router.post("/context/messages")
 async def add_message(request: MessageCreateRequest):
     from backend.api.app import get_context_manager
 
@@ -152,7 +152,7 @@ async def add_message(request: MessageCreateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/context/summary")
+@router.post("/context/summary")
 async def generate_summary(
     session_id: str,
     max_points: int = 5,
@@ -328,7 +328,7 @@ def _format_messages_for_summary(messages: list) -> str:
     return "\n".join(lines)
 
 
-@router.get("/api/context/stats")
+@router.get("/context/stats")
 async def get_context_stats(workspace_id: str = "default"):
     from backend.api.app import get_context_manager
 

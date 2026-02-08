@@ -61,7 +61,7 @@ class ControlResponse(BaseModel):
 def get_project_root() -> str:
     """获取项目根目录"""
     current_file = os.path.abspath(__file__)
-    project_root = os.path.dirname(current_file)
+    project_root = os.path.dirname(os.path.dirname(current_file))
     return project_root
 
 def get_conda_python_path() -> Optional[str]:
@@ -76,6 +76,10 @@ def get_conda_python_path() -> Optional[str]:
         if os.path.exists(path):
             return path
     return None
+
+def get_backend_dir() -> str:
+    """获取 backend 目录"""
+    return os.path.dirname(os.path.abspath(__file__))
 
 def get_main_backend_process() -> Optional[psutil.Process]:
     """获取主后端进程"""
@@ -101,6 +105,17 @@ async def health():
     """健康检查"""
     return {"status": "healthy"}
 
+def find_uvicorn_process() -> Optional[psutil.Process]:
+    """查找已运行的主后端 uvicorn 进程"""
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            cmdline = proc.info.get('cmdline', [])
+            if cmdline and 'uvicorn' in ' '.join(cmdline) and 'backend.api.app:app' in ' '.join(cmdline):
+                return proc
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return None
+
 @app.get("/control/status", response_model=ServiceStatus)
 async def get_main_service_status():
     """获取主后端服务状态"""
@@ -108,21 +123,7 @@ async def get_main_service_status():
     
     if process is None:
         # 尝试查找已存在的 uvicorn 进程
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-            try:
-                cmdline = proc.info.get('cmdline', [])
-                if cmdline and 'uvicorn' in ' '.join(cmdline) and 'backend.api.app:app' in ' '.join(cmdline):
-                    global _main_backend_process
-                    _main_backend_process = subprocess.Popen(
-                        ['echo', 'dummy'],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
-                    _main_backend_process._pid = proc.info['pid']
-                    process = proc
-                    break
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
+        process = find_uvicorn_process()
     
     if process and process.is_running():
         try:
@@ -139,8 +140,11 @@ async def get_main_service_status():
     return ServiceStatus(running=False, port=8000)
 
 @app.post("/control/start", response_model=ControlResponse)
-async def start_main_service():
-    """启动主后端服务"""
+async def start_main_service(window_mode: bool = True):
+    """启动主后端服务
+    Args:
+        window_mode: 是否在独立窗口中启动 (Windows)，默认为 True
+    """
     global _main_backend_process
     
     # 检查是否已在运行
@@ -150,39 +154,57 @@ async def start_main_service():
     
     try:
         root_dir = get_project_root()
+        backend_dir = get_backend_dir()
         conda_python = get_conda_python_path()
         
-        if conda_python and sys.platform == 'win32':
-            # 使用 Conda Python 启动
-            cmd = [
-                conda_python, "-m", "uvicorn",
-                "backend.api.app:app",
-                "--host", "0.0.0.0",
-                "--port", "8000",
-                "--log-level", "info"
-            ]
-            logger.info(f"Starting main backend with Conda Python: {conda_python}")
+        # 获取 Python 路径
+        python_path = conda_python if (conda_python and sys.platform == 'win32') else sys.executable
+        logger.info(f"Using Python: {python_path}")
+        
+        # 构建启动命令
+        cmd = [
+            python_path, "-m", "uvicorn",
+            "backend.api.app:app",
+            "--host", "0.0.0.0",
+            "--port", "8000",
+            "--log-level", "info"
+        ]
+        
+        # 设置环境变量
+        env = os.environ.copy()
+        env['PYTHONPATH'] = root_dir
+        
+        # 日志文件路径
+        log_file = os.path.join(root_dir, 'logs', 'backend.log')
+        
+        if window_mode and sys.platform == 'win32':
+            # Windows 独立窗口模式 - 使用 cmd.exe start 创建新窗口
+            # 构建完整的命令字符串
+            cmd_str = ' '.join(f'"{c}"' if ' ' in c else c for c in cmd)
+            
+            # 使用 cmd.exe /c start 在新窗口中运行
+            start_cmd = f'cmd.exe /c start "CXHMS Backend" /D "{root_dir}" {cmd_str}'
+            
+            _main_backend_process = subprocess.Popen(
+                start_cmd,
+                shell=True,
+                cwd=root_dir,
+                env=env
+            )
+            logger.info(f"Main backend service started in new window: PID={_main_backend_process.pid}")
         else:
-            # 使用系统 Python
-            cmd = [
-                sys.executable, "-m", "uvicorn",
-                "backend.api.app:app",
-                "--host", "0.0.0.0",
-                "--port", "8000",
-                "--log-level", "info"
-            ]
-            logger.info(f"Starting main backend with system Python: {sys.executable}")
-        
-        # 启动进程
-        _main_backend_process = subprocess.Popen(
-            cmd,
-            cwd=root_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == 'win32' else 0
-        )
-        
-        logger.info(f"Main backend service started: PID={_main_backend_process.pid}")
+            # 后台模式 - 将输出重定向到日志文件
+            with open(log_file, 'a') as log_fp:
+                _main_backend_process = subprocess.Popen(
+                    cmd,
+                    cwd=root_dir,
+                    stdout=log_fp,
+                    stderr=log_fp,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == 'win32' else 0,
+                    env=env
+                )
+            logger.info(f"Main backend service started in background: PID={_main_backend_process.pid}")
+            logger.info(f"Logs will be written to: {log_file}")
         
         return ControlResponse(
             status="success",

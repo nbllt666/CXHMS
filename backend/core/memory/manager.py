@@ -73,6 +73,8 @@ class MemoryManager:
         self._vector_store = None
         self._embedding_model = None
         self._hybrid_search = None
+        self.archiver = None
+        self.deduplication_engine = None
 
         self._init_db()
 
@@ -124,7 +126,7 @@ class MemoryManager:
                 logger.info(f"清理了 {len(idle_threads)} 个空闲连接")
 
     def _check_vector_store_health(self):
-        if self._vector_store:
+        if self._vector_store and hasattr(self._vector_store, 'is_available'):
             try:
                 if not self._vector_store.is_available():
                     logger.warning("向量存储不可用，重置连接")
@@ -186,6 +188,7 @@ class MemoryManager:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 operation VARCHAR(50) NOT NULL,
                 memory_id INTEGER,
+                memory_type VARCHAR(50),
                 session_id VARCHAR(36),
                 operator VARCHAR(20) NOT NULL,
                 details TEXT,
@@ -196,6 +199,7 @@ class MemoryManager:
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS permanent_memories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                vector_id VARCHAR(100),
                 content TEXT NOT NULL,
                 importance_score FLOAT DEFAULT 1.0,
                 emotion_score FLOAT DEFAULT 0.0,
@@ -239,8 +243,9 @@ class MemoryManager:
                     if isinstance(conn_info, dict):
                         conn_info['last_used'] = time.time()
                     return conn
-                except Exception as e:
-                    logger.warning(f"验证连接池连接失败: {e}")
+                except Exception:
+                    # 连接已关闭或失效，需要重新创建
+                    pass
 
                 try:
                     if isinstance(conn_info, dict):
@@ -356,8 +361,14 @@ class MemoryManager:
                 conn.commit()
                 logger.info(f"记忆已写入: id={memory_id}, type={memory_type}")
                 return memory_id
+            except Exception as e:
+                if conn:
+                    conn.rollback()
+                logger.error(f"写入记忆失败: {e}", exc_info=True)
+                raise
             finally:
-                conn.close()
+                if conn:
+                    conn.close()
 
     def get_memory(self, memory_id: int, include_deleted: bool = False) -> Optional[Dict]:
         """获取记忆
@@ -855,7 +866,7 @@ class MemoryManager:
 
     def _row_to_permanent_memory(self, row) -> Dict:
         try:
-            metadata = json_loads(row[6] or "{}")
+            metadata = json_loads(row[7] or "{}")
             tags = json_loads(row[4] or "[]")
         except Exception:
             metadata = {}
@@ -1131,46 +1142,57 @@ class MemoryManager:
     def sync_decay_values(self, workspace_id: str = "default") -> Dict:
         from backend.core.memory.decay import DecayCalculator
 
-        conn = self._get_connection()
-        cursor = conn.cursor()
+        conn = None
+        cursor = None
 
-        cursor.execute("SELECT * FROM memories WHERE is_deleted = FALSE AND workspace_id = ?", (workspace_id,))
-        rows = cursor.fetchall()
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
 
-        decay_calculator = DecayCalculator()
-        updated_count = 0
-        failed_count = 0
+            cursor.execute("SELECT * FROM memories WHERE is_deleted = FALSE AND workspace_id = ?", (workspace_id,))
+            rows = cursor.fetchall()
 
-        for row in rows:
-            try:
-                memory = self._row_to_memory(row)
+            decay_calculator = DecayCalculator()
+            updated_count = 0
+            failed_count = 0
 
-                if memory.get("permanent"):
-                    continue
+            for row in rows:
+                try:
+                    memory = self._row_to_memory(row)
 
-                time_score = decay_calculator.calculate_time_score(memory, apply_reactivation=True)
+                    if memory.get("permanent"):
+                        continue
 
-                cursor.execute('''
-                    UPDATE memories
-                    SET importance_score = ?, updated_at = ?
-                    WHERE id = ?
-                ''', (time_score, datetime.now().isoformat(), memory["id"]))
+                    time_score = decay_calculator.calculate_time_score(memory, apply_reactivation=True)
 
-                updated_count += 1
-            except Exception as e:
-                logger.warning(f"更新衰减值失败 id={row[0]}: {e}")
-                failed_count += 1
+                    cursor.execute('''
+                        UPDATE memories
+                        SET importance_score = ?, updated_at = ?
+                        WHERE id = ?
+                    ''', (time_score, datetime.now().isoformat(), memory["id"]))
 
-        conn.commit()
-        conn.close()
+                    updated_count += 1
+                except Exception as e:
+                    logger.warning(f"更新衰减值失败 id={row[0]}: {e}")
+                    failed_count += 1
 
-        logger.info(f"衰减同步完成: 更新={updated_count}, 失败={failed_count}")
+            conn.commit()
 
-        return {
-            "updated": updated_count,
-            "failed": failed_count,
-            "total": len(rows)
-        }
+            logger.info(f"衰减同步完成: 更新={updated_count}, 失败={failed_count}")
+
+            return {
+                "updated": updated_count,
+                "failed": failed_count,
+                "total": len(rows)
+            }
+        except Exception as e:
+            logger.error(f"同步衰减值失败: {e}", exc_info=True)
+            if conn:
+                conn.rollback()
+            raise
+        finally:
+            if conn:
+                conn.close()
 
     def get_decay_statistics(self, workspace_id: str = "default") -> Dict:
         from backend.core.memory.decay import DecayCalculator
@@ -1238,4 +1260,551 @@ class MemoryManager:
             }
         }
 
+    def get_memory_context(self, memory_id: int, depth: int = 2) -> Dict:
+        """获取记忆的上下文信息
         
+        Args:
+            memory_id: 记忆ID
+            depth: 上下文深度（查找相关记忆的层数）
+            
+        Returns:
+            包含记忆上下文信息的字典
+        """
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # 获取目标记忆
+            cursor.execute("SELECT * FROM memories WHERE id = ? AND is_deleted = FALSE", (memory_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return {"status": "error", "message": "记忆不存在"}
+            
+            target_memory = self._row_to_memory(row)
+            
+            # 获取相关记忆（基于标签和时间接近性）
+            context_memories = []
+            target_tags = set(target_memory.get("tags", []))
+            target_time = target_memory.get("created_at", "")
+            
+            cursor.execute('''
+                SELECT * FROM memories 
+                WHERE id != ? AND is_deleted = FALSE 
+                ORDER BY ABS(julianday(created_at) - julianday(?)) ASC
+                LIMIT ?
+            ''', (memory_id, target_time, depth * 5))
+            
+            for related_row in cursor.fetchall():
+                related = self._row_to_memory(related_row)
+                related_tags = set(related.get("tags", []))
+                
+                # 计算相似度
+                tag_overlap = len(target_tags & related_tags)
+                if tag_overlap > 0 or len(context_memories) < depth:
+                    context_memories.append({
+                        "memory": related,
+                        "relevance_score": tag_overlap,
+                        "relation_type": "temporal" if tag_overlap == 0 else "semantic"
+                    })
+            
+            # 按相关度排序
+            context_memories.sort(key=lambda x: x["relevance_score"], reverse=True)
+            context_memories = context_memories[:depth]
+            
+            return {
+                "status": "success",
+                "target_memory": target_memory,
+                "context_depth": depth,
+                "related_memories": context_memories,
+                "total_related": len(context_memories)
+            }
+            
+        except Exception as e:
+            logger.error(f"获取记忆上下文失败: {e}", exc_info=True)
+            return {"status": "error", "message": str(e)}
+        finally:
+            if conn:
+                conn.close()
+
+    def cleanup_old_sessions(self, days: int = 30) -> Dict:
+        """清理过期的会话记忆
+        
+        Args:
+            days: 多少天前的会话被视为过期
+            
+        Returns:
+            清理结果统计
+        """
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # 查找过期的短期记忆
+            cursor.execute('''
+                SELECT id FROM memories 
+                WHERE type = 'short_term' 
+                AND is_deleted = FALSE
+                AND julianday('now') - julianday(created_at) > ?
+            ''', (days,))
+            
+            old_ids = [row[0] for row in cursor.fetchall()]
+            
+            if not old_ids:
+                return {"status": "success", "cleaned_count": 0, "message": "没有需要清理的过期会话"}
+            
+            # 软删除这些记忆
+            placeholders = ','.join('?' * len(old_ids))
+            cursor.execute(f'''
+                UPDATE memories 
+                SET is_deleted = TRUE, deleted_at = ?
+                WHERE id IN ({placeholders})
+            ''', (datetime.now().isoformat(), *old_ids))
+            
+            conn.commit()
+            
+            logger.info(f"清理了 {len(old_ids)} 个过期会话记忆")
+            
+            return {
+                "status": "success",
+                "cleaned_count": len(old_ids),
+                "days_threshold": days,
+                "message": f"成功清理 {len(old_ids)} 个过期会话记忆"
+            }
+            
+        except Exception as e:
+            logger.error(f"清理过期会话失败: {e}", exc_info=True)
+            if conn:
+                conn.rollback()
+            return {"status": "error", "message": str(e)}
+        finally:
+            if conn:
+                conn.close()
+
+    def search_by_tag(self, tag: str, workspace_id: str = "default", limit: int = 50) -> List[Dict]:
+        """通过标签搜索记忆
+        
+        Args:
+            tag: 要搜索的标签
+            workspace_id: 工作区ID
+            limit: 返回结果数量限制
+            
+        Returns:
+            匹配的记忆列表
+        """
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # 使用 JSON 搜索标签
+            cursor.execute('''
+                SELECT * FROM memories 
+                WHERE is_deleted = FALSE 
+                AND workspace_id = ?
+                AND tags LIKE ?
+                ORDER BY importance_score DESC, created_at DESC
+                LIMIT ?
+            ''', (workspace_id, f'%"{tag}"%', limit))
+            
+            results = []
+            for row in cursor.fetchall():
+                memory = self._row_to_memory(row)
+                tags = memory.get("tags", [])
+                if tag in tags:
+                    results.append(memory)
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"标签搜索失败: {e}", exc_info=True)
+            return []
+        finally:
+            if conn:
+                conn.close()
+
+    def get_memory_timeline(self, workspace_id: str = "default", days: int = 30) -> Dict:
+        """获取记忆时间线
+        
+        Args:
+            workspace_id: 工作区ID
+            days: 时间范围（天）
+            
+        Returns:
+            按时间分组的记忆统计
+        """
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT 
+                    date(created_at) as date,
+                    COUNT(*) as count,
+                    type,
+                    AVG(importance_score) as avg_importance
+                FROM memories 
+                WHERE is_deleted = FALSE 
+                AND workspace_id = ?
+                AND julianday('now') - julianday(created_at) <= ?
+                GROUP BY date(created_at), type
+                ORDER BY date DESC
+            ''', (workspace_id, days))
+            
+            timeline = {}
+            for row in cursor.fetchall():
+                date_str = row[0]
+                if date_str not in timeline:
+                    timeline[date_str] = {
+                        "total": 0,
+                        "types": {},
+                        "avg_importance": 0.0
+                    }
+                
+                timeline[date_str]["types"][row[2]] = row[1]
+                timeline[date_str]["total"] += row[1]
+                timeline[date_str]["avg_importance"] = round(row[3], 4) if row[3] else 0.0
+            
+            return {
+                "status": "success",
+                "days": days,
+                "timeline": timeline,
+                "total_days": len(timeline)
+            }
+            
+        except Exception as e:
+            logger.error(f"获取时间线失败: {e}", exc_info=True)
+            return {"status": "error", "message": str(e)}
+        finally:
+            if conn:
+                conn.close()
+
+    def get_memory_statistics(self, workspace_id: str = "default") -> Dict:
+        """获取记忆统计信息
+        
+        Args:
+            workspace_id: 工作区ID
+            
+        Returns:
+            详细的记忆统计数据
+        """
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # 基础统计
+            cursor.execute('''
+                SELECT 
+                    COUNT(*) as total,
+                    SUM(CASE WHEN type = 'long_term' THEN 1 ELSE 0 END) as long_term,
+                    SUM(CASE WHEN type = 'short_term' THEN 1 ELSE 0 END) as short_term,
+                    SUM(CASE WHEN permanent = TRUE THEN 1 ELSE 0 END) as permanent,
+                    AVG(importance_score) as avg_importance,
+                    AVG(emotion_score) as avg_emotion
+                FROM memories 
+                WHERE is_deleted = FALSE AND workspace_id = ?
+            ''', (workspace_id,))
+            
+            row = cursor.fetchone()
+            
+            # 标签统计
+            cursor.execute('''
+                SELECT tags FROM memories 
+                WHERE is_deleted = FALSE AND workspace_id = ?
+            ''', (workspace_id,))
+            
+            tag_counts = {}
+            for tag_row in cursor.fetchall():
+                try:
+                    tags = json.loads(tag_row[0]) if tag_row[0] else []
+                    for tag in tags:
+                        tag_counts[tag] = tag_counts.get(tag, 0) + 1
+                except:
+                    pass
+            
+            # 获取热门标签
+            top_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+            
+            return {
+                "status": "success",
+                "workspace_id": workspace_id,
+                "total_memories": row[0] or 0,
+                "by_type": {
+                    "long_term": row[1] or 0,
+                    "short_term": row[2] or 0,
+                    "permanent": row[3] or 0
+                },
+                "avg_importance_score": round(row[4], 4) if row[4] else 0.0,
+                "avg_emotion_score": round(row[5], 4) if row[5] else 0.0,
+                "top_tags": top_tags,
+                "total_unique_tags": len(tag_counts)
+            }
+            
+        except Exception as e:
+            logger.error(f"获取统计信息失败: {e}", exc_info=True)
+            return {"status": "error", "message": str(e)}
+        finally:
+            if conn:
+                conn.close()
+
+    def get_session_memories(self, session_id: str, limit: int = 100) -> List[Dict]:
+        """获取特定会话的记忆
+        
+        Args:
+            session_id: 会话ID
+            limit: 返回结果数量限制
+            
+        Returns:
+            会话相关的记忆列表
+        """
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # 从 audit_logs 中查找会话相关的记忆
+            cursor.execute('''
+                SELECT m.* FROM memories m
+                JOIN audit_logs al ON m.id = al.memory_id
+                WHERE al.session_id = ?
+                AND m.is_deleted = FALSE
+                ORDER BY al.timestamp DESC
+                LIMIT ?
+            ''', (session_id, limit))
+            
+            results = []
+            for row in cursor.fetchall():
+                results.append(self._row_to_memory(row))
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"获取会话记忆失败: {e}", exc_info=True)
+            return []
+        finally:
+            if conn:
+                conn.close()
+
+    def batch_update_tags(self, memory_ids: List[int], tags: List[str], operation: str = "add") -> Dict:
+        """批量更新记忆标签
+        
+        Args:
+            memory_ids: 记忆ID列表
+            tags: 标签列表
+            operation: 操作类型 (add/remove/set)
+            
+        Returns:
+            更新结果
+        """
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            updated_count = 0
+            
+            for memory_id in memory_ids:
+                cursor.execute("SELECT tags FROM memories WHERE id = ? AND is_deleted = FALSE", (memory_id,))
+                row = cursor.fetchone()
+                
+                if not row:
+                    continue
+                
+                try:
+                    current_tags = set(json.loads(row[0]) if row[0] else [])
+                except:
+                    current_tags = set()
+                
+                if operation == "add":
+                    current_tags.update(tags)
+                elif operation == "remove":
+                    current_tags.difference_update(tags)
+                elif operation == "set":
+                    current_tags = set(tags)
+                
+                new_tags = list(current_tags)
+                
+                cursor.execute('''
+                    UPDATE memories 
+                    SET tags = ?, updated_at = ?
+                    WHERE id = ?
+                ''', (json.dumps(new_tags, ensure_ascii=False), datetime.now().isoformat(), memory_id))
+                
+                updated_count += 1
+            
+            conn.commit()
+            
+            logger.info(f"批量更新标签: {updated_count} 条记忆")
+            
+            return {
+                "status": "success",
+                "updated_count": updated_count,
+                "operation": operation,
+                "tags": tags
+            }
+            
+        except Exception as e:
+            logger.error(f"批量更新标签失败: {e}", exc_info=True)
+            if conn:
+                conn.rollback()
+            return {"status": "error", "message": str(e)}
+        finally:
+            if conn:
+                conn.close()
+
+    def get_memories_by_type(self, memory_type: str, workspace_id: str = "default", limit: int = 100) -> List[Dict]:
+        """按类型获取记忆
+        
+        Args:
+            memory_type: 记忆类型 (long_term/short_term/permanent)
+            workspace_id: 工作区ID
+            limit: 返回结果数量限制
+            
+        Returns:
+            指定类型的记忆列表
+        """
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            if memory_type == "permanent":
+                cursor.execute('''
+                    SELECT * FROM memories 
+                    WHERE permanent = TRUE 
+                    AND is_deleted = FALSE
+                    AND workspace_id = ?
+                    ORDER BY importance_score DESC
+                    LIMIT ?
+                ''', (workspace_id, limit))
+            else:
+                cursor.execute('''
+                    SELECT * FROM memories 
+                    WHERE type = ? 
+                    AND is_deleted = FALSE
+                    AND workspace_id = ?
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                ''', (memory_type, workspace_id, limit))
+            
+            results = []
+            for row in cursor.fetchall():
+                results.append(self._row_to_memory(row))
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"按类型获取记忆失败: {e}", exc_info=True)
+            return []
+        finally:
+            if conn:
+                conn.close()
+
+    def get_memory_relationships(self, memory_id: int) -> Dict:
+        """获取记忆的关系网络
+        
+        Args:
+            memory_id: 记忆ID
+            
+        Returns:
+            记忆关系信息
+        """
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # 获取目标记忆
+            cursor.execute("SELECT * FROM memories WHERE id = ? AND is_deleted = FALSE", (memory_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return {"status": "error", "message": "记忆不存在"}
+            
+            target = self._row_to_memory(row)
+            target_tags = set(target.get("tags", []))
+            
+            # 查找相关记忆
+            relationships = []
+            
+            # 基于标签的相关性
+            cursor.execute('''
+                SELECT * FROM memories 
+                WHERE id != ? AND is_deleted = FALSE
+            ''', (memory_id,))
+            
+            for related_row in cursor.fetchall():
+                related = self._row_to_memory(related_row)
+                related_tags = set(related.get("tags", []))
+                
+                common_tags = target_tags & related_tags
+                if common_tags:
+                    relationships.append({
+                        "memory_id": related["id"],
+                        "relation_type": "tag_similarity",
+                        "strength": len(common_tags),
+                        "common_tags": list(common_tags)
+                    })
+            
+            # 按关系强度排序
+            relationships.sort(key=lambda x: x["strength"], reverse=True)
+            
+            return {
+                "status": "success",
+                "memory_id": memory_id,
+                "relationships": relationships[:20],  # 限制返回数量
+                "total_relationships": len(relationships)
+            }
+            
+        except Exception as e:
+            logger.error(f"获取记忆关系失败: {e}", exc_info=True)
+            return {"status": "error", "message": str(e)}
+        finally:
+            if conn:
+                conn.close()
+
+    def get_memories_by_emotion(self, emotion_range: Tuple[float, float], workspace_id: str = "default", limit: int = 50) -> List[Dict]:
+        """按情感分数范围获取记忆
+        
+        Args:
+            emotion_range: 情感分数范围 (min, max)
+            workspace_id: 工作区ID
+            limit: 返回结果数量限制
+            
+        Returns:
+            符合条件的记忆列表
+        """
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            min_emotion, max_emotion = emotion_range
+            
+            cursor.execute('''
+                SELECT * FROM memories 
+                WHERE emotion_score >= ? 
+                AND emotion_score <= ?
+                AND is_deleted = FALSE
+                AND workspace_id = ?
+                ORDER BY ABS(emotion_score - ?) ASC
+                LIMIT ?
+            ''', (min_emotion, max_emotion, workspace_id, (min_emotion + max_emotion) / 2, limit))
+            
+            results = []
+            for row in cursor.fetchall():
+                results.append(self._row_to_memory(row))
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"按情感获取记忆失败: {e}", exc_info=True)
+            return []
+        finally:
+            if conn:
+                conn.close()
+

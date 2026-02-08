@@ -361,7 +361,7 @@ async def auto_archive_process(
         
         for memory in old_memories:
             if memory.get("created_at", "") < cutoff_date:
-                if not memory.get("is_archived", False):
+                if not memory.get("archived_at"):
                     archive_result = await memory_mgr.archiver.archive_memory(
                         memory_id=memory["id"],
                         target_level=target_level

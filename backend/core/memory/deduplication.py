@@ -5,7 +5,7 @@
 from typing import List, Dict, Optional, Any, Set, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
-import logging
+
 import json
 import hashlib
 
@@ -230,8 +230,13 @@ class DeduplicationEngine:
                             similarity_matrix[f"{id_1}:{id_2}"] = sim
                 
                 # 选择代表性记忆（创建时间最早的）
-                canonical_id = min(group_memories, key=lambda x: 
-                    self.memory_manager.get_memory(x).get("created_at", ""))
+                def get_created_time(memory_id):
+                    memory = self.memory_manager.get_memory(memory_id)
+                    if memory is None:
+                        return ""
+                    return memory.get("created_at", "")
+                
+                canonical_id = min(group_memories, key=get_created_time)
                 
                 group = DuplicateGroup(
                     group_id=group_id,

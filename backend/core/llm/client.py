@@ -162,10 +162,11 @@ class OllamaClient(LLMClient):
 
                 if response.status_code == 200:
                     result = response.json()
+                    message = result.get("message") or {}
                     return LLMResponse(
-                        content=result.get("message", {}).get("content", ""),
+                        content=message.get("content", ""),
                         finish_reason=result.get("done_reason", "stop"),
-                        usage=result.get("eval_count", {})
+                        usage={"eval_count": result.get("eval_count", 0)}
                     )
                 else:
                     # 详细的错误处理

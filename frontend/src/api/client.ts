@@ -1,7 +1,7 @@
 import axios, { AxiosInstance, AxiosError } from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-const CONTROL_SERVICE_URL = 'http://localhost:8765'
+const API_BASE_URL = import.meta.env.VITE_API_URL || ''
+const CONTROL_SERVICE_URL = ''
 
 class ApiClient {
   private client: AxiosInstance
@@ -240,10 +240,11 @@ class ApiClient {
   }
 
   // Chat
-  async sendMessage(message: string, sessionId?: string) {
+  async sendMessage(message: string, sessionId?: string, agentId?: string) {
     const response = await this.client.post('/api/chat', {
       message,
-      session_id: sessionId
+      session_id: sessionId,
+      agent_id: agentId || 'default'
     })
     return response.data
   }
@@ -259,6 +260,11 @@ class ApiClient {
     return response.data
   }
 
+  async deleteSession(sessionId: string) {
+    const response = await this.client.delete(`/api/context/sessions/${sessionId}`)
+    return response.data
+  }
+
   // Admin
   async getHealth() {
     const response = await this.client.get('/health')
@@ -267,6 +273,238 @@ class ApiClient {
 
   async getStats() {
     const response = await this.client.get('/api/admin/stats')
+    return response.data
+  }
+
+  async getChatHistory(sessionId: string) {
+    const response = await this.client.get(`/api/chat/history/${sessionId}`)
+    return response.data
+  }
+
+  // ========== ACP APIs ==========
+
+  async getAcpStats() {
+    const response = await this.client.get('/api/acp/stats')
+    return response.data
+  }
+
+  async getAcpAgents() {
+    const response = await this.client.get('/api/acp/agents')
+    return response.data
+  }
+
+  async createAcpAgent(data: {
+    name: string
+    description?: string
+    capabilities?: string[]
+    status?: 'active' | 'inactive'
+  }) {
+    const response = await this.client.post('/api/acp/agents', data)
+    return response.data
+  }
+
+  async updateAcpAgent(id: string, data: Partial<{
+    name: string
+    description: string
+    capabilities: string[]
+    status: 'active' | 'inactive'
+  }>) {
+    const response = await this.client.put(`/api/acp/agents/${id}`, data)
+    return response.data
+  }
+
+  async deleteAcpAgent(id: string) {
+    const response = await this.client.delete(`/api/acp/agents/${id}`)
+    return response.data
+  }
+
+  // ========== Chat Agent APIs ==========
+
+  async getAgents() {
+    const response = await this.client.get('/api/agents')
+    return response.data
+  }
+
+  async getAgent(id: string) {
+    const response = await this.client.get(`/api/agents/${id}`)
+    return response.data
+  }
+
+  async createAgent(data: {
+    name: string
+    description?: string
+    system_prompt?: string
+    model?: string
+    temperature?: number
+    max_tokens?: number
+    use_memory?: boolean
+    use_tools?: boolean
+    memory_scene?: string
+  }) {
+    const response = await this.client.post('/api/agents', data)
+    return response.data
+  }
+
+  async updateAgent(id: string, data: Partial<{
+    name: string
+    description: string
+    system_prompt: string
+    model: string
+    temperature: number
+    max_tokens: number
+    use_memory: boolean
+    use_tools: boolean
+    memory_scene: string
+  }>) {
+    const response = await this.client.put(`/api/agents/${id}`, data)
+    return response.data
+  }
+
+  async deleteAgent(id: string) {
+    const response = await this.client.delete(`/api/agents/${id}`)
+    return response.data
+  }
+
+  async cloneAgent(id: string) {
+    const response = await this.client.post(`/api/agents/${id}/clone`)
+    return response.data
+  }
+
+  // ========== Tools APIs ==========
+
+  async getToolsStats() {
+    const response = await this.client.get('/api/tools/stats')
+    return response.data
+  }
+
+  async getTools(type?: string) {
+    const params = type ? { type } : {}
+    const response = await this.client.get('/api/tools', { params })
+    return response.data
+  }
+
+  async createTool(data: {
+    name: string
+    description?: string
+    type: 'mcp' | 'native' | 'custom'
+    icon?: string
+    config?: Record<string, unknown>
+  }) {
+    const response = await this.client.post('/api/tools', data)
+    return response.data
+  }
+
+  async updateTool(id: string, data: Partial<{
+    name: string
+    description: string
+    type: 'mcp' | 'native' | 'custom'
+    icon: string
+    config: Record<string, unknown>
+    status: 'active' | 'inactive'
+  }>) {
+    const response = await this.client.put(`/api/tools/${id}`, data)
+    return response.data
+  }
+
+  async deleteTool(id: string) {
+    const response = await this.client.delete(`/api/tools/${id}`)
+    return response.data
+  }
+
+  async testTool(id: string, params: Record<string, unknown>) {
+    const response = await this.client.post(`/api/tools/${id}/test`, params)
+    return response.data
+  }
+
+  // ========== Streaming Chat API ==========
+
+  async sendMessageStream(
+    message: string,
+    sessionId: string,
+    onChunk: (chunk: { content?: string; done?: boolean; error?: string; session_id?: string }) => void,
+    agentId?: string
+  ) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('cxhms-token') || ''}`
+        },
+        body: JSON.stringify({ message, session_id: sessionId, agent_id: agentId || 'default' })
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error')
+        onChunk({ error: `HTTP ${response.status}: ${errorText}` })
+        return
+      }
+
+      const reader = response.body?.getReader()
+      if (!reader) {
+        onChunk({ error: 'No response body' })
+        return
+      }
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            if (line.trim().startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.trim().slice(6))
+                onChunk(data)
+              } catch (e) {
+                console.error('Failed to parse SSE data:', e)
+              }
+            }
+          }
+        }
+      } catch (streamError) {
+        onChunk({ error: `Stream error: ${streamError instanceof Error ? streamError.message : 'Unknown error'}` })
+      } finally {
+        reader.releaseLock()
+      }
+    } catch (fetchError) {
+      onChunk({ error: `Fetch error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}` })
+    }
+  }
+
+  // ========== Batch Memory Operations APIs ==========
+
+  async batchDeleteMemories(ids: number[]) {
+    const response = await this.client.post('/api/memories/batch/delete', { ids })
+    return response.data
+  }
+
+  async batchUpdateTags(ids: number[], tags: string[], operation: 'add' | 'remove' | 'set' = 'add') {
+    const response = await this.client.post('/api/memories/batch/tags', { ids, tags, operation })
+    return response.data
+  }
+
+  async batchArchiveMemories(ids: number[]) {
+    const response = await this.client.post('/api/memories/batch/archive', { ids })
+    return response.data
+  }
+
+  async getMemoriesByType(type: string, params?: { limit?: number; workspace_id?: string }) {
+    const response = await this.client.get(`/api/memories/type/${type}`, { params })
+    return response.data
+  }
+
+  async searchByTag(tag: string, params?: { limit?: number; workspace_id?: string }) {
+    const response = await this.client.get('/api/memories/search-by-tag', {
+      params: { tag, ...params }
+    })
     return response.data
   }
 }

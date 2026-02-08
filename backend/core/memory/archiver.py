@@ -2,7 +2,7 @@
 高级归档管理器
 实现归档的归档、智能合并、压缩等功能
 """
-from typing import List, Dict, Optional, Any, Tuple
+from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
@@ -79,8 +79,13 @@ class AdvancedArchiver:
         
     def _init_archive_db(self):
         """初始化归档数据库表"""
+        conn = None
         try:
             conn = self.memory_manager._get_connection()
+            if not conn:
+                logger.error("无法获取数据库连接")
+                return
+                
             cursor = conn.cursor()
             
             # 归档记录表
@@ -140,6 +145,11 @@ class AdvancedArchiver:
             
         except Exception as e:
             logger.error(f"初始化归档数据库失败: {e}")
+            if conn:
+                conn.rollback()
+        finally:
+            if conn:
+                conn.close()
     
     async def archive_memory(
         self,
@@ -170,49 +180,62 @@ class AdvancedArchiver:
             compression_ratio = len(compressed_content) / len(original_content) if original_content else 1.0
             
             # 保存归档记录
-            conn = self.memory_manager._get_connection()
-            cursor = conn.cursor()
-            
-            compression_metadata = {
-                "original_length": len(original_content),
-                "compressed_length": len(compressed_content),
-                "compression_ratio": compression_ratio,
-                "target_level": target_level
-            }
-            
-            cursor.execute('''
-                INSERT INTO archive_records 
-                (original_memory_id, archive_level, compressed_content, original_content, compression_metadata)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (
-                memory_id,
-                target_level,
-                compressed_content,
-                original_content,
-                json.dumps(compression_metadata)
-            ))
-            
-            archive_id = cursor.lastrowid
-            
-            # 更新记忆状态为已归档
-            cursor.execute('''
-                UPDATE memories 
-                SET is_archived = TRUE, archive_level = ?
-                WHERE id = ?
-            ''', (target_level, memory_id))
-            
-            conn.commit()
-            
-            logger.info(f"记忆已归档: {memory_id} -> 级别 {target_level}")
-            
-            return ArchiveRecord(
-                archive_id=archive_id,
-                original_memory_id=memory_id,
-                archive_level=target_level,
-                compressed_content=compressed_content,
-                original_content=original_content,
-                compression_metadata=compression_metadata
-            )
+            conn = None
+            try:
+                conn = self.memory_manager._get_connection()
+                if not conn:
+                    logger.error("无法获取数据库连接")
+                    return None
+                    
+                cursor = conn.cursor()
+                
+                compression_metadata = {
+                    "original_length": len(original_content),
+                    "compressed_length": len(compressed_content),
+                    "compression_ratio": compression_ratio,
+                    "target_level": target_level
+                }
+                
+                cursor.execute('''
+                    INSERT INTO archive_records 
+                    (original_memory_id, archive_level, compressed_content, original_content, compression_metadata)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (
+                    memory_id,
+                    target_level,
+                    compressed_content,
+                    original_content,
+                    json.dumps(compression_metadata)
+                ))
+                
+                archive_id = cursor.lastrowid
+                
+                # 更新记忆状态为已归档
+                cursor.execute('''
+                    UPDATE memories 
+                    SET is_archived = TRUE, archive_level = ?
+                    WHERE id = ?
+                ''', (target_level, memory_id))
+                
+                conn.commit()
+                
+                logger.info(f"记忆已归档: {memory_id} -> 级别 {target_level}")
+                
+                return ArchiveRecord(
+                    archive_id=archive_id,
+                    original_memory_id=memory_id,
+                    archive_level=target_level,
+                    compressed_content=compressed_content,
+                    original_content=original_content,
+                    compression_metadata=compression_metadata
+                )
+            except Exception as e:
+                if conn:
+                    conn.rollback()
+                raise
+            finally:
+                if conn:
+                    conn.close()
             
         except Exception as e:
             logger.error(f"归档记忆失败: {e}")
@@ -321,12 +344,14 @@ class AdvancedArchiver:
             cursor = conn.cursor()
             
             for memory in memories[1:]:
+                # 在Python中处理metadata更新，避免依赖SQLite JSON1扩展
+                new_metadata = {**(memory.get("metadata") or {}), "merged_into": primary_id}
                 cursor.execute('''
                     UPDATE memories 
                     SET is_deleted = TRUE, 
-                        metadata = json_set(metadata, '$.merged_into', ?)
+                        metadata = ?
                     WHERE id = ?
-                ''', (primary_id, memory["id"]))
+                ''', (json.dumps(new_metadata), memory["id"]))
                 
                 # 记录合并关系
                 cursor.execute('''

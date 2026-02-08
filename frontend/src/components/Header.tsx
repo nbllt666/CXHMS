@@ -1,22 +1,87 @@
 import { useLocation } from 'react-router-dom'
-import { Bell } from 'lucide-react'
+import { Bell, Bot, ChevronDown } from 'lucide-react'
+import { useChatStore } from '../store/chatStore'
+import { useState, useRef, useEffect } from 'react'
+import { cn } from '../lib/utils'
 
 const pageTitles: Record<string, string> = {
   '/': '对话',
+  '/agents': '助手管理',
   '/memories': '记忆管理',
   '/archive': '归档管理',
+  '/acp': 'ACP管理',
+  '/tools': '工具管理',
   '/settings': '系统设置',
 }
 
 export function Header() {
   const location = useLocation()
   const title = pageTitles[location.pathname] || 'CXHMS'
+  const isChatPage = location.pathname === '/'
+  
+  const { agents, currentAgentId, setCurrentAgentId } = useChatStore()
+  const [showAgentSelector, setShowAgentSelector] = useState(false)
+  const agentSelectorRef = useRef<HTMLDivElement>(null)
+  
+  const currentAgent = agents.find(a => a.id === currentAgentId)
+
+  // 点击外部关闭选择器
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (agentSelectorRef.current && !agentSelectorRef.current.contains(event.target as Node)) {
+        setShowAgentSelector(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   return (
     <header className="h-16 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-6">
       <h2 className="text-xl font-semibold">{title}</h2>
 
       <div className="flex items-center gap-4">
+        {/* Agent 选择器 - 仅在对话页面显示 */}
+        {isChatPage && (
+          <div className="relative" ref={agentSelectorRef}>
+            <button
+              onClick={() => setShowAgentSelector(!showAgentSelector)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-lg hover:bg-accent transition-colors"
+            >
+              <Bot className="w-4 h-4" />
+              <span className="text-sm">{currentAgent?.name || '默认助手'}</span>
+              <ChevronDown className={cn('w-4 h-4 transition-transform', showAgentSelector && 'rotate-180')} />
+            </button>
+
+            {showAgentSelector && (
+              <div className="absolute top-full right-0 mt-1 w-56 bg-popover border border-border rounded-lg shadow-lg z-50">
+                <div className="p-1 max-h-64 overflow-y-auto">
+                  {agents.map((agent) => (
+                    <button
+                      key={agent.id}
+                      onClick={() => {
+                        setCurrentAgentId(agent.id)
+                        setShowAgentSelector(false)
+                      }}
+                      className={cn(
+                        'w-full text-left px-3 py-2 rounded-md text-sm transition-colors',
+                        currentAgentId === agent.id
+                          ? 'bg-primary/10 text-primary'
+                          : 'hover:bg-accent'
+                      )}
+                    >
+                      <div className="font-medium">{agent.name}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {agent.description || '无描述'}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <a
           href="https://afdian.com/a/nbllt666"
           target="_blank"

@@ -90,7 +90,7 @@ def get_backend_process() -> Optional[psutil.Process]:
     _backend_process = None
     return None
 
-@router.get("/api/service/status", response_model=ServiceStatus)
+@router.get("/service/status", response_model=ServiceStatus)
 async def get_service_status():
     """获取后端服务状态"""
     process = get_backend_process()
@@ -102,12 +102,7 @@ async def get_service_status():
                 cmdline = proc.info.get('cmdline', [])
                 if cmdline and 'uvicorn' in ' '.join(cmdline) and 'backend.api.app:app' in ' '.join(cmdline):
                     global _backend_process
-                    _backend_process = subprocess.Popen(
-                        ['echo', 'dummy'],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
-                    _backend_process._pid = proc.info['pid']
+                    # 找到已运行的进程，直接使用其PID
                     process = proc
                     break
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -139,10 +134,33 @@ async def get_service_status():
 
     return ServiceStatus(running=False, port=8000)
 
-@router.post("/api/service/start")
+def validate_service_config(config: ServiceConfig) -> None:
+    """验证服务配置，防止命令注入"""
+    # 验证 host
+    allowed_hosts = ["0.0.0.0", "127.0.0.1", "localhost"]
+    if config.host not in allowed_hosts:
+        # 验证 IP 地址格式
+        import re
+        if not re.match(r'^(\d{1,3}\.){3}\d{1,3}$', config.host):
+            raise HTTPException(status_code=400, detail=f"Invalid host: {config.host}")
+
+    # 验证端口
+    if not (1 <= config.port <= 65535):
+        raise HTTPException(status_code=400, detail=f"Invalid port: {config.port}")
+
+    # 验证日志级别
+    allowed_log_levels = ["debug", "info", "warning", "error", "critical"]
+    if config.log_level.lower() not in allowed_log_levels:
+        raise HTTPException(status_code=400, detail=f"Invalid log_level: {config.log_level}")
+
+
+@router.post("/service/start")
 async def start_service(config: ServiceConfig):
     """启动后端服务"""
     global _backend_process
+
+    # 验证配置
+    validate_service_config(config)
 
     # 检查是否已在运行
     existing_process = get_backend_process()
@@ -160,19 +178,24 @@ async def start_service(config: ServiceConfig):
 
         if use_conda and sys.platform == 'win32' and conda_activate:
             # Windows: 使用 activate.bat 激活环境
-            cmd = f'"{conda_activate}" base && python -m uvicorn backend.api.app:app --host {config.host} --port {config.port} --log-level {config.log_level}'
+            # 使用列表形式的命令避免命令注入
+            cmd = [
+                "cmd", "/c",
+                f'"{conda_activate}" base && python -m uvicorn backend.api.app:app '
+                f'--host {config.host} --port {config.port} --log-level {config.log_level}'
+            ]
             if config.reload:
-                cmd += " --reload"
+                cmd[-1] += " --reload"
 
-            logger.info(f"Starting with Conda activate script: {cmd}")
+            logger.info(f"Starting with Conda activate script")
 
-            # 使用 shell=True 执行命令
+            # 使用 shell=False 执行命令
             _backend_process = subprocess.Popen(
                 cmd,
                 cwd=root_dir,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                shell=True,
+                shell=False,
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
             )
 
@@ -236,7 +259,7 @@ async def start_service(config: ServiceConfig):
         logger.error(f"Failed to start service: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to start: {str(e)}")
 
-@router.post("/api/service/stop")
+@router.post("/service/stop")
 async def stop_service():
     """停止后端服务"""
     global _backend_process
@@ -284,7 +307,7 @@ async def stop_service():
         logger.error(f"Failed to stop service: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to stop: {str(e)}")
 
-@router.post("/api/service/restart")
+@router.post("/service/restart")
 async def restart_service(config: ServiceConfig):
     """重启后端服务"""
     try:
@@ -301,7 +324,7 @@ async def restart_service(config: ServiceConfig):
     # 再启动
     return await start_service(config)
 
-@router.get("/api/service/logs")
+@router.get("/service/logs")
 async def get_service_logs(lines: int = 100):
     """获取服务日志"""
     try:
@@ -323,7 +346,7 @@ async def get_service_logs(lines: int = 100):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read logs: {str(e)}")
 
-@router.get("/api/service/config")
+@router.get("/service/config")
 async def get_service_config():
     """获取当前服务配置"""
     from config.settings import settings
@@ -331,23 +354,46 @@ async def get_service_config():
     # 检查 Conda 环境是否可用
     conda_available = get_conda_python_path() is not None
 
+    # 构建完整配置响应
+    config = {
+        "host": settings.config.system.host,
+        "port": settings.config.system.port,
+        "log_level": settings.config.system.log_level,
+        "debug": settings.config.system.debug,
+        "conda_available": conda_available
+    }
+
+    # 添加模型配置
+    if hasattr(settings.config, 'models'):
+        config['models'] = settings.config.models
+    
+    # 添加模型默认配置
+    if hasattr(settings.config, 'model_defaults'):
+        config['model_defaults'] = settings.config.model_defaults
+    
+    # 添加LLM参数
+    if hasattr(settings.config, 'llm_params'):
+        config['llm_params'] = settings.config.llm_params
+    
+    # 添加向量配置
+    if hasattr(settings.config, 'memory') and hasattr(settings.config.memory, 'vector'):
+        config['vector'] = {
+            'backend': settings.config.memory.vector.backend,
+            'weaviate_host': settings.config.memory.vector.weaviate_host,
+            'weaviate_port': settings.config.memory.vector.weaviate_port,
+            'vector_size': settings.config.memory.vector.vector_size
+        }
+
     return {
         "status": "success",
-        "config": {
-            "host": settings.config.system.host,
-            "port": settings.config.system.port,
-            "log_level": settings.config.system.log_level,
-            "debug": settings.config.system.debug,
-            "conda_available": conda_available
-        }
+        "config": config
     }
 
 
-@router.post("/api/service/config")
+@router.post("/service/config")
 async def update_service_config(config: dict):
     """更新服务配置（需要重启生效）"""
     try:
-        # 保存配置到文件
         import yaml
 
         config_path = "config/default.yaml"
@@ -359,11 +405,32 @@ async def update_service_config(config: dict):
         else:
             current_config = {}
 
-        # 更新配置
-        if 'system' not in current_config:
-            current_config['system'] = {}
-
-        current_config['system'].update(config)
+        # 更新配置 - 根据配置类型更新对应的部分
+        if 'vector' in config:
+            if 'memory' not in current_config:
+                current_config['memory'] = {}
+            current_config['memory']['vector'] = config['vector']
+        
+        if 'models' in config:
+            current_config['models'] = config['models']
+        
+        if 'model_defaults' in config:
+            current_config['model_defaults'] = config['model_defaults']
+        
+        if 'llm_params' in config:
+            current_config['llm_params'] = config['llm_params']
+        
+        # system 配置
+        if 'system' in config:
+            if 'system' not in current_config:
+                current_config['system'] = {}
+            current_config['system'].update(config['system'])
+        elif any(k in config for k in ['host', 'port', 'log_level', 'reload', 'use_conda']):
+            if 'system' not in current_config:
+                current_config['system'] = {}
+            for key in ['host', 'port', 'log_level', 'reload', 'use_conda']:
+                if key in config:
+                    current_config['system'][key] = config[key]
 
         # 写回文件
         with open(config_path, 'w', encoding='utf-8') as f:
@@ -377,7 +444,7 @@ async def update_service_config(config: dict):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save config: {str(e)}")
 
-@router.get("/api/service/environment")
+@router.get("/service/environment")
 async def get_environment_info():
     """获取环境信息"""
     conda_python = get_conda_python_path()
@@ -395,7 +462,7 @@ async def get_environment_info():
     }
 
 
-@router.get("/api/service/startup-command")
+@router.get("/service/startup-command")
 async def get_startup_command(use_conda: bool = True):
     """获取启动命令（供前端直接执行）"""
     conda_python = get_conda_python_path()

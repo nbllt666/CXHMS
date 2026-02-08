@@ -1,82 +1,64 @@
 server:
-  host: "0.0.0.0"
+  host: 0.0.0.0
   port: 8000
   debug: true
   cors_origins:
-    - "*"
+  - '*'
   cors_methods:
-    - "*"
+  - '*'
   cors_headers:
-    - "*"
-
+  - '*'
 logging:
-  level: "INFO"
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  file: "logs/app.log"
+  level: INFO
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  file: logs/app.log
   max_bytes: 10485760
   backup_count: 5
-
 database:
-  type: "sqlite"
-  path: "data/cxhms.db"
+  type: sqlite
+  path: data/cxhms.db
   echo: false
-
-# 多模型配置
 models:
   main:
-    provider: "ollama"           # 提供商: ollama, vllm
-    host: "http://localhost:11434"  # Ollama地址
-    port: 8000                    # VLLM端口（使用vllm时有效）
-    model: "llama3.2:3b"          # 模型名称
-    temperature: 0.7
-    max_tokens: 2048
-    timeout: 60
-  
+    provider: ollama
+    host: http://localhost:11434
+    model: qwen3vl:8b
+    apiKey: ''
+    enabled: true
   summary:
-    provider: "ollama"
-    host: "http://localhost:11434"
-    port: 8000
-    model: "llama3.2:3b"
-    temperature: 0.7
-    max_tokens: 2048
-    timeout: 60
-  
+    provider: ollama
+    host: http://localhost:11434
+    model: llama3.2:3b
+    apiKey: ''
+    enabled: false
   memory:
-    provider: "ollama"
-    host: "http://localhost:11434"
-    port: 8000
-    model: "llama3.2:3b"
-    temperature: 0.7
-    max_tokens: 2048
-    timeout: 60
-
-# 模型默认配置（指定某个模型跟随另一个模型）
+    provider: ollama
+    host: http://localhost:11434
+    model: llama3.2:3b
+    apiKey: ''
+    enabled: false
 model_defaults:
-  summary: "main"    # 摘要模型跟随主模型
-  memory: "main"     # 记忆模型跟随主模型
-
-# 向后兼容的旧版LLM配置（已废弃，请使用models配置）
+  summary: main
+  memory: main
 llm:
-  provider: "ollama"
-  model: "llama3.2:3b"
-  base_url: "http://localhost:11434"
-  api_key: ""
+  provider: ollama
+  model: llama3.2:3b
+  base_url: http://localhost:11434
+  api_key: ''
   timeout: 60
   max_retries: 3
   temperature: 0.7
   max_tokens: 2048
-
 agent:
-  agent_id: "cxhms_agent_001"
-  name: "CXHMS Agent"
-  version: "1.0.0"
-  description: "一个智能记忆管理系统"
+  agent_id: cxhms_agent_001
+  name: CXHMS Agent
+  version: 1.0.0
+  description: 一个智能记忆管理系统
   capabilities:
-    - "memory"
-    - "tools"
-    - "chat"
-    - "context"
-
+  - memory
+  - tools
+  - chat
+  - context
 memory:
   enabled: true
   max_memories: 10000
@@ -87,72 +69,103 @@ memory:
   reactivation_boost: 0.2
   emotion_enabled: true
   vector_enabled: true
-  vector_backend: "milvus_lite"  # 可选: milvus_lite, qdrant, weaviate, weaviate_embedded
+  vector_backend: milvus_lite
   milvus_lite:
-    db_path: "data/milvus_lite.db"
+    db_path: data/milvus_lite.db
     vector_size: 768
   qdrant:
-    host: "localhost"
+    host: localhost
     port: 6333
     vector_size: 768
   weaviate:
-    host: "localhost"
+    host: localhost
     port: 8080
     grpc_port: 50051
-    embedded: false  # true 使用 Embedded Weaviate
+    embedded: false
     vector_size: 768
-    schema_class: "CXHMSMemory"
+    schema_class: CXHMSMemory
     api_key: null
   hybrid_search_enabled: false
-  # 高级归档配置
   archive_enabled: true
-  dedup_threshold: 0.85  # 去重相似度阈值
+  dedup_threshold: 0.85
   archive_compression_enabled: true
-
 context:
   enabled: true
   max_context_length: 4000
   context_window: 10
   include_memories: true
   max_memories_in_context: 5
-
 tools:
   enabled: true
   auto_discovery: true
   mcp_enabled: false
   builtin_tools:
-    - "calculator"
-    - "datetime"
-    - "weather"
-
+  - calculator
+  - datetime
+  - weather
 acp:
   enabled: true
-  local_agent_id: "cxhms_agent_001"
-  local_agent_name: "CXHMS Agent"
+  local_agent_id: cxhms_agent_001
+  local_agent_name: CXHMS Agent
   discovery_enabled: true
   discovery_port: 9999
   broadcast_port: 9998
-  broadcast_address: "255.255.255.255"
+  broadcast_address: 255.255.255.255
   discovery_interval: 30
-
 webui:
   enabled: true
-  host: "0.0.0.0"
+  host: 0.0.0.0
   port: 7860
   share: false
   auth_enabled: false
-  auth_username: "admin"
-  auth_password: "admin"
-
+  auth_username: admin
+  auth_password: admin
 security:
   api_key_enabled: false
-  api_key: ""
+  api_key: ''
   rate_limit_enabled: false
   rate_limit_requests: 100
   rate_limit_period: 60
-
 monitoring:
   enabled: true
   metrics_enabled: true
   health_check_enabled: true
   performance_logging: true
+system:
+  models:
+    main:
+      provider: ollama
+      host: http://localhost:11434
+      model: qwen3vl
+      apiKey: ''
+      enabled: true
+    summary:
+      provider: ollama
+      host: http://localhost:11434
+      model: llama3.2:3b
+      apiKey: ''
+      enabled: false
+    memory:
+      provider: ollama
+      host: http://localhost:11434
+      model: llama3.2:3b
+      apiKey: ''
+      enabled: false
+  model_defaults:
+    summary: main
+    memory: main
+  llm_params:
+    temperature: 0.7
+    maxTokens: 2048
+    topP: 0.9
+    timeout: 30
+  vector:
+    backend: weaviate_embedded
+    weaviate_host: localhost
+    weaviate_port: 8080
+    vector_size: 768
+llm_params:
+  temperature: 1.3
+  maxTokens: 9999999
+  topP: 0.9
+  timeout: 30

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import asyncio
 
 from config.settings import settings
-from backend.api.routers import chat, memory, context, tools, acp, admin, archive, service
+from backend.api.routers import chat, memory, context, tools, acp, admin, archive, service, agents
 from backend.core.logging_config import setup_logging, get_contextual_logger, LogContext
 
 # 配置结构化日志
@@ -208,14 +208,15 @@ if getattr(settings.config, 'cors', None) and settings.config.cors.enabled:
         allow_headers=["*"]
     )
 
-app.include_router(chat.router)
-app.include_router(memory.router)
-app.include_router(context.router)
-app.include_router(tools.router)
-app.include_router(acp.router)
-app.include_router(admin.router)
-app.include_router(archive.router)
-app.include_router(service.router)
+app.include_router(chat.router, prefix="/api")
+app.include_router(memory.router, prefix="/api")
+app.include_router(context.router, prefix="/api")
+app.include_router(tools.router, prefix="/api")
+app.include_router(acp.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
+app.include_router(archive.router, prefix="/api")
+app.include_router(service.router, prefix="/api")
+app.include_router(agents.router, prefix="/api")
 
 
 @app.exception_handler(Exception)

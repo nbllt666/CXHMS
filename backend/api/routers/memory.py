@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Dict, List, Optional
 from pydantic import BaseModel
 from datetime import datetime
-from backend.core.exceptions import MemoryError, ValidationError
+from backend.core.exceptions import MemoryError
 from backend.core.memory.secondary_router import SecondaryInstruction
 from backend.core.logging_config import get_contextual_logger
 
@@ -598,3 +598,51 @@ async def get_secondary_history(limit: int = 10):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class SemanticSearchRequest(BaseModel):
+    """语义搜索请求"""
+    query: str
+    limit: int = 10
+    threshold: float = 0.7
+    workspace_id: str = "default"
+
+
+@router.post("/api/memories/semantic-search")
+async def semantic_search(request: SemanticSearchRequest):
+    """语义搜索 - 基于向量相似度的搜索"""
+    from backend.api.app import get_memory_manager
+    from backend.core.exceptions import VectorStoreError
+
+    try:
+        memory_mgr = get_memory_manager()
+
+        if not memory_mgr.is_vector_search_enabled():
+            raise HTTPException(status_code=503, detail="向量搜索未启用")
+
+        results = await memory_mgr.hybrid_search(
+            query=request.query,
+            limit=request.limit,
+            workspace_id=request.workspace_id
+        )
+
+        # 过滤低于阈值的結果
+        filtered_results = [
+            r for r in results
+            if r.get("score", 0) >= request.threshold
+        ]
+
+        return {
+            "status": "success",
+            "query": request.query,
+            "results": filtered_results,
+            "total": len(filtered_results),
+            "threshold": request.threshold
+        }
+    except VectorStoreError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"语义搜索失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="语义搜索失败")

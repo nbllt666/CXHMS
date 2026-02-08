@@ -52,14 +52,17 @@ export function SettingsPage() {
   const [isBackendRunning, setIsBackendRunning] = useState(false)
   const [isControlServiceReady, setIsControlServiceReady] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [backendStatus, setBackendStatus] = useState<{pid?: number, uptime?: number, port?: number}>({})
 
   // Check control service health
   const checkControlService = useCallback(async () => {
     try {
-      await api.getControlServiceHealth()
+      const response = await api.getControlServiceHealth()
+      console.log('Control service health:', response)
       setIsControlServiceReady(true)
       return true
-    } catch {
+    } catch (error) {
+      console.error('Control service health check failed:', error)
       setIsControlServiceReady(false)
       return false
     }
@@ -69,10 +72,18 @@ export function SettingsPage() {
   const checkBackendStatus = useCallback(async () => {
     try {
       const status = await api.getMainBackendStatus()
+      console.log('Backend status:', status)
       setIsBackendRunning(status.running)
+      setBackendStatus({
+        pid: status.pid,
+        uptime: status.uptime,
+        port: status.port
+      })
       return status.running
-    } catch {
+    } catch (error) {
+      console.error('Failed to check backend status:', error)
       setIsBackendRunning(false)
+      setBackendStatus({})
       return false
     }
   }, [])
@@ -97,19 +108,64 @@ export function SettingsPage() {
     enabled: isBackendRunning
   })
 
+  // Load config from backend when available
+  useEffect(() => {
+    if (serviceConfig?.config) {
+      // 加载向量配置 - 只有后端有值时才覆盖
+      if (serviceConfig.config.vector) {
+        setVectorConfig({
+          backend: serviceConfig.config.vector.backend ?? 'weaviate_embedded',
+          weaviateHost: serviceConfig.config.vector.weaviate_host ?? 'localhost',
+          weaviatePort: serviceConfig.config.vector.weaviate_port ?? 8080,
+          vectorSize: serviceConfig.config.vector.vector_size ?? 768,
+        })
+      }
+      
+      // 加载多模型配置
+      if (serviceConfig.config.models) {
+        setModelsConfig(prev => ({
+          main: serviceConfig.config.models?.main ? { ...prev.main, ...serviceConfig.config.models.main } : prev.main,
+          summary: serviceConfig.config.models?.summary ? { ...prev.summary, ...serviceConfig.config.models.summary } : prev.summary,
+          memory: serviceConfig.config.models?.memory ? { ...prev.memory, ...serviceConfig.config.models.memory } : prev.memory,
+        }))
+      }
+      
+      // 加载模型默认设置
+      if (serviceConfig.config.model_defaults) {
+        setModelDefaults(serviceConfig.config.model_defaults)
+      }
+      
+      // 加载通用LLM参数
+      if (serviceConfig.config.llm_params) {
+        setLlmParams({
+          temperature: serviceConfig.config.llm_params.temperature ?? 0.7,
+          maxTokens: serviceConfig.config.llm_params.maxTokens ?? 2048,
+          topP: serviceConfig.config.llm_params.topP ?? 0.9,
+          timeout: serviceConfig.config.llm_params.timeout ?? 30,
+        })
+      }
+    }
+  }, [serviceConfig])
+
   // Load logs (only when backend is running)
   const loadLogs = useCallback(async () => {
     if (!isBackendRunning) {
-      setLogs('后端服务未运行')
+      setLogs('后端服务未运行，启动服务后查看日志')
+      return
+    }
+    if (!isControlServiceReady) {
+      setLogs('控制服务未就绪，请稍等...')
       return
     }
     try {
       const data = await api.getServiceLogs(50)
       setLogs(data.logs || '暂无日志')
-    } catch {
-      setLogs('无法加载日志')
+    } catch (error) {
+      console.error('Failed to load logs:', error)
+      const errorMessage = error instanceof Error ? error.message : '未知错误'
+      setLogs(`加载日志失败: ${errorMessage}\n请检查后端服务是否正常运行`)
     }
-  }, [isBackendRunning])
+  }, [isBackendRunning, isControlServiceReady])
 
   useEffect(() => {
     if (activeSection === 'service') {
@@ -184,12 +240,43 @@ export function SettingsPage() {
     vectorSize: 768
   })
 
-  const [llmConfig, setLlmConfig] = useState({
-    provider: 'ollama',
-    host: 'http://localhost:11434',
-    model: 'llama3.2:3b',
+  // 多模型配置
+  const [modelsConfig, setModelsConfig] = useState({
+    main: {
+      provider: 'ollama',
+      host: 'http://localhost:11434',
+      model: 'llama3.2:3b',
+      apiKey: '',
+      enabled: true
+    },
+    summary: {
+      provider: 'ollama',
+      host: 'http://localhost:11434',
+      model: 'llama3.2:3b',
+      apiKey: '',
+      enabled: false
+    },
+    memory: {
+      provider: 'ollama',
+      host: 'http://localhost:11434',
+      model: 'llama3.2:3b',
+      apiKey: '',
+      enabled: false
+    }
+  })
+
+  // 模型默认设置
+  const [modelDefaults, setModelDefaults] = useState({
+    summary: 'main',
+    memory: 'main'
+  })
+
+  // 通用LLM参数
+  const [llmParams, setLlmParams] = useState({
     temperature: 0.7,
-    maxTokens: 2048
+    maxTokens: 2048,
+    topP: 0.9,
+    timeout: 30
   })
 
   const handleSave = async () => {
@@ -210,17 +297,15 @@ export function SettingsPage() {
           }
         })
       }
-      // 保存LLM配置
+      // 保存LLM配置（多模型）
       else if (activeSection === 'llm') {
         await api.updateServiceConfig({
-          llm: {
-            provider: llmConfig.provider,
-            host: llmConfig.host,
-            model: llmConfig.model,
-            temperature: llmConfig.temperature,
-            max_tokens: llmConfig.maxTokens
-          }
+          models: modelsConfig,
+          model_defaults: modelDefaults,
+          llm_params: llmParams
         })
+        // 保存当前主模型到 localStorage，供聊天页面使用
+        localStorage.setItem('cxhms-current-model', modelsConfig.main.model)
       }
       setSaveStatus('saved')
     } catch {
@@ -366,14 +451,18 @@ export function SettingsPage() {
 
               {/* Service Config */}
               {isBackendRunning ? (
-                <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg">
+                <div className="grid grid-cols-3 gap-4 p-4 bg-muted rounded-lg">
                   <div>
                     <span className="text-xs text-muted-foreground">主机</span>
                     <p className="font-medium">{serviceConfig?.config?.host || '0.0.0.0'}</p>
                   </div>
                   <div>
                     <span className="text-xs text-muted-foreground">端口</span>
-                    <p className="font-medium">{serviceConfig?.config?.port || 8000}</p>
+                    <p className="font-medium">{backendStatus.port || serviceConfig?.config?.port || 8000}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">进程 ID</span>
+                    <p className="font-medium">{backendStatus.pid || '-'}</p>
                   </div>
                   <div>
                     <span className="text-xs text-muted-foreground">日志级别</span>
@@ -383,9 +472,18 @@ export function SettingsPage() {
                     <span className="text-xs text-muted-foreground">调试模式</span>
                     <p className="font-medium">{serviceConfig?.config?.debug ? '开启' : '关闭'}</p>
                   </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">运行时长</span>
+                    <p className="font-medium">
+                      {backendStatus.uptime 
+                        ? `${Math.floor(backendStatus.uptime / 60)}分${Math.floor(backendStatus.uptime % 60)}秒`
+                        : '-'
+                      }
+                    </p>
+                  </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg opacity-60">
+                <div className="grid grid-cols-3 gap-4 p-4 bg-muted rounded-lg opacity-60">
                   <div>
                     <span className="text-xs text-muted-foreground">主机</span>
                     <p className="font-medium">0.0.0.0</p>
@@ -395,6 +493,10 @@ export function SettingsPage() {
                     <p className="font-medium">8000</p>
                   </div>
                   <div>
+                    <span className="text-xs text-muted-foreground">进程 ID</span>
+                    <p className="font-medium">-</p>
+                  </div>
+                  <div>
                     <span className="text-xs text-muted-foreground">日志级别</span>
                     <p className="font-medium">info</p>
                   </div>
@@ -402,18 +504,32 @@ export function SettingsPage() {
                     <span className="text-xs text-muted-foreground">调试模式</span>
                     <p className="font-medium">关闭</p>
                   </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">运行时长</span>
+                    <p className="font-medium">-</p>
+                  </div>
                 </div>
               )}
             </div>
 
             {/* Logs */}
             <div className="bg-card border border-border rounded-xl p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Terminal className="w-5 h-5" />
-                <h4 className="font-semibold">服务日志</h4>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Terminal className="w-5 h-5" />
+                  <h4 className="font-semibold">服务日志</h4>
+                </div>
+                <button
+                  onClick={loadLogs}
+                  disabled={!isBackendRunning}
+                  className="flex items-center gap-1 px-3 py-1.5 text-sm bg-muted hover:bg-muted/80 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  刷新
+                </button>
               </div>
-              <div className="bg-black rounded-lg p-4 font-mono text-sm text-green-400 h-64 overflow-auto">
-                <pre>{logs}</pre>
+              <div className="bg-black rounded-lg p-4 font-mono text-sm text-green-400 h-64 overflow-auto whitespace-pre-wrap">
+                {logs}
               </div>
             </div>
           </div>
@@ -502,11 +618,11 @@ export function SettingsPage() {
 
         {/* LLM Settings */}
         {activeSection === 'llm' && (
-          <div className="max-w-2xl space-y-6">
+          <div className="max-w-3xl space-y-6">
             <div>
-              <h3 className="text-lg font-semibold mb-1">模型配置</h3>
+              <h3 className="text-lg font-semibold mb-1">多模型配置</h3>
               <p className="text-sm text-muted-foreground">
-                配置大语言模型提供商和参数
+                配置多个专用模型，支持主模型、审核模型、摘要模型和记忆管理模型
               </p>
             </div>
 
@@ -518,68 +634,263 @@ export function SettingsPage() {
               </div>
             )}
 
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium mb-2 block">模型提供商</label>
-                <select
-                  value={llmConfig.provider}
-                  onChange={(e) => setLlmConfig({ ...llmConfig, provider: e.target.value })}
-                  className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                  <option value="ollama">Ollama (本地)</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic</option>
-                  <option value="deepseek">DeepSeek</option>
-                </select>
+            {/* 模型标签页 */}
+            <div className="border border-border rounded-lg overflow-hidden">
+              <div className="flex border-b border-border bg-muted">
+                {[
+                  { id: 'main', label: '主模型', desc: '对话生成、永久记忆管理' },
+                  { id: 'summary', label: '摘要模型', desc: '对话摘要' },
+                  { id: 'memory', label: '记忆模型', desc: '记忆归档分析' }
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      const element = document.querySelector(`[data-model="${tab.id}"]`)
+                      element?.scrollIntoView({ behavior: 'smooth' })
+                    }}
+                    className="flex-1 px-4 py-3 text-left hover:bg-accent transition-colors"
+                  >
+                    <div className="font-medium text-sm">{tab.label}</div>
+                    <div className="text-xs text-muted-foreground">{tab.desc}</div>
+                  </button>
+                ))}
               </div>
 
-              <div>
-                <label className="text-sm font-medium mb-2 block">服务地址</label>
-                <input
-                  type="text"
-                  value={llmConfig.host}
-                  onChange={(e) => setLlmConfig({ ...llmConfig, host: e.target.value })}
-                  className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium mb-2 block">模型名称</label>
-                <input
-                  type="text"
-                  value={llmConfig.model}
-                  onChange={(e) => setLlmConfig({ ...llmConfig, model: e.target.value })}
-                  className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium mb-2 block">温度 (Temperature)</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="2"
-                    step="0.1"
-                    value={llmConfig.temperature}
-                    onChange={(e) => setLlmConfig({ ...llmConfig, temperature: parseFloat(e.target.value) })}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                    <span>0</span>
-                    <span>{llmConfig.temperature}</span>
-                    <span>2</span>
+              <div className="p-6 space-y-8">
+                {/* 主模型配置 */}
+                <div data-model="main" className="space-y-4">
+                  <div className="flex items-center gap-2 pb-2 border-b border-border">
+                    <div className="w-2 h-2 rounded-full bg-green-500" />
+                    <h4 className="font-semibold">主模型配置</h4>
+                    <span className="text-xs text-muted-foreground">（对话生成、永久记忆管理）</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">模型提供商</label>
+                      <select
+                        value={modelsConfig.main.provider}
+                        onChange={(e) => setModelsConfig(prev => ({
+                          ...prev,
+                          main: { ...prev.main, provider: e.target.value }
+                        }))}
+                        className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      >
+                        <option value="ollama">Ollama (本地)</option>
+                        <option value="vllm">vLLM</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">模型名称</label>
+                      <input
+                        type="text"
+                        value={modelsConfig.main.model}
+                        onChange={(e) => setModelsConfig(prev => ({
+                          ...prev,
+                          main: { ...prev.main, model: e.target.value }
+                        }))}
+                        className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">服务地址</label>
+                      <input
+                        type="text"
+                        value={modelsConfig.main.host}
+                        onChange={(e) => setModelsConfig(prev => ({
+                          ...prev,
+                          main: { ...prev.main, host: e.target.value }
+                        }))}
+                        className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    </div>
+                    {modelsConfig.main.provider !== 'ollama' && (
+                      <div>
+                        <label className="text-sm font-medium mb-2 block">API Key</label>
+                        <input
+                          type="password"
+                          value={modelsConfig.main.apiKey}
+                          onChange={(e) => setModelsConfig(prev => ({
+                            ...prev,
+                            main: { ...prev.main, apiKey: e.target.value }
+                          }))}
+                          placeholder="输入 API Key"
+                          className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-sm font-medium mb-2 block">最大 Token</label>
-                  <input
-                    type="number"
-                    value={llmConfig.maxTokens}
-                    onChange={(e) => setLlmConfig({ ...llmConfig, maxTokens: parseInt(e.target.value) })}
-                    className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  />
+                {/* 其他模型配置 */}
+                {(['summary', 'memory'] as const).map((modelType) => (
+                  <div key={modelType} data-model={modelType} className="space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-border">
+                      <div className="flex items-center gap-2">
+                        <div className={cn(
+                          "w-2 h-2 rounded-full",
+                          modelsConfig[modelType].enabled ? "bg-green-500" : "bg-gray-400"
+                        )} />
+                        <h4 className="font-semibold">
+                          {modelType === 'summary' && '摘要模型配置'}
+                          {modelType === 'memory' && '记忆管理模型配置'}
+                        </h4>
+                      </div>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={modelsConfig[modelType].enabled}
+                          onChange={(e) => setModelsConfig(prev => ({
+                            ...prev,
+                            [modelType]: { ...prev[modelType], enabled: e.target.checked }
+                          }))}
+                          className="rounded"
+                        />
+                        启用独立配置
+                      </label>
+                    </div>
+
+                    {!modelsConfig[modelType].enabled ? (
+                      <div className="p-4 bg-muted rounded-lg">
+                        <label className="text-sm font-medium mb-2 block">使用默认模型</label>
+                        <select
+                          value={modelDefaults[modelType]}
+                          onChange={(e) => setModelDefaults(prev => ({
+                            ...prev,
+                            [modelType]: e.target.value
+                          }))}
+                          className="w-full px-3 py-2 bg-background rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        >
+                          <option value="main">主模型</option>
+                          {modelType !== 'summary' && <option value="summary">摘要模型</option>}
+                          {modelType !== 'memory' && <option value="memory">记忆模型</option>}
+                        </select>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          未启用独立配置时，将使用选定的默认模型
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-sm font-medium mb-2 block">模型提供商</label>
+                          <select
+                            value={modelsConfig[modelType].provider}
+                            onChange={(e) => setModelsConfig(prev => ({
+                              ...prev,
+                              [modelType]: { ...prev[modelType], provider: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          >
+                            <option value="ollama">Ollama (本地)</option>
+                            <option value="vllm">vLLM</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium mb-2 block">模型名称</label>
+                          <input
+                            type="text"
+                            value={modelsConfig[modelType].model}
+                            onChange={(e) => setModelsConfig(prev => ({
+                              ...prev,
+                              [modelType]: { ...prev[modelType], model: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium mb-2 block">服务地址</label>
+                          <input
+                            type="text"
+                            value={modelsConfig[modelType].host}
+                            onChange={(e) => setModelsConfig(prev => ({
+                              ...prev,
+                              [modelType]: { ...prev[modelType], host: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          />
+                        </div>
+                        {modelsConfig[modelType].provider !== 'ollama' && (
+                          <div>
+                            <label className="text-sm font-medium mb-2 block">API Key</label>
+                            <input
+                              type="password"
+                              value={modelsConfig[modelType].apiKey}
+                              onChange={(e) => setModelsConfig(prev => ({
+                                ...prev,
+                                [modelType]: { ...prev[modelType], apiKey: e.target.value }
+                              }))}
+                              placeholder="输入 API Key"
+                              className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {/* 通用参数 */}
+                <div className="pt-6 border-t border-border">
+                  <h4 className="font-semibold mb-4">通用参数</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">温度 (Temperature)</label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="2"
+                        step="0.1"
+                        value={llmParams.temperature}
+                        onChange={(e) => setLlmParams(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
+                        className="w-full"
+                      />
+                      <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                        <span>0</span>
+                        <span>{llmParams.temperature}</span>
+                        <span>2</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">Top P</label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={llmParams.topP}
+                        onChange={(e) => setLlmParams(prev => ({ ...prev, topP: parseFloat(e.target.value) }))}
+                        className="w-full"
+                      />
+                      <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                        <span>0</span>
+                        <span>{llmParams.topP}</span>
+                        <span>1</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">最大 Token</label>
+                      <input
+                        type="number"
+                        value={llmParams.maxTokens}
+                        onChange={(e) => setLlmParams(prev => ({ ...prev, maxTokens: parseInt(e.target.value) || 0 }))}
+                        className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        min="0"
+                        placeholder="0 表示使用模型默认"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">0 表示使用模型默认设置</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">超时时间 (秒)</label>
+                      <input
+                        type="number"
+                        value={llmParams.timeout}
+                        onChange={(e) => setLlmParams(prev => ({ ...prev, timeout: parseInt(e.target.value) }))}
+                        className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
