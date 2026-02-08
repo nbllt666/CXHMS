@@ -181,6 +181,16 @@ class DecayCalculator:
         if decay_type == "zero" or importance >= 0.95 or permanent:
             return self.calculate_permanent_decay(importance)
 
+        # 艾宾浩斯优化版衰减（实验性功能）
+        if decay_type == "ebbinghaus":
+            return self.calculate_ebbinghaus_decay(
+                importance=importance,
+                days_elapsed=days_elapsed,
+                t50=decay_params.get("t50", 30.0) if decay_params else 30.0,
+                k=decay_params.get("k", 2.0) if decay_params else 2.0
+            )
+
+        # 双阶段指数衰减（默认）
         if decay_params:
             return self.calculate_exponential_decay(
                 importance=importance,

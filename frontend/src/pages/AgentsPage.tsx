@@ -14,6 +14,7 @@ interface Agent {
   use_memory: boolean
   use_tools: boolean
   memory_scene: string
+  decay_model: string  // 记忆衰减模型
   is_default: boolean
   created_at: string
   updated_at: string
@@ -35,7 +36,8 @@ export function AgentsPage() {
     max_tokens: 4096,
     use_memory: true,
     use_tools: true,
-    memory_scene: 'chat'
+    memory_scene: 'chat',
+    decay_model: 'exponential'  // 默认使用双阶段指数衰减
   })
 
   useEffect(() => {
@@ -111,7 +113,8 @@ export function AgentsPage() {
       max_tokens: agent.max_tokens,
       use_memory: agent.use_memory,
       use_tools: agent.use_tools,
-      memory_scene: agent.memory_scene
+      memory_scene: agent.memory_scene,
+      decay_model: agent.decay_model || 'exponential'
     })
   }
 
@@ -125,7 +128,8 @@ export function AgentsPage() {
       max_tokens: 4096,
       use_memory: true,
       use_tools: true,
-      memory_scene: 'chat'
+      memory_scene: 'chat',
+      decay_model: 'exponential'
     })
   }
 
@@ -372,6 +376,22 @@ export function AgentsPage() {
                 </select>
                 <p className="text-xs text-muted-foreground mt-1">
                   不同场景会影响记忆检索的权重策略
+                </p>
+              </div>
+
+              {/* 记忆衰减模型 */}
+              <div>
+                <label className="block text-sm font-medium mb-1">记忆衰减模型</label>
+                <select
+                  value={formData.decay_model}
+                  onChange={(e) => setFormData({ ...formData, decay_model: e.target.value })}
+                  className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <option value="exponential">双阶段指数衰减 (推荐)</option>
+                  <option value="ebbinghaus">艾宾浩斯遗忘曲线 (实验性)</option>
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  艾宾浩斯模型更符合人类记忆规律，但仍在实验阶段
                 </p>
               </div>
 
