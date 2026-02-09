@@ -51,6 +51,7 @@ class LLMResponse:
     usage: Dict = None
     error: str = None
     error_details: Dict = field(default_factory=dict)
+    tool_calls: List[Dict] = field(default_factory=list)
 
 
 class LLMClient(ABC):
@@ -137,7 +138,7 @@ class OllamaClient(LLMClient):
         Args:
             messages: 消息列表
             stream: 是否流式响应
-            **kwargs: 额外参数
+            **kwargs: 额外参数，支持 tools (工具列表)
             
         Returns:
             LLMResponse: 包含响应内容或错误信息
@@ -146,27 +147,42 @@ class OllamaClient(LLMClient):
             # 验证输入
             self._validate_messages(messages)
             
+            # 构建请求体
+            request_body = {
+                "model": self.model,
+                "messages": messages,
+                "stream": stream,
+                "options": {
+                    "temperature": kwargs.get("temperature", self.temperature),
+                    "num_predict": kwargs.get("max_tokens", self.max_tokens)
+                }
+            }
+            
+            # 添加工具支持 (如果提供了 tools)
+            tools = kwargs.get("tools")
+            if tools:
+                request_body["tools"] = tools
+            
             async with httpx.AsyncClient(timeout=120.0) as client:
                 response = await client.post(
                     f"{self.host}/api/chat",
-                    json={
-                        "model": self.model,
-                        "messages": messages,
-                        "stream": stream,
-                        "options": {
-                            "temperature": kwargs.get("temperature", self.temperature),
-                            "num_predict": kwargs.get("max_tokens", self.max_tokens)
-                        }
-                    }
+                    json=request_body
                 )
 
                 if response.status_code == 200:
                     result = response.json()
                     message = result.get("message") or {}
+                    
+                    # 检查是否有工具调用
+                    tool_calls = []
+                    if message.get("tool_calls"):
+                        tool_calls = message["tool_calls"]
+                    
                     return LLMResponse(
                         content=message.get("content", ""),
                         finish_reason=result.get("done_reason", "stop"),
-                        usage={"eval_count": result.get("eval_count", 0)}
+                        usage={"eval_count": result.get("eval_count", 0)},
+                        tool_calls=tool_calls
                     )
                 else:
                     # 详细的错误处理

@@ -212,6 +212,26 @@ class MemoryManager:
             )
         ''')
 
+        # 检查并添加缺失的列（用于兼容旧数据库）
+        columns_to_add = [
+            ("emotion_score", "FLOAT DEFAULT 0.0"),
+            ("source", "VARCHAR(50) DEFAULT 'user'"),
+            ("verified", "BOOLEAN DEFAULT TRUE"),
+            ("vector_id", "VARCHAR(100)"),
+            ("importance_score", "FLOAT DEFAULT 1.0"),
+            ("tags", "TEXT"),
+            ("metadata", "TEXT"),
+            ("updated_at", "TIMESTAMP")
+        ]
+
+        for col_name, col_type in columns_to_add:
+            try:
+                cursor.execute(f"SELECT {col_name} FROM permanent_memories LIMIT 1")
+            except sqlite3.OperationalError:
+                # 列不存在，添加它
+                cursor.execute(f"ALTER TABLE permanent_memories ADD COLUMN {col_name} {col_type}")
+                logger.info(f"已添加 {col_name} 列到 permanent_memories 表")
+
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type)",
             "CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at)",
@@ -322,53 +342,52 @@ class MemoryManager:
         Raises:
             DatabaseError: 数据库操作失败
         """
-        with self._lock:
-            conn = self._get_connection()
-            cursor = conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
 
-            try:
-                cursor.execute('''
-                    INSERT INTO memories (
-                        type, content, importance, importance_score,
-                        decay_type, decay_params, reactivation_count,
-                        emotion_score, permanent, psychological_age,
-                        tags, metadata, created_at, workspace_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    memory_type,
-                    content,
-                    importance,
-                    0.6 if not permanent else 1.0,
-                    "zero" if permanent else "exponential",
-                    json_dumps({}),
-                    0,
-                    emotion_score,
-                    permanent,
-                    1.0,
-                    json_dumps(tags or [], ensure_ascii=False),
-                    json_dumps(metadata or {}, ensure_ascii=False),
-                    datetime.now().isoformat(),
-                    workspace_id
-                ))
+        try:
+            cursor.execute('''
+                INSERT INTO memories (
+                    type, content, importance, importance_score,
+                    decay_type, decay_params, reactivation_count,
+                    emotion_score, permanent, psychological_age,
+                    tags, metadata, created_at, workspace_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                memory_type,
+                content,
+                importance,
+                0.6 if not permanent else 1.0,
+                "zero" if permanent else "exponential",
+                json_dumps({}),
+                0,
+                emotion_score,
+                permanent,
+                1.0,
+                json_dumps(tags or [], ensure_ascii=False),
+                json_dumps(metadata or {}, ensure_ascii=False),
+                datetime.now().isoformat(),
+                workspace_id
+            ))
 
-                memory_id = cursor.lastrowid
+            memory_id = cursor.lastrowid
 
-                cursor.execute('''
-                    INSERT INTO audit_logs (operation, memory_id, operator, details)
-                    VALUES (?, ?, ?, ?)
-                ''', ("create", memory_id, "system", json_dumps({"type": memory_type})))
+            cursor.execute('''
+                INSERT INTO audit_logs (operation, memory_id, operator, details)
+                VALUES (?, ?, ?, ?)
+            ''', ("create", memory_id, "system", json_dumps({"type": memory_type})))
 
-                conn.commit()
-                logger.info(f"记忆已写入: id={memory_id}, type={memory_type}")
-                return memory_id
-            except Exception as e:
-                if conn:
-                    conn.rollback()
-                logger.error(f"写入记忆失败: {e}", exc_info=True)
-                raise
-            finally:
-                if conn:
-                    conn.close()
+            conn.commit()
+            logger.info(f"记忆已写入: id={memory_id}, type={memory_type}")
+            return memory_id
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            logger.error(f"写入记忆失败: {e}", exc_info=True)
+            raise
+        finally:
+            if conn:
+                conn.close()
 
     def get_memory(self, memory_id: int, include_deleted: bool = False) -> Optional[Dict]:
         """获取记忆
@@ -479,73 +498,71 @@ class MemoryManager:
         new_importance: int = None,
         new_metadata: Dict = None
     ) -> bool:
-        with self._lock:
-            conn = self._get_connection()
-            cursor = conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
 
-            try:
-                updates = []
-                params = []
+        try:
+            updates = []
+            params = []
 
-                if new_content is not None:
-                    updates.append("content = ?")
-                    params.append(new_content)
+            if new_content is not None:
+                updates.append("content = ?")
+                params.append(new_content)
 
-                if new_tags is not None:
-                    updates.append("tags = ?")
-                    params.append(json_dumps(new_tags, ensure_ascii=False))
+            if new_tags is not None:
+                updates.append("tags = ?")
+                params.append(json_dumps(new_tags, ensure_ascii=False))
 
-                if new_importance is not None:
-                    updates.append("importance = ?")
-                    params.append(new_importance)
+            if new_importance is not None:
+                updates.append("importance = ?")
+                params.append(new_importance)
 
-                if new_metadata is not None:
-                    updates.append("metadata = ?")
-                    params.append(json_dumps(new_metadata, ensure_ascii=False))
+            if new_metadata is not None:
+                updates.append("metadata = ?")
+                params.append(json_dumps(new_metadata, ensure_ascii=False))
 
-                if not updates:
-                    return False
+            if not updates:
+                return False
 
-                updates.append("updated_at = ?")
-                params.append(datetime.now().isoformat())
-                params.append(memory_id)
+            updates.append("updated_at = ?")
+            params.append(datetime.now().isoformat())
+            params.append(memory_id)
 
-                query = f"UPDATE memories SET {', '.join(updates)} WHERE id = ? AND is_deleted = FALSE"
-                cursor.execute(query, params)
+            query = f"UPDATE memories SET {', '.join(updates)} WHERE id = ? AND is_deleted = FALSE"
+            cursor.execute(query, params)
 
-                success = cursor.rowcount > 0
-                conn.commit()
-                return success
-            finally:
-                conn.close()
+            success = cursor.rowcount > 0
+            conn.commit()
+            return success
+        finally:
+            conn.close()
 
     def delete_memory(self, memory_id: int, soft_delete: bool = True) -> bool:
-        with self._lock:
-            conn = self._get_connection()
-            cursor = conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
 
-            try:
-                if soft_delete:
-                    query = "UPDATE memories SET is_deleted = TRUE, updated_at = ? WHERE id = ? AND is_deleted = FALSE"
-                    params = (datetime.now().isoformat(), memory_id)
-                else:
-                    query = "DELETE FROM memories WHERE id = ?"
-                    params = (memory_id,)
+        try:
+            if soft_delete:
+                query = "UPDATE memories SET is_deleted = TRUE, updated_at = ? WHERE id = ? AND is_deleted = FALSE"
+                params = (datetime.now().isoformat(), memory_id)
+            else:
+                query = "DELETE FROM memories WHERE id = ?"
+                params = (memory_id,)
 
-                cursor.execute(query, params)
+            cursor.execute(query, params)
 
-                success = cursor.rowcount > 0
+            success = cursor.rowcount > 0
 
-                if success:
-                    cursor.execute('''
-                        INSERT INTO audit_logs (operation, memory_id, operator, details)
-                        VALUES (?, ?, ?, ?)
-                    ''', ("delete" if not soft_delete else "soft_delete", memory_id, "system", json_dumps({"soft_delete": soft_delete})))
+            if success:
+                cursor.execute('''
+                    INSERT INTO audit_logs (operation, memory_id, operator, details)
+                    VALUES (?, ?, ?, ?)
+                ''', ("delete" if not soft_delete else "soft_delete", memory_id, "system", json_dumps({"soft_delete": soft_delete})))
 
-                conn.commit()
-                return success
-            finally:
-                conn.close()
+            conn.commit()
+            return success
+        finally:
+            conn.close()
 
     def get_statistics(self, workspace_id: str = "default") -> Dict:
         conn = self._get_connection()
@@ -714,39 +731,38 @@ class MemoryManager:
         source: str = "user",
         is_from_main: bool = True
     ) -> int:
-        with self._lock:
-            conn = self._get_connection()
-            cursor = conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
 
-            try:
-                cursor.execute('''
-                    INSERT INTO permanent_memories (
-                        content, importance_score, emotion_score,
-                        tags, metadata, created_at, source, verified
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    content,
-                    1.0,
-                    emotion_score,
-                    json_dumps(tags or [], ensure_ascii=False),
-                    json_dumps(metadata or {}, ensure_ascii=False),
-                    datetime.now().isoformat(),
-                    source,
-                    is_from_main
-                ))
+        try:
+            cursor.execute('''
+                INSERT INTO permanent_memories (
+                    content, importance_score, emotion_score,
+                    tags, metadata, created_at, source, verified
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                content,
+                1.0,
+                emotion_score,
+                json_dumps(tags or [], ensure_ascii=False),
+                json_dumps(metadata or {}, ensure_ascii=False),
+                datetime.now().isoformat(),
+                source,
+                is_from_main
+            ))
 
-                memory_id = cursor.lastrowid
+            memory_id = cursor.lastrowid
 
-                cursor.execute('''
-                    INSERT INTO audit_logs (operation, memory_id, session_id, operator, details)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', ("create_permanent", memory_id, None, "main_model" if is_from_main else "secondary_model", json_dumps({"source": source})))
+            cursor.execute('''
+                INSERT INTO audit_logs (operation, memory_id, session_id, operator, details)
+                VALUES (?, ?, ?, ?, ?)
+            ''', ("create_permanent", memory_id, None, "main_model" if is_from_main else "secondary_model", json_dumps({"source": source})))
 
-                conn.commit()
-                logger.info(f"永久记忆已写入: id={memory_id}, source={source}")
-                return memory_id
-            finally:
-                conn.close()
+            conn.commit()
+            logger.info(f"永久记忆已写入: id={memory_id}, source={source}")
+            return memory_id
+        finally:
+            conn.close()
 
     def get_permanent_memory(self, memory_id: int) -> Optional[Dict]:
         conn = self._get_connection()
@@ -796,73 +812,71 @@ class MemoryManager:
         tags: List[str] = None,
         metadata: Dict = None
     ) -> bool:
-        with self._lock:
-            conn = self._get_connection()
-            cursor = conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
 
-            try:
-                updates = []
-                params = []
+        try:
+            updates = []
+            params = []
 
-                if content is not None:
-                    updates.append("content = ?")
-                    params.append(content)
+            if content is not None:
+                updates.append("content = ?")
+                params.append(content)
 
-                if tags is not None:
-                    updates.append("tags = ?")
-                    params.append(json_dumps(tags, ensure_ascii=False))
+            if tags is not None:
+                updates.append("tags = ?")
+                params.append(json_dumps(tags, ensure_ascii=False))
 
-                if metadata is not None:
-                    updates.append("metadata = ?")
-                    params.append(json_dumps(metadata, ensure_ascii=False))
+            if metadata is not None:
+                updates.append("metadata = ?")
+                params.append(json_dumps(metadata, ensure_ascii=False))
 
-                if not updates:
-                    return False
+            if not updates:
+                return False
 
-                updates.append("updated_at = ?")
-                params.append(datetime.now().isoformat())
-                params.append(memory_id)
+            updates.append("updated_at = ?")
+            params.append(datetime.now().isoformat())
+            params.append(memory_id)
 
-                query = f"UPDATE permanent_memories SET {', '.join(updates)} WHERE id = ?"
-                cursor.execute(query, params)
+            query = f"UPDATE permanent_memories SET {', '.join(updates)} WHERE id = ?"
+            cursor.execute(query, params)
 
-                success = cursor.rowcount > 0
+            success = cursor.rowcount > 0
 
-                if success:
-                    cursor.execute('''
-                        INSERT INTO audit_logs (operation, memory_id, session_id, operator, details)
-                        VALUES (?, ?, ?, ?, ?)
-                    ''', ("update_permanent", memory_id, None, "system", json_dumps({"updates": updates})))
+            if success:
+                cursor.execute('''
+                    INSERT INTO audit_logs (operation, memory_id, session_id, operator, details)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', ("update_permanent", memory_id, None, "system", json_dumps({"updates": updates})))
 
-                conn.commit()
-                return success
-            finally:
-                conn.close()
+            conn.commit()
+            return success
+        finally:
+            conn.close()
 
     def delete_permanent_memory(self, memory_id: int, is_from_main: bool = True) -> bool:
         if not is_from_main:
             logger.warning(f"副模型无权删除永久记忆: id={memory_id}")
             return False
 
-        with self._lock:
-            conn = self._get_connection()
-            cursor = conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
 
-            try:
-                cursor.execute("DELETE FROM permanent_memories WHERE id = ?", (memory_id,))
+        try:
+            cursor.execute("DELETE FROM permanent_memories WHERE id = ?", (memory_id,))
 
-                success = cursor.rowcount > 0
+            success = cursor.rowcount > 0
 
-                if success:
-                    cursor.execute('''
-                        INSERT INTO audit_logs (operation, memory_id, session_id, operator, details)
-                        VALUES (?, ?, ?, ?, ?)
-                    ''', ("delete_permanent", memory_id, None, "main_model", json_dumps({})))
+            if success:
+                cursor.execute('''
+                    INSERT INTO audit_logs (operation, memory_id, session_id, operator, details)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', ("delete_permanent", memory_id, None, "main_model", json_dumps({})))
 
-                conn.commit()
-                return success
-            finally:
-                conn.close()
+            conn.commit()
+            return success
+        finally:
+            conn.close()
 
     def _row_to_permanent_memory(self, row) -> Dict:
         try:
@@ -881,7 +895,8 @@ class MemoryManager:
             "created_at": row[5],
             "updated_at": row[6],
             "metadata": metadata,
-            "source": row[8]
+            "source": row[8],
+            "verified": row[9] if len(row) > 9 else True
         }
 
     def search_memories_3d(
@@ -973,63 +988,62 @@ class MemoryManager:
     ) -> Optional[Dict]:
         from backend.core.memory.decay import DecayCalculator
 
-        with self._lock:
-            conn = self._get_connection()
-            cursor = conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
 
-            try:
-                cursor.execute("SELECT * FROM memories WHERE id = ? AND is_deleted = FALSE", (memory_id,))
-                row = cursor.fetchone()
+        try:
+            cursor.execute("SELECT * FROM memories WHERE id = ? AND is_deleted = FALSE", (memory_id,))
+            row = cursor.fetchone()
 
-                if not row:
-                    return None
+            if not row:
+                return None
 
-                memory = self._row_to_memory(row)
+            memory = self._row_to_memory(row)
 
-                reactivation_count = memory.get("reactivation_count", 0)
-                decay_calculator = DecayCalculator()
-                old_time_score = decay_calculator.calculate_time_score(memory, apply_reactivation=False)
+            reactivation_count = memory.get("reactivation_count", 0)
+            decay_calculator = DecayCalculator()
+            old_time_score = decay_calculator.calculate_time_score(memory, apply_reactivation=False)
 
-                new_time_score = min(1.0, old_time_score * (1 + 0.2 * reactivation_count) + 0.1)
-                emotion_bonus = 0.05 * abs(emotion_intensity)
-                new_time_score = min(new_time_score + emotion_bonus, 1.0)
+            new_time_score = min(1.0, old_time_score * (1 + 0.2 * reactivation_count) + 0.1)
+            emotion_bonus = 0.05 * abs(emotion_intensity)
+            new_time_score = min(new_time_score + emotion_bonus, 1.0)
 
-                new_reactivation_count = reactivation_count + 1
-                new_emotion_score = (memory.get("emotion_score", 0.0) + abs(emotion_intensity)) / 2
+            new_reactivation_count = reactivation_count + 1
+            new_emotion_score = (memory.get("emotion_score", 0.0) + abs(emotion_intensity)) / 2
 
-                cursor.execute('''
-                    UPDATE memories
-                    SET reactivation_count = ?, emotion_score = ?, updated_at = ?
-                    WHERE id = ?
-                ''', (new_reactivation_count, new_emotion_score, datetime.now().isoformat(), memory_id))
+            cursor.execute('''
+                UPDATE memories
+                SET reactivation_count = ?, emotion_score = ?, updated_at = ?
+                WHERE id = ?
+            ''', (new_reactivation_count, new_emotion_score, datetime.now().isoformat(), memory_id))
 
-                cursor.execute('''
-                    INSERT INTO audit_logs (operation, memory_id, session_id, operator, details)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', ("recall", memory_id, None, "system", json_dumps({
-                    "reactivation_count": new_reactivation_count,
-                    "emotion_intensity": emotion_intensity,
+            cursor.execute('''
+                INSERT INTO audit_logs (operation, memory_id, session_id, operator, details)
+                VALUES (?, ?, ?, ?, ?)
+            ''', ("recall", memory_id, None, "system", json_dumps({
+                "reactivation_count": new_reactivation_count,
+                "emotion_intensity": emotion_intensity,
+                "old_time_score": old_time_score,
+                "new_time_score": new_time_score,
+                "memory_type": memory.get("type")
+            })))
+
+            conn.commit()
+
+            logger.info(f"记忆已召回: id={memory_id}, reactivation_count={new_reactivation_count}")
+
+            updated_memory = self.get_memory(memory_id)
+            if updated_memory:
+                updated_memory["reactivation_details"] = {
                     "old_time_score": old_time_score,
                     "new_time_score": new_time_score,
-                    "memory_type": memory.get("type")
-                })))
+                    "emotion_bonus": emotion_bonus,
+                    "reactivation_count": new_reactivation_count
+                }
 
-                conn.commit()
-
-                logger.info(f"记忆已召回: id={memory_id}, reactivation_count={new_reactivation_count}")
-
-                updated_memory = self.get_memory(memory_id)
-                if updated_memory:
-                    updated_memory["reactivation_details"] = {
-                        "old_time_score": old_time_score,
-                        "new_time_score": new_time_score,
-                        "emotion_bonus": emotion_bonus,
-                        "reactivation_count": new_reactivation_count
-                    }
-
-                return updated_memory
-            finally:
-                conn.close()
+            return updated_memory
+        finally:
+            conn.close()
 
     def batch_write_memories(
         self,

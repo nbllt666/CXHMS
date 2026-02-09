@@ -123,6 +123,61 @@ async def lifespan(app: FastAPI):
         logger.warning(f"MCP管理器启动失败: {e}")
         mcp_manager = None
 
+    # 注册内置工具
+    try:
+        from backend.core.tools import register_builtin_tools
+        register_builtin_tools()
+        logger.info("内置工具已注册")
+    except Exception as e:
+        logger.warning(f"内置工具注册失败: {e}")
+
+    # 注册主模型工具
+    try:
+        from backend.core.tools import (
+            register_master_tools,
+            set_master_dependencies
+        )
+        set_master_dependencies(
+            memory_manager=memory_manager,
+            secondary_router=secondary_router,
+            context_manager=context_manager
+        )
+        register_master_tools()
+        logger.info("主模型工具已注册")
+    except Exception as e:
+        logger.warning(f"主模型工具注册失败: {e}")
+
+    # 注册摘要模型工具
+    try:
+        from backend.core.tools import (
+            register_summary_tools,
+            set_summary_dependencies
+        )
+        set_summary_dependencies(
+            memory_manager=memory_manager,
+            model_router=model_router
+        )
+        register_summary_tools()
+        logger.info("摘要模型工具已注册")
+    except Exception as e:
+        logger.warning(f"摘要模型工具注册失败: {e}")
+
+    # 注册记忆管理模型工具
+    try:
+        from backend.core.tools import (
+            register_assistant_tools,
+            set_assistant_dependencies
+        )
+        set_assistant_dependencies(
+            memory_manager=memory_manager,
+            secondary_router=secondary_router,
+            context_manager=context_manager
+        )
+        register_assistant_tools()
+        logger.info("记忆管理模型工具已注册")
+    except Exception as e:
+        logger.warning(f"记忆管理模型工具注册失败: {e}")
+
     try:
         if memory_manager and llm_client and settings.config.memory.vector_enabled:
             vector_backend = settings.config.memory.vector_backend

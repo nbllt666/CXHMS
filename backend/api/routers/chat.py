@@ -167,22 +167,68 @@ async def chat(request: ChatRequest):
             memory_context=memory_context
         )
 
-        # 7. 调用 LLM
+        # 7. 获取工具（如果 Agent 配置了工具）
+        tools = None
+        if agent_config.get("tools"):
+            from backend.core.tools import tool_registry
+            tools = []
+            for tool_name in agent_config.get("tools", []):
+                tool = tool_registry.get_tool(tool_name)
+                if tool and tool.enabled:
+                    tools.append(tool.to_openai_function())
+
+        # 8. 调用 LLM
         response = await llm.chat(
             messages=messages,
-            stream=False
+            stream=False,
+            tools=tools if tools else None
         )
 
-        # 8. 保存助手响应到上下文
+        # 9. 处理工具调用
+        final_response = response.content
+        if hasattr(response, 'tool_calls') and response.tool_calls:
+            # 处理工具调用
+            for tool_call in response.tool_calls:
+                tool_name = tool_call.get('name') or tool_call.get('function', {}).get('name')
+                tool_args = tool_call.get('arguments') or tool_call.get('function', {}).get('arguments', '{}')
+                
+                if isinstance(tool_args, str):
+                    tool_args = json.loads(tool_args)
+                
+                # 执行工具
+                from backend.core.tools import tool_registry
+                tool_result = tool_registry.call_tool(tool_name, tool_args)
+                
+                # 添加工具调用结果到消息
+                messages.append({
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [tool_call]
+                })
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.get('id', ''),
+                    "name": tool_name,
+                    "content": json.dumps(tool_result, ensure_ascii=False)
+                })
+            
+            # 再次调用 LLM 获取最终响应
+            response = await llm.chat(
+                messages=messages,
+                stream=False
+            )
+            final_response = response.content
+
+        # 10. 保存助手响应到上下文
         context_mgr.add_message(
             session_id=session_id,
             role="assistant",
-            content=response.content
+            content=final_response
         )
 
         return {
             "status": "success",
-            "response": response.content,
+            "response": final_response,
             "session_id": session_id,
             "tokens_used": response.usage.get("total_tokens", 0) if response.usage else 0
         }

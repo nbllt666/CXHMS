@@ -1,5 +1,5 @@
 @echo off
-chcp 437 >nul
+chcp 936 >nul
 cls
 title CXHMS - Frontend with Control Service (System)
 
@@ -8,22 +8,22 @@ echo    CXHMS - Chenxi Humanized Memory System
 echo ==========================================
 echo.
 
+REM Clean environment variables
+set XY=
+set OXY=
+set xy=
+set oxy=
+set MAX_THREADS=
+set S=
+set ONDA_PATH=
+set f=
+set or=
+set ase=
+
 set "SCRIPT_DIR=%~dp0"
 cd /d "%SCRIPT_DIR%"
 
-echo [INFO] Checking Python...
-
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Python not found!
-    pause
-    exit /b 1
-)
-
-echo [OK] Python found.
-
-echo.
-echo [1/2] Starting Control Service in new window...
+echo [1/2] Starting Control Service...
 echo    URL: http://localhost:8765
 
 start "CXHMS Control Service" cmd.exe /k "cd /d %SCRIPT_DIR% && python backend\control_service.py"

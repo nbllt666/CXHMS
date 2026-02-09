@@ -1,5 +1,5 @@
 @echo off
-chcp 437 >nul
+chcp 936 >nul
 cls
 title CXHMS - Frontend with Control Service (Conda)
 
@@ -7,6 +7,18 @@ echo ==========================================
 echo    CXHMS - Chenxi Humanized Memory System
 echo ==========================================
 echo.
+
+REM Clean environment variables
+set XY=
+set OXY=
+set xy=
+set oxy=
+set MAX_THREADS=
+set S=
+set ONDA_PATH=
+set f=
+set or=
+set ase=
 
 set "SCRIPT_DIR=%~dp0"
 cd /d "%SCRIPT_DIR%"
@@ -23,7 +35,7 @@ if not exist "%CONDA_PATH%\Scripts\activate.bat" (
 echo [OK] Conda found.
 
 echo.
-echo [1/2] Starting Control Service in new window...
+echo [1/2] Starting Control Service...
 echo    URL: http://localhost:8765
 
 start "CXHMS Control Service" cmd.exe /k "%CONDA_PATH%\Scripts\activate.bat base && cd /d %SCRIPT_DIR% && python backend\control_service.py"
