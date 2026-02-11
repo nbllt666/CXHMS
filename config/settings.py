@@ -47,7 +47,7 @@ class ModelConfig:
     port: int = 8000
     model: str = "llama3.2:3b"
     temperature: float = 0.7
-    max_tokens: int = 2048
+    max_tokens: int = 0  # 0 表示不限制，使用模型默认
     timeout: int = 60
     api_key: Optional[str] = None
 
@@ -59,7 +59,7 @@ class ModelConfig:
             port=data.get("port", 8000),
             model=data.get("model", "llama3.2:3b"),
             temperature=data.get("temperature", 0.7),
-            max_tokens=data.get("max_tokens", 2048),
+            max_tokens=data.get("max_tokens", 0),  # 默认不限制
             timeout=data.get("timeout", 60),
             api_key=data.get("api_key")
         )
@@ -69,8 +69,8 @@ class ModelConfig:
 class ModelsConfig:
     """多模型配置管理"""
     main: ModelConfig = field(default_factory=ModelConfig)
-    summary: ModelConfig = field(default_factory=ModelConfig)
-    memory: ModelConfig = field(default_factory=ModelConfig)
+    summary: ModelConfig = field(default_factory=lambda: ModelConfig(max_tokens=131072))  # 摘要模型 128k
+    memory: ModelConfig = field(default_factory=lambda: ModelConfig(max_tokens=131072))  # 记忆模型 128k
     defaults: Dict[str, str] = field(default_factory=lambda: {
         "summary": "main",
         "memory": "main"
@@ -84,10 +84,19 @@ class ModelsConfig:
             "memory": "main"
         })
         
+        # 为 summary 和 memory 设置 128k 默认值
+        summary_config = ModelConfig.from_dict(models_data.get("summary", {}))
+        if summary_config.max_tokens == 0:
+            summary_config.max_tokens = 131072
+            
+        memory_config = ModelConfig.from_dict(models_data.get("memory", {}))
+        if memory_config.max_tokens == 0:
+            memory_config.max_tokens = 131072
+        
         return cls(
             main=ModelConfig.from_dict(models_data.get("main", {})),
-            summary=ModelConfig.from_dict(models_data.get("summary", {})),
-            memory=ModelConfig.from_dict(models_data.get("memory", {})),
+            summary=summary_config,
+            memory=memory_config,
             defaults=defaults_data
         )
 

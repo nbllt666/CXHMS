@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Sparkles, Brain, ChevronDown, ChevronUp } from 'lucide-react'
+import { Send, Sparkles, Brain, ChevronDown, ChevronUp, Save } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from '../api/client'
 import { useChatStore } from '../store/chatStore'
 import { formatRelativeTime } from '../lib/utils'
+import { SummaryModal } from '../components/SummaryModal'
 
 interface Message {
   id: string
@@ -150,6 +151,7 @@ export function ChatPage() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [currentThinking, setCurrentThinking] = useState('') // 当前思考过程
+  const [showSummaryModal, setShowSummaryModal] = useState(false) // 摘要弹窗
   
   const {
     agents,
@@ -349,8 +351,13 @@ export function ChatPage() {
     }
   }
 
+  // 获取当前对话上下文文本
+  const getContextText = () => {
+    return messages.map(m => `${m.role === 'user' ? '用户' : '助手'}: ${m.content}`).join('\n\n')
+  }
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
         {messages.length === 0 ? (
@@ -436,6 +443,18 @@ export function ChatPage() {
 
       {/* Input Area */}
       <div className="border-t border-border p-4">
+        {/* 保存记忆按钮 */}
+        {messages.length > 0 && (
+          <div className="flex justify-center mb-3">
+            <button
+              onClick={() => setShowSummaryModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent/80 text-accent-foreground rounded-lg transition-colors text-sm"
+            >
+              <Save className="w-4 h-4" />
+              保存记忆
+            </button>
+          </div>
+        )}
         <div className="flex gap-2">
           <textarea
             value={input}
@@ -458,6 +477,15 @@ export function ChatPage() {
           按 Enter 发送，Shift + Enter 换行
         </p>
       </div>
+
+      {/* 摘要弹窗 */}
+      <SummaryModal
+        isOpen={showSummaryModal}
+        onClose={() => setShowSummaryModal(false)}
+        contextText={getContextText()}
+        agentId={currentAgentId || 'default'}
+        sessionId={currentSessionId || ''}
+      />
     </div>
   )
 }

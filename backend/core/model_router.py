@@ -76,7 +76,8 @@ class ModelRouter:
                 host=config.host,
                 model=config.model,
                 temperature=config.temperature,
-                max_tokens=config.max_tokens
+                max_tokens=config.max_tokens,
+                api_key=getattr(config, 'api_key', None)
             )
         elif provider == "vllm":
             return VLLMClient(

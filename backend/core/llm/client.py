@@ -141,13 +141,15 @@ class OllamaClient(LLMClient):
         model: str = "llama3.2",
         temperature: float = 0.7,
         max_tokens: int = 4096,
-        dimension: int = 768
+        dimension: int = 768,
+        api_key: str = None
     ):
         self.host = host.rstrip('/')
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.dimension = dimension
+        self.api_key = api_key
 
     def _validate_messages(self, messages: List[Dict]) -> None:
         """验证消息格式"""
@@ -295,11 +297,17 @@ class OllamaClient(LLMClient):
             if "tools" in kwargs and kwargs["tools"]:
                 request_body["tools"] = kwargs["tools"]
             
+            # 添加 Authorization header 如果提供了 API Key
+            headers = {"Content-Type": "application/json"}
+            if self.api_key:
+                headers["Authorization"] = f"Bearer {self.api_key}"
+            
             async with httpx.AsyncClient(timeout=120.0) as client:
                 async with client.stream(
                     "POST",
                     f"{self.host}/api/chat",
-                    json=request_body
+                    json=request_body,
+                    headers=headers
                 ) as response:
                     async for line in response.aiter_lines():
                         if line:

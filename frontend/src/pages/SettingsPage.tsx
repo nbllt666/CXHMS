@@ -274,7 +274,7 @@ export function SettingsPage() {
   // 通用LLM参数
   const [llmParams, setLlmParams] = useState({
     temperature: 0.7,
-    maxTokens: 2048,
+    maxTokens: 0,  // 0 表示不限制，使用模型默认
     topP: 0.9,
     timeout: 30
   })
@@ -706,21 +706,22 @@ export function SettingsPage() {
                         className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                       />
                     </div>
-                    {modelsConfig.main.provider !== 'ollama' && (
-                      <div>
-                        <label className="text-sm font-medium mb-2 block">API Key</label>
-                        <input
-                          type="password"
-                          value={modelsConfig.main.apiKey}
-                          onChange={(e) => setModelsConfig(prev => ({
-                            ...prev,
-                            main: { ...prev.main, apiKey: e.target.value }
-                          }))}
-                          placeholder="输入 API Key"
-                          className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                        />
-                      </div>
-                    )}
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">
+                        API Key
+                        <span className="text-xs text-muted-foreground ml-1">(可选，用于 Ollama Cloud)</span>
+                      </label>
+                      <input
+                        type="password"
+                        value={modelsConfig.main.apiKey}
+                        onChange={(e) => setModelsConfig(prev => ({
+                          ...prev,
+                          main: { ...prev.main, apiKey: e.target.value }
+                        }))}
+                        placeholder="本地 Ollama 可留空"
+                        className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -811,21 +812,22 @@ export function SettingsPage() {
                             className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                           />
                         </div>
-                        {modelsConfig[modelType].provider !== 'ollama' && (
-                          <div>
-                            <label className="text-sm font-medium mb-2 block">API Key</label>
-                            <input
-                              type="password"
-                              value={modelsConfig[modelType].apiKey}
-                              onChange={(e) => setModelsConfig(prev => ({
-                                ...prev,
-                                [modelType]: { ...prev[modelType], apiKey: e.target.value }
-                              }))}
-                              placeholder="输入 API Key"
-                              className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                            />
-                          </div>
-                        )}
+                        <div>
+                          <label className="text-sm font-medium mb-2 block">
+                            API Key
+                            <span className="text-xs text-muted-foreground ml-1">(可选，用于 Ollama Cloud)</span>
+                          </label>
+                          <input
+                            type="password"
+                            value={modelsConfig[modelType].apiKey}
+                            onChange={(e) => setModelsConfig(prev => ({
+                              ...prev,
+                              [modelType]: { ...prev[modelType], apiKey: e.target.value }
+                            }))}
+                            placeholder="本地 Ollama 可留空"
+                            className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          />
+                        </div>
                       </div>
                     )}
                   </div>

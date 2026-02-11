@@ -13,6 +13,7 @@ interface Agent {
   max_tokens: number
   use_memory: boolean
   use_tools: boolean
+  vision_enabled?: boolean  // 多模态支持
   memory_scene: string
   decay_model: string  // 记忆衰减模型
   is_default: boolean
@@ -31,11 +32,12 @@ export function AgentsPage() {
     name: '',
     description: '',
     system_prompt: '你是一个有帮助的AI助手。请用中文回答用户的问题。',
-    model: '',  // 默认为空，使用设置中的主模型
+    model: 'main',  // 默认为主模型
     temperature: 0.7,
-    max_tokens: 4096,
+    max_tokens: 0,  // 0 表示不限制，使用模型默认
     use_memory: true,
     use_tools: true,
+    vision_enabled: false,  // 默认不启用多模态
     memory_scene: 'chat',
     decay_model: 'exponential'  // 默认使用双阶段指数衰减
   })
@@ -48,7 +50,9 @@ export function AgentsPage() {
     try {
       setLoading(true)
       const data = await api.getAgents()
-      setAgents(data)
+      // 过滤掉 memory-agent，不在列表中显示
+      const filteredAgents = data.filter((agent: Agent) => agent.id !== 'memory-agent')
+      setAgents(filteredAgents)
     } catch (error) {
       console.error('加载 Agent 失败:', error)
     } finally {
@@ -114,7 +118,8 @@ export function AgentsPage() {
       use_memory: agent.use_memory,
       use_tools: agent.use_tools,
       memory_scene: agent.memory_scene,
-      decay_model: agent.decay_model || 'exponential'
+      decay_model: agent.decay_model || 'exponential',
+      vision_enabled: agent.vision_enabled || false
     })
   }
 
@@ -123,13 +128,14 @@ export function AgentsPage() {
       name: '',
       description: '',
       system_prompt: '你是一个有帮助的AI助手。请用中文回答用户的问题。',
-      model: '',  // 默认为空，使用设置中的主模型
+      model: 'main',
       temperature: 0.7,
-      max_tokens: 4096,
+      max_tokens: 0,  // 0 表示不限制
       use_memory: true,
       use_tools: true,
       memory_scene: 'chat',
-      decay_model: 'exponential'
+      decay_model: 'exponential',
+      vision_enabled: false
     })
   }
 
@@ -286,16 +292,18 @@ export function AgentsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">模型</label>
-                  <input
-                    type="text"
-                    value={formData.model}
+                  <label className="block text-sm font-medium mb-1">模型类型</label>
+                  <select
+                    value={formData.model || 'main'}
                     onChange={(e) => setFormData({ ...formData, model: e.target.value })}
                     className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    placeholder="默认（设置中的主模型）"
-                  />
+                  >
+                    <option value="main">主模型 (Main)</option>
+                    <option value="summary">摘要模型 (Summary)</option>
+                    <option value="memory">记忆管理模型 (Memory)</option>
+                  </select>
                   <p className="text-xs text-muted-foreground mt-1">
-                    留空使用默认模型，或输入模型名如 qwen3-vl:8b
+                    选择模型类型决定 Agent 使用的 LLM 和可用工具
                   </p>
                 </div>
               </div>
@@ -396,7 +404,7 @@ export function AgentsPage() {
               </div>
 
               {/* 功能开关 */}
-              <div className="flex gap-6">
+              <div className="flex gap-6 flex-wrap">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -414,6 +422,15 @@ export function AgentsPage() {
                     className="w-4 h-4 rounded border-border"
                   />
                   <span className="text-sm">启用工具</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.vision_enabled}
+                    onChange={(e) => setFormData({ ...formData, vision_enabled: e.target.checked })}
+                    className="w-4 h-4 rounded border-border"
+                  />
+                  <span className="text-sm">启用多模态 (Vision)</span>
                 </label>
               </div>
             </div>
