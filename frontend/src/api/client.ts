@@ -248,9 +248,9 @@ class ApiClient {
     return response.data
   }
 
-  async deleteMemory(id: number, soft: boolean = true) {
+  async deleteMemory(id: number, soft_delete: boolean = true) {
     const response = await this.client.delete(`/api/memories/${id}`, {
-      params: { soft }
+      params: { soft_delete }
     })
     return response.data
   }
@@ -619,6 +619,78 @@ class ApiClient {
       params: { tag, ...params }
     })
     return response.data
+  }
+
+  // ========== Memory Agent Streaming API ==========
+
+  async sendMemoryAgentMessageStream(
+    message: string,
+    sessionId: string | undefined,
+    onChunk: (chunk: { 
+      type: string; 
+      content?: string; 
+      done?: boolean; 
+      error?: string; 
+      session_id?: string;
+      tool_call?: any;
+      tool_name?: string;
+      result?: any;
+      thinking?: string;
+    }) => void
+  ) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/memory-agent/chat/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('cxhms-token') || ''}`
+        },
+        body: JSON.stringify({ message, session_id: sessionId })
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error')
+        onChunk({ type: 'error', error: `HTTP ${response.status}: ${errorText}` })
+        return
+      }
+
+      const reader = response.body?.getReader()
+      if (!reader) {
+        onChunk({ type: 'error', error: 'No response body' })
+        return
+      }
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            if (line.trim().startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.trim().slice(6))
+                onChunk(data)
+              } catch (e) {
+                console.error('Failed to parse SSE data:', e)
+              }
+            }
+          }
+        }
+      } catch (streamError) {
+        onChunk({ type: 'error', error: `Stream error: ${streamError instanceof Error ? streamError.message : 'Unknown error'}` })
+      } finally {
+        reader.releaseLock()
+      }
+    } catch (fetchError) {
+      onChunk({ type: 'error', error: `Fetch error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}` })
+    }
   }
 }
 

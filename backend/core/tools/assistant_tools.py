@@ -57,7 +57,7 @@ def register_assistant_tools():
             "required": ["memory_id", "new_content"]
         },
         function=update_memory_node,
-        category="memory",
+        category="assistant",
         tags=["memory", "update", "edit"],
         examples=[
             "更新记忆ID123的内容为新的内容"
@@ -90,7 +90,7 @@ def register_assistant_tools():
             "required": ["query"]
         },
         function=search_memories,
-        category="memory",
+        category="assistant",
         tags=["memory", "search", "query"],
         examples=[
             "搜索关于工作的记忆",
@@ -117,7 +117,7 @@ def register_assistant_tools():
             "required": ["memory_id", "reason"]
         },
         function=delete_memory,
-        category="memory",
+        category="assistant",
         tags=["memory", "delete", "soft_delete"],
         examples=[
             "删除过时或错误的信息"
@@ -145,7 +145,7 @@ def register_assistant_tools():
             "required": ["memory_ids", "merged_content"]
         },
         function=merge_memories,
-        category="memory",
+        category="assistant",
         tags=["memory", "merge", "combine"],
         examples=[
             "合并多条关于同一主题的记忆"
@@ -161,7 +161,7 @@ def register_assistant_tools():
             "properties": {}
         },
         function=clean_expired,
-        category="memory",
+        category="assistant",
         tags=["memory", "cleanup", "expired"],
         examples=[
             "清理过期的已删除记忆"
@@ -189,7 +189,7 @@ def register_assistant_tools():
             "required": ["format"]
         },
         function=export_memories,
-        category="memory",
+        category="assistant",
         tags=["memory", "export", "backup"],
         examples=[
             "导出所有记忆为JSON格式"
@@ -205,7 +205,7 @@ def register_assistant_tools():
             "properties": {}
         },
         function=get_memory_stats,
-        category="memory",
+        category="assistant",
         tags=["memory", "stats", "statistics"],
         examples=[
             "查看当前记忆库状态"
@@ -231,7 +231,7 @@ def register_assistant_tools():
             "required": ["start_time", "end_time"]
         },
         function=search_by_time,
-        category="memory",
+        category="assistant",
         tags=["memory", "search", "time"],
         examples=[
             "查找2024年1月的所有记忆"
@@ -255,7 +255,7 @@ def register_assistant_tools():
             "required": ["tags"]
         },
         function=search_by_tag,
-        category="memory",
+        category="assistant",
         tags=["memory", "search", "tag"],
         examples=[
             "查找带有'重要'标签的记忆"
@@ -283,7 +283,7 @@ def register_assistant_tools():
             "required": ["memory_ids", "reason"]
         },
         function=bulk_delete,
-        category="memory",
+        category="assistant",
         tags=["memory", "delete", "bulk", "batch"],
         examples=[
             "批量删除多条过时记忆"
@@ -305,7 +305,7 @@ def register_assistant_tools():
             "required": ["memory_id"]
         },
         function=restore_memory,
-        category="memory",
+        category="assistant",
         tags=["memory", "restore", "recover"],
         examples=[
             "恢复误删的记忆"
@@ -341,7 +341,7 @@ def register_assistant_tools():
             "required": ["memory_id"]
         },
         function=search_similar_memories,
-        category="memory",
+        category="assistant",
         tags=["memory", "similar", "search"],
         examples=[
             "查找与某条记忆相似的其他记忆"
@@ -370,7 +370,7 @@ def register_assistant_tools():
             "required": ["session_id"]
         },
         function=get_chat_history,
-        category="context",
+        category="assistant",
         tags=["chat", "history", "conversation"],
         examples=[
             "读取某个会话的聊天记录"
@@ -399,7 +399,7 @@ def register_assistant_tools():
             "required": ["content"]
         },
         function=get_similar_memories,
-        category="memory",
+        category="assistant",
         tags=["memory", "similar", "search"],
         examples=[
             "查找与给定内容相似的记忆"
@@ -427,7 +427,7 @@ def register_assistant_tools():
             }
         },
         function=get_memory_logs,
-        category="memory",
+        category="assistant",
         tags=["memory", "log", "history"],
         examples=[
             "查看记忆操作日志"
@@ -443,7 +443,7 @@ def register_assistant_tools():
             "properties": {}
         },
         function=get_available_commands,
-        category="system",
+        category="assistant",
         tags=["commands", "list", "help"],
         examples=[
             "查看我可以使用哪些命令"

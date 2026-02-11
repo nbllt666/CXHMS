@@ -70,8 +70,10 @@ def _load_agents() -> List[dict]:
     """加载所有 Agent 配置"""
     _ensure_data_dir()
     if not os.path.exists(AGENTS_CONFIG_PATH):
-        # 创建默认 Agent
-        # 注意：内置工具（calculator, datetime, random, json_format）现在强制开启，无需在 tools 列表中配置
+        # 创建默认 Agent 和记忆管理 Agent
+        now = datetime.now().isoformat()
+        
+        # 默认主模型 Agent
         default_agent = {
             "id": "default",
             "name": "默认助手",
@@ -85,11 +87,30 @@ def _load_agents() -> List[dict]:
             "memory_scene": "chat",
             "decay_model": "exponential",
             "is_default": True,
-            "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat()
+            "created_at": now,
+            "updated_at": now
         }
-        _save_agents([default_agent])
-        return [default_agent]
+        
+        # 记忆管理模型 Agent - 所有用户共享
+        memory_agent = {
+            "id": "memory-agent",
+            "name": "记忆管理助手",
+            "description": "专业的记忆管理助手，可以通过自然语言管理记忆库",
+            "system_prompt": "你是记忆管理助手，专门负责帮助用户管理和维护记忆库。你可以通过自然语言理解用户的需求，并调用相应的工具来执行记忆管理操作。\n\n你可以使用以下16个记忆管理工具：\n\n1. update_memory_node - 更新记忆节点内容\n2. search_memories - 搜索记忆（关键词搜索）\n3. delete_memory - 删除记忆（软删除，7天后自动清理）\n4. merge_memories - 合并多个相似记忆\n5. clean_expired - 清理已软删除超过7天的记忆\n6. export_memories - 导出记忆数据（JSON/CSV格式）\n7. get_memory_stats - 获取记忆库统计信息\n8. search_by_time - 按时间范围搜索记忆\n9. search_by_tag - 按标签搜索记忆\n10. bulk_delete - 批量删除记忆\n11. restore_memory - 恢复软删除的记忆\n12. search_similar_memories - 搜索与指定记忆相似的其他记忆\n13. get_chat_history - 获取指定会话的聊天历史\n14. get_similar_memories - 获取与给定内容相似的记忆\n15. get_memory_logs - 获取记忆管理操作日志\n16. get_available_commands - 获取所有可用命令列表\n\n当用户需要管理记忆时，请主动使用这些工具。用中文回答用户的问题。",
+            "model": "memory",
+            "temperature": 0.3,
+            "max_tokens": 4096,
+            "use_memory": False,
+            "use_tools": True,
+            "memory_scene": "task",
+            "decay_model": "exponential",
+            "is_default": False,
+            "created_at": now,
+            "updated_at": now
+        }
+        
+        _save_agents([default_agent, memory_agent])
+        return [default_agent, memory_agent]
     
     try:
         with open(AGENTS_CONFIG_PATH, 'r', encoding='utf-8') as f:

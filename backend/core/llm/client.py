@@ -307,20 +307,23 @@ class OllamaClient(LLMClient):
                                 data = json.loads(line)
                                 message = data.get("message", {})
                                 
-                                # 优先使用 content，如果没有则使用 thinking（某些模型如 qwen3-vl）
+                                # 根据 Ollama 文档正确处理 thinking 和 content
+                                thinking = message.get("thinking", "")
                                 content = message.get("content", "")
-                                if not content:
-                                    content = message.get("thinking", "")
                                 
+                                # 如果 content 存在，作为最终回复
                                 if content:
-                                    yield content
+                                    yield {"type": "content", "content": content}
+                                # 如果 content 为空但 thinking 存在，作为思考过程
+                                elif thinking:
+                                    yield {"type": "thinking", "content": thinking}
                                 
                                 if data.get("done", False):
                                     break
                                     
                                 tool_calls = message.get("tool_calls")
                                 if tool_calls:
-                                    yield {"tool_calls": tool_calls}
+                                    yield {"type": "tool_calls", "tool_calls": tool_calls}
                             except json.JSONDecodeError:
                                 continue
         except Exception as e:

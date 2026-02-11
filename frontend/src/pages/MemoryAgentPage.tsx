@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Sparkles, Brain, ChevronDown, ChevronUp } from 'lucide-react'
+import { Send, Database, Brain, ChevronDown, ChevronUp, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from '../api/client'
-import { useChatStore } from '../store/chatStore'
 import { formatRelativeTime } from '../lib/utils'
 
 interface Message {
@@ -11,9 +10,8 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: string
-  memory_refs?: number[]
   tool_calls?: ToolCall[]
-  thinking?: string // 思考过程
+  thinking?: string
 }
 
 interface ToolCall {
@@ -49,21 +47,6 @@ function MarkdownContent({ content }: { content: string }) {
               {children}
             </code>
           )
-        },
-        table({ children }) {
-          return (
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse border border-border">
-                {children}
-              </table>
-            </div>
-          )
-        },
-        th({ children }) {
-          return <th className="border border-border px-4 py-2 bg-muted font-semibold">{children}</th>
-        },
-        td({ children }) {
-          return <td className="border border-border px-4 py-2">{children}</td>
         }
       }}
     >
@@ -145,31 +128,13 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
   )
 }
 
-export function ChatPage() {
+export function MemoryAgentPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [currentThinking, setCurrentThinking] = useState('') // 当前思考过程
+  const [sessionId, setSessionId] = useState<string | undefined>(undefined)
   
-  const {
-    agents,
-    currentAgentId,
-    currentSessionId,
-    setCurrentSessionId,
-    setSessions,
-  } = useChatStore()
-
-  const currentAgent = agents.find(a => a.id === currentAgentId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-
-  // 当会话改变时，加载消息历史
-  useEffect(() => {
-    if (currentSessionId) {
-      loadSessionHistory(currentSessionId)
-    } else {
-      setMessages([])
-    }
-  }, [currentSessionId])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -178,33 +143,6 @@ export function ChatPage() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
-
-  const loadSessionHistory = async (sessionId: string) => {
-    try {
-      const data = await api.getChatHistory(sessionId)
-      if (data.messages) {
-        const formattedMessages = data.messages.map((msg: {id?: string; role: 'user' | 'assistant'; content: string; created_at?: string; thinking?: string}) => ({
-          id: msg.id || Math.random().toString(),
-          role: msg.role,
-          content: msg.content,
-          timestamp: msg.created_at || new Date().toISOString(),
-          thinking: msg.thinking
-        }))
-        setMessages(formattedMessages)
-      }
-    } catch (error) {
-      console.error('加载历史消息失败:', error)
-    }
-  }
-
-  const refreshSessions = async () => {
-    try {
-      const data = await api.getSessions()
-      setSessions(data.sessions || [])
-    } catch (error) {
-      console.error('刷新会话列表失败:', error)
-    }
-  }
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return
@@ -229,16 +167,14 @@ export function ChatPage() {
     setMessages(prev => [...prev, userMessage, streamingMessage])
     setInput('')
     setIsLoading(true)
-    setCurrentThinking('')
 
     try {
-      await api.sendMessageStream(
+      await api.sendMemoryAgentMessageStream(
         userMessage.content,
-        currentSessionId || tempAssistantId,
+        sessionId,
         (chunk) => {
-          if (chunk.session_id && !currentSessionId) {
-            setCurrentSessionId(chunk.session_id)
-            refreshSessions()
+          if (chunk.session_id && !sessionId) {
+            setSessionId(chunk.session_id)
           }
 
           if (chunk.type === 'content' && chunk.content) {
@@ -295,8 +231,6 @@ export function ChatPage() {
               return prev
             })
           } else if (chunk.type === 'thinking' && chunk.content) {
-            // 接收思考过程
-            setCurrentThinking(prev => prev + chunk.content)
             setMessages(prev => {
               const lastMsg = prev[prev.length - 1]
               if (lastMsg && lastMsg.id === tempAssistantId) {
@@ -321,8 +255,7 @@ export function ChatPage() {
           } else if (chunk.type === 'error') {
             throw new Error(chunk.error || '未知错误')
           }
-        },
-        currentAgentId || undefined
+        }
       )
     } catch (error) {
       console.error('发送消息失败:', error)
@@ -338,7 +271,6 @@ export function ChatPage() {
       })
     } finally {
       setIsLoading(false)
-      setCurrentThinking('')
     }
   }
 
@@ -349,27 +281,54 @@ export function ChatPage() {
     }
   }
 
+  const clearChat = () => {
+    setMessages([])
+    setSessionId(undefined)
+  }
+
   return (
     <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+            <Database className="w-4 h-4 text-primary" />
+          </div>
+          <div>
+            <h2 className="font-semibold">记忆管理助手</h2>
+            <p className="text-xs text-muted-foreground">通过自然语言管理记忆库</p>
+          </div>
+        </div>
+        <button
+          onClick={clearChat}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
+        >
+          <X className="w-4 h-4" />
+          清空对话
+        </button>
+      </div>
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
-              <Sparkles className="w-8 h-8 text-primary" />
+              <Database className="w-8 h-8 text-primary" />
             </div>
-            <h3 className="text-xl font-semibold mb-2">
-              {currentAgent?.name || '开始对话'}
-            </h3>
+            <h3 className="text-xl font-semibold mb-2">记忆管理助手</h3>
             <p className="text-muted-foreground max-w-md mb-4">
-              {currentAgent?.description || '与 AI 助手进行对话，系统会自动检索相关记忆来辅助回答您的问题。'}
+              通过自然语言与记忆管理模型交流，执行搜索、更新、删除、导出等记忆管理操作。
             </p>
-            {currentAgent?.system_prompt && (
-              <div className="max-w-md p-3 bg-muted rounded-lg text-sm text-muted-foreground">
-                <div className="font-medium mb-1">系统提示词:</div>
-                <div className="line-clamp-3">{currentAgent.system_prompt}</div>
-              </div>
-            )}
+            <div className="max-w-md p-4 bg-muted rounded-lg text-sm text-muted-foreground">
+              <div className="font-medium mb-2">示例指令：</div>
+              <ul className="space-y-1 text-left">
+                <li>• "搜索关于工作的记忆"</li>
+                <li>• "删除记忆ID为123的内容"</li>
+                <li>• "导出所有记忆为JSON格式"</li>
+                <li>• "显示记忆库统计信息"</li>
+                <li>• "清理过期的已删除记忆"</li>
+              </ul>
+            </div>
           </div>
         ) : (
           messages.map((message) => (
@@ -385,7 +344,7 @@ export function ChatPage() {
                 {message.role === 'user' ? (
                   <span className="text-sm font-medium">我</span>
                 ) : (
-                  <Brain className="w-5 h-5" />
+                  <Database className="w-5 h-5" />
                 )}
               </div>
               <div className={`max-w-[80%] ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
@@ -414,19 +373,6 @@ export function ChatPage() {
                     toolCalls={message.tool_calls} 
                   />
                 )}
-                
-                {message.memory_refs && message.memory_refs.length > 0 && (
-                  <div className="mt-2 flex gap-2">
-                    {message.memory_refs.map(ref => (
-                      <span
-                        key={ref}
-                        className="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full"
-                      >
-                        引用记忆 #{ref}
-                      </span>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
           ))
@@ -441,7 +387,7 @@ export function ChatPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={`给 ${currentAgent?.name || '助手'} 发送消息...`}
+            placeholder="输入记忆管理指令..."
             className="flex-1 resize-none bg-muted rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[48px] max-h-[200px]"
             rows={1}
             disabled={isLoading}

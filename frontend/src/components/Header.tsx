@@ -1,5 +1,5 @@
-import { useLocation } from 'react-router-dom'
-import { Bell, Bot, ChevronDown } from 'lucide-react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Bell, Bot, ChevronDown, Database } from 'lucide-react'
 import { useChatStore } from '../store/chatStore'
 import { useState, useRef, useEffect } from 'react'
 import { cn } from '../lib/utils'
@@ -14,14 +14,17 @@ const getPageTitles = (t: Function): Record<string, string> => ({
   '/acp': t('acp.title'),
   '/tools': t('tools.title'),
   '/settings': t('settings.title'),
+  '/memory-agent': '记忆管理助手',
 })
 
 export function Header() {
   const { t } = useTranslation()
   const location = useLocation()
+  const navigate = useNavigate()
   const pageTitles = getPageTitles(t)
   const title = pageTitles[location.pathname] || 'CXHMS'
   const isChatPage = location.pathname === '/'
+  const isMemoryAgentPage = location.pathname === '/memory-agent'
   
   const { agents, currentAgentId, setCurrentAgentId } = useChatStore()
   const [showAgentSelector, setShowAgentSelector] = useState(false)
@@ -85,6 +88,23 @@ export function Header() {
             )}
           </div>
         )}
+
+        {/* 记忆管理助手入口 */}
+        <button
+          onClick={() => navigate('/memory-agent')}
+          className={cn(
+            "p-2 rounded-lg transition-colors relative group",
+            isMemoryAgentPage 
+              ? "bg-primary text-primary-foreground" 
+              : "hover:bg-accent text-muted-foreground hover:text-foreground"
+          )}
+          title="记忆管理助手"
+        >
+          <Database className="w-5 h-5" />
+          <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-popover text-popover-foreground text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+            记忆管理助手
+          </span>
+        </button>
 
         {/* 语言切换器 */}
         <LanguageSwitcher />

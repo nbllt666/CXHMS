@@ -7,6 +7,7 @@ import { SettingsPage } from './pages/SettingsPage'
 import { AcpPage } from './pages/AcpPage'
 import { ToolsPage } from './pages/ToolsPage'
 import { AgentsPage } from './pages/AgentsPage'
+import { MemoryAgentPage } from './pages/MemoryAgentPage'
 import { useThemeStore } from './store/themeStore'
 import { ErrorBoundary } from './components/ErrorBoundary'
 
@@ -25,6 +26,7 @@ function App() {
             <Route path="acp" element={<AcpPage />} />
             <Route path="tools" element={<ToolsPage />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="memory-agent" element={<MemoryAgentPage />} />
           </Route>
         </Routes>
       </div>
