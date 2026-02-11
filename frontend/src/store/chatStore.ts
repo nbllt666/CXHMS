@@ -26,9 +26,9 @@ interface Session {
 interface ChatState {
   // Agent
   agents: Agent[]
-  currentAgentId: string
+  currentAgentId: string | null
   setAgents: (agents: Agent[]) => void
-  setCurrentAgentId: (id: string) => void
+  setCurrentAgentId: (id: string | null) => void
   
   // Session
   sessions: Session[]
@@ -46,7 +46,7 @@ export const useChatStore = create<ChatState>()(
     (set) => ({
       // Agent
       agents: [],
-      currentAgentId: 'default',
+      currentAgentId: null,
       setAgents: (agents) => set({ agents }),
       setCurrentAgentId: (id) => set({ currentAgentId: id }),
       

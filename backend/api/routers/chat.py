@@ -9,6 +9,9 @@ from pydantic import BaseModel
 import json
 
 from backend.api.routers.agents import _load_agents
+from backend.core.logging_config import get_contextual_logger
+
+logger = get_contextual_logger(__name__)
 
 router = APIRouter()
 
@@ -303,23 +306,128 @@ async def chat_stream(request: ChatRequest):
             memory_context=memory_context
         )
 
+        # 7. 获取工具（根据Agent模型类型过滤）
+        from backend.core.tools import tool_registry
+        from backend.core.tools.builtin import get_builtin_tools
+        
+        # 获取Agent模型类型 (main/summary/memory)
+        agent_model = agent_config.get("model", "main").lower()
+        
+        # 根据模型类型获取对应的工具
+        if agent_model == "main":
+            # 主模型：内置工具 + 5个主模型专属工具
+            builtin_tools = get_builtin_tools()
+            main_tool_names = {
+                "write_long_term_memory",
+                "search_all_memories", 
+                "call_assistant",
+                "set_alarm",
+                "mono"
+            }
+            # 获取主模型专属工具
+            main_tools = []
+            for tool_name in main_tool_names:
+                tool = tool_registry.get_tool(tool_name)
+                if tool and tool.enabled:
+                    main_tools.append(tool.to_openai_function())
+            tools = builtin_tools + main_tools
+        elif agent_model == "summary":
+            # 摘要模型：只使用 summary 类别的工具
+            tools = tool_registry.list_openai_functions(include_builtin=False, category="summary")
+        elif agent_model == "memory":
+            # 记忆管理模型：只使用 assistant 类别的工具
+            tools = tool_registry.list_openai_functions(include_builtin=False, category="assistant")
+        else:
+            # 其他模型：只返回内置工具
+            tools = tool_registry.list_openai_functions(include_builtin=True)
+        
+        # 如果 Agent 配置了特定工具，确保它们被包含
+        if agent_config.get("tools"):
+            for tool_name in agent_config.get("tools", []):
+                tool = tool_registry.get_tool(tool_name)
+                if tool and tool.enabled:
+                    tool_def = tool.to_openai_function()
+                    # 避免重复添加
+                    if tool_def not in tools:
+                        tools.append(tool_def)
+                else:
+                    logger.warning(f"工具 '{tool_name}' 未找到或已禁用")
+        
+        logger.info(f"为 Agent '{agent_config.get('name')}' (模型: {agent_model}) 配置了 {len(tools)} 个工具: {[t['function']['name'] for t in tools]}")
+            
         async def generate_stream():
             """生成流式响应"""
             full_response = ""
+            tool_calls_buffer = []
 
             # 发送会话ID作为第一个事件
             yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
 
             try:
+                logger.info(f"开始流式聊天，消息数: {len(messages)}, 工具数: {len(tools) if tools else 0}")
                 # 调用LLM流式接口
                 async for chunk in llm.stream_chat(
                     messages=messages,
                     temperature=agent_config.get("temperature", 0.7),
-                    max_tokens=agent_config.get("max_tokens", 4096)
+                    max_tokens=agent_config.get("max_tokens", 4096),
+                    tools=tools if tools else None
                 ):
                     if chunk:
-                        full_response += chunk
-                        yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
+                        logger.debug(f"收到 chunk: {type(chunk)}")
+                        # 检查是否是工具调用
+                        if isinstance(chunk, dict) and 'tool_calls' in chunk:
+                            tool_calls_buffer = chunk['tool_calls']
+                            logger.info(f"检测到工具调用: {tool_calls_buffer}")
+                            # 发送工具调用事件
+                            for tool_call in tool_calls_buffer:
+                                yield f"data: {json.dumps({'type': 'tool_call', 'tool_call': tool_call})}\n\n"
+                        elif isinstance(chunk, str):
+                            full_response += chunk
+                            yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
+
+                # 处理工具调用
+                if tool_calls_buffer:
+                    from backend.core.tools import tool_registry
+                    
+                    for tool_call in tool_calls_buffer:
+                        tool_name = tool_call.get('name') or tool_call.get('function', {}).get('name')
+                        tool_args = tool_call.get('arguments') or tool_call.get('function', {}).get('arguments', '{}')
+                        
+                        if isinstance(tool_args, str):
+                            tool_args = json.loads(tool_args)
+                        
+                        # 发送工具执行开始事件
+                        yield f"data: {json.dumps({'type': 'tool_start', 'tool_name': tool_name})}\n\n"
+                        
+                        # 执行工具
+                        tool_result = tool_registry.call_tool(tool_name, tool_args)
+                        
+                        # 发送工具执行结果事件
+                        yield f"data: {json.dumps({'type': 'tool_result', 'tool_name': tool_name, 'result': tool_result})}\n\n"
+                        
+                        # 添加工具调用结果到消息
+                        messages.append({
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [tool_call]
+                        })
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.get('id', ''),
+                            "name": tool_name,
+                            "content": json.dumps(tool_result, ensure_ascii=False)
+                        })
+                    
+                    # 再次调用LLM获取最终响应（流式）
+                    full_response = ""
+                    async for chunk in llm.stream_chat(
+                        messages=messages,
+                        temperature=agent_config.get("temperature", 0.7),
+                        max_tokens=agent_config.get("max_tokens", 4096)
+                    ):
+                        if chunk and isinstance(chunk, str):
+                            full_response += chunk
+                            yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
 
                 # 流结束，保存完整响应到上下文
                 if full_response:
@@ -333,6 +441,7 @@ async def chat_stream(request: ChatRequest):
                 yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
 
             except Exception as e:
+                logger.error(f"流式聊天错误: {e}", exc_info=True)
                 yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
 
         return StreamingResponse(
@@ -357,8 +466,12 @@ async def get_chat_history(session_id: str, limit: int = 50):
 
     try:
         context_mgr = get_context_manager()
-        messages = context_mgr.get_messages(session_id, limit=limit)
         session = context_mgr.get_session(session_id)
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        messages = context_mgr.get_messages(session_id, limit=limit)
 
         return {
             "status": "success",
@@ -366,5 +479,7 @@ async def get_chat_history(session_id: str, limit: int = 50):
             "session": session,
             "messages": messages
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

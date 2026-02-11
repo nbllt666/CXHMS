@@ -427,8 +427,8 @@ class TestContextManager:
         assert session_id is not None, "会话ID不应该为空"
         assert len(session_id) > 0, "会话ID应该有长度"
 
-        # ContextManager 没有 close 方法，使用 clear_cache
-        manager.clear_cache()
+        # ContextManager 没有 close 方法，使用 shutdown
+        manager.shutdown()
 
     def test_add_message(self, tmp_path):
         """测试添加消息"""
@@ -450,7 +450,7 @@ class TestContextManager:
         assert len(messages) == 1, "应该有一条消息"
         assert messages[0]["content"] == "测试消息", "消息内容应该匹配"
 
-        manager.clear_cache()
+        manager.shutdown()
 
     def test_add_mono_context(self, tmp_path):
         """测试添加独白上下文"""
@@ -471,7 +471,7 @@ class TestContextManager:
         assert len(context) == 1, "应该有一条独白"
         assert context[0]["content"] == "内心独白内容", "独白内容应该匹配"
 
-        manager.clear_cache()
+        manager.shutdown()
 
     def test_clear_expired_mono(self, tmp_path):
         """测试清理过期独白"""
@@ -488,4 +488,604 @@ class TestContextManager:
         cleared = manager.clear_expired_mono(session_id)
         assert cleared >= 0, "清理数量应该大于等于0"
 
-        manager.clear_cache()
+        manager.shutdown()
+
+    def test_get_session(self, tmp_path):
+        """测试获取单个会话"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(
+            workspace_id="default",
+            title="测试会话标题",
+            user_id="user123"
+        )
+
+        session = manager.get_session(session_id)
+        assert session is not None, "应该能获取到会话"
+        assert session["id"] == session_id, "会话ID应该匹配"
+        assert session["title"] == "测试会话标题", "会话标题应该匹配"
+        assert session["user_id"] == "user123", "用户ID应该匹配"
+        assert session["workspace_id"] == "default", "工作区ID应该匹配"
+
+        manager.shutdown()
+
+    def test_get_session_not_found(self, tmp_path):
+        """测试获取不存在的会话"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session = manager.get_session("non-existent-id")
+        assert session is None, "不存在的会话应该返回None"
+
+        manager.shutdown()
+
+    def test_get_sessions(self, tmp_path):
+        """测试获取会话列表"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id1 = manager.create_session(workspace_id="default", title="会话1")
+        session_id2 = manager.create_session(workspace_id="default", title="会话2")
+        manager.create_session(workspace_id="other", title="会话3")
+
+        sessions = manager.get_sessions(workspace_id="default")
+        assert len(sessions) == 2, "应该有2个会话"
+        session_ids = [s["id"] for s in sessions]
+        assert session_id1 in session_ids, "应该包含会话1"
+        assert session_id2 in session_ids, "应该包含会话2"
+
+        manager.shutdown()
+
+    def test_get_sessions_with_limit(self, tmp_path):
+        """测试带限制的会话列表"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        for i in range(5):
+            manager.create_session(workspace_id="default", title=f"会话{i}")
+
+        sessions = manager.get_sessions(workspace_id="default", limit=3)
+        assert len(sessions) == 3, "应该只返回3个会话"
+
+        manager.shutdown()
+
+    def test_update_session(self, tmp_path):
+        """测试更新会话"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default", title="原标题")
+
+        success = manager.update_session(session_id, title="新标题")
+        assert success is True, "更新应该成功"
+
+        session = manager.get_session(session_id)
+        assert session["title"] == "新标题", "标题应该已更新"
+
+        manager.shutdown()
+
+    def test_update_session_with_summary(self, tmp_path):
+        """测试更新会话摘要"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        success = manager.update_session(
+            session_id,
+            summary="这是会话摘要",
+            is_active=False
+        )
+        assert success is True, "更新应该成功"
+
+        session = manager.get_session(session_id)
+        assert session["summary"] == "这是会话摘要", "摘要应该已更新"
+        assert session["is_active"] is False, "活动状态应该已更新"
+
+        manager.shutdown()
+
+    def test_delete_session(self, tmp_path):
+        """测试删除会话"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+        manager.add_message(session_id, "user", "测试消息")
+
+        success = manager.delete_session(session_id)
+        assert success is True, "删除应该成功"
+
+        session = manager.get_session(session_id)
+        assert session is None, "会话应该已删除"
+
+        messages = manager.get_messages(session_id)
+        assert len(messages) == 0, "消息应该已删除"
+
+        manager.shutdown()
+
+    def test_delete_session_not_found(self, tmp_path):
+        """测试删除不存在的会话"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        success = manager.delete_session("non-existent-id")
+        assert success is False, "删除不存在的会话应该失败"
+
+        manager.shutdown()
+
+    def test_get_messages_with_pagination(self, tmp_path):
+        """测试分页获取消息"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        for i in range(10):
+            manager.add_message(session_id, "user", f"消息{i}")
+
+        messages = manager.get_messages(session_id, limit=5, offset=0)
+        assert len(messages) == 5, "应该返回5条消息"
+
+        messages = manager.get_messages(session_id, limit=5, offset=5)
+        assert len(messages) == 5, "应该返回另外5条消息"
+
+        manager.shutdown()
+
+    def test_delete_message(self, tmp_path):
+        """测试删除消息"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+        message_id = manager.add_message(session_id, "user", "待删除的消息")
+
+        success = manager.delete_message(message_id)
+        assert success is True, "删除应该成功"
+
+        messages = manager.get_messages(session_id)
+        assert len(messages) == 0, "消息应该已删除"
+
+        manager.shutdown()
+
+    def test_get_message_count(self, tmp_path):
+        """测试获取消息数量"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        count = manager.get_message_count(session_id)
+        assert count == 0, "初始应该有0条消息"
+
+        for i in range(5):
+            manager.add_message(session_id, "user", f"消息{i}")
+
+        count = manager.get_message_count(session_id)
+        assert count == 5, "应该有5条消息"
+
+        manager.shutdown()
+
+    def test_clear_session_messages(self, tmp_path):
+        """测试清理会话消息"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        for i in range(10):
+            manager.add_message(session_id, "user", f"消息{i}")
+
+        success = manager.clear_session_messages(session_id)
+        assert success is True, "清理应该成功"
+
+        messages = manager.get_messages(session_id)
+        assert len(messages) == 0, "所有消息应该已清理"
+
+        session = manager.get_session(session_id)
+        assert session["message_count"] == 0, "消息计数应该为0"
+
+        manager.shutdown()
+
+    def test_get_statistics(self, tmp_path):
+        """测试获取统计信息"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id1 = manager.create_session(workspace_id="default")
+        session_id2 = manager.create_session(workspace_id="default")
+        manager.create_session(workspace_id="other")
+
+        for i in range(5):
+            manager.add_message(session_id1, "user", f"消息{i}")
+
+        for i in range(3):
+            manager.add_message(session_id2, "user", f"消息{i}")
+
+        stats = manager.get_statistics(workspace_id="default")
+        assert stats["total_sessions"] == 2, "应该有2个会话"
+        assert stats["active_sessions"] == 2, "应该有2个活动会话"
+        assert stats["total_messages"] == 8, "应该有8条消息"
+        assert stats["avg_messages_per_session"] == 4.0, "平均消息数应该是4"
+
+        manager.shutdown()
+
+    def test_add_message_with_metadata(self, tmp_path):
+        """测试添加带元数据的消息"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        message_id = manager.add_message(
+            session_id=session_id,
+            role="user",
+            content="测试消息",
+            content_type="text",
+            metadata={"key": "value"},
+            tokens=100
+        )
+
+        messages = manager.get_messages(session_id)
+        assert len(messages) == 1, "应该有一条消息"
+        assert messages[0]["metadata"]["key"] == "value", "元数据应该匹配"
+        assert messages[0]["tokens"] == 100, "token数应该匹配"
+
+        manager.shutdown()
+
+    def test_add_multiple_messages(self, tmp_path):
+        """测试添加多条消息"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        manager.add_message(session_id, "user", "用户消息1")
+        manager.add_message(session_id, "assistant", "助手回复1")
+        manager.add_message(session_id, "user", "用户消息2")
+        manager.add_message(session_id, "assistant", "助手回复2")
+
+        messages = manager.get_messages(session_id)
+        assert len(messages) == 4, "应该有4条消息"
+        assert messages[0]["role"] == "user", "第一条应该是用户消息"
+        assert messages[1]["role"] == "assistant", "第二条应该是助手消息"
+
+        session = manager.get_session(session_id)
+        assert session["message_count"] == 4, "消息计数应该是4"
+
+        manager.shutdown()
+
+    def test_mono_context_expiration(self, tmp_path):
+        """测试Mono上下文过期"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        manager.add_mono_context(session_id, "独白1", rounds=1)
+
+        context = manager.get_mono_context(session_id)
+        assert len(context) == 1, "应该有一条独白"
+
+        manager.shutdown()
+
+    def test_close_connection(self, tmp_path):
+        """测试关闭连接"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        manager.close_connection()
+
+        manager.shutdown()
+
+    def test_shutdown(self, tmp_path):
+        """测试关闭管理器"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        manager.shutdown()
+
+        manager.shutdown()
+        """测试获取单个会话"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(
+            workspace_id="default",
+            title="测试会话标题",
+            user_id="user123"
+        )
+
+        session = manager.get_session(session_id)
+        assert session is not None, "应该能获取到会话"
+        assert session["id"] == session_id, "会话ID应该匹配"
+        assert session["title"] == "测试会话标题", "会话标题应该匹配"
+        assert session["user_id"] == "user123", "用户ID应该匹配"
+        assert session["workspace_id"] == "default", "工作区ID应该匹配"
+
+        manager.shutdown()
+
+    def test_get_session_not_found(self, tmp_path):
+        """测试获取不存在的会话"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session = manager.get_session("non-existent-id")
+        assert session is None, "不存在的会话应该返回None"
+
+        manager.shutdown()
+
+    def test_get_sessions(self, tmp_path):
+        """测试获取会话列表"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id1 = manager.create_session(workspace_id="default", title="会话1")
+        session_id2 = manager.create_session(workspace_id="default", title="会话2")
+        manager.create_session(workspace_id="other", title="会话3")
+
+        sessions = manager.get_sessions(workspace_id="default")
+        assert len(sessions) == 2, "应该有2个会话"
+        session_ids = [s["id"] for s in sessions]
+        assert session_id1 in session_ids, "应该包含会话1"
+        assert session_id2 in session_ids, "应该包含会话2"
+
+        manager.shutdown()
+
+    def test_get_sessions_with_limit(self, tmp_path):
+        """测试带限制的会话列表"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        for i in range(5):
+            manager.create_session(workspace_id="default", title=f"会话{i}")
+
+        sessions = manager.get_sessions(workspace_id="default", limit=3)
+        assert len(sessions) == 3, "应该只返回3个会话"
+
+        manager.shutdown()
+
+    def test_update_session(self, tmp_path):
+        """测试更新会话"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default", title="原标题")
+
+        success = manager.update_session(session_id, title="新标题")
+        assert success is True, "更新应该成功"
+
+        session = manager.get_session(session_id)
+        assert session["title"] == "新标题", "标题应该已更新"
+
+        manager.shutdown()
+
+    def test_update_session_with_summary(self, tmp_path):
+        """测试更新会话摘要"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        success = manager.update_session(
+            session_id,
+            summary="这是会话摘要",
+            is_active=False
+        )
+        assert success is True, "更新应该成功"
+
+        session = manager.get_session(session_id)
+        assert session["summary"] == "这是会话摘要", "摘要应该已更新"
+        assert session["is_active"] is False, "活动状态应该已更新"
+
+        manager.shutdown()
+
+    def test_delete_session(self, tmp_path):
+        """测试删除会话"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+        manager.add_message(session_id, "user", "测试消息")
+
+        success = manager.delete_session(session_id)
+        assert success is True, "删除应该成功"
+
+        session = manager.get_session(session_id)
+        assert session is None, "会话应该已删除"
+
+        messages = manager.get_messages(session_id)
+        assert len(messages) == 0, "消息应该已删除"
+
+        manager.shutdown()
+
+    def test_delete_session_not_found(self, tmp_path):
+        """测试删除不存在的会话"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        success = manager.delete_session("non-existent-id")
+        assert success is False, "删除不存在的会话应该失败"
+
+        manager.shutdown()
+
+    def test_get_messages_with_pagination(self, tmp_path):
+        """测试分页获取消息"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        for i in range(10):
+            manager.add_message(session_id, "user", f"消息{i}")
+
+        messages = manager.get_messages(session_id, limit=5, offset=0)
+        assert len(messages) == 5, "应该返回5条消息"
+
+        messages = manager.get_messages(session_id, limit=5, offset=5)
+        assert len(messages) == 5, "应该返回另外5条消息"
+
+        manager.shutdown()
+
+    def test_delete_message(self, tmp_path):
+        """测试删除消息"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+        message_id = manager.add_message(session_id, "user", "待删除的消息")
+
+        success = manager.delete_message(message_id)
+        assert success is True, "删除应该成功"
+
+        messages = manager.get_messages(session_id)
+        assert len(messages) == 0, "消息应该已删除"
+
+        manager.shutdown()
+
+    def test_get_message_count(self, tmp_path):
+        """测试获取消息数量"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        count = manager.get_message_count(session_id)
+        assert count == 0, "初始应该有0条消息"
+
+        for i in range(5):
+            manager.add_message(session_id, "user", f"消息{i}")
+
+        count = manager.get_message_count(session_id)
+        assert count == 5, "应该有5条消息"
+
+        manager.shutdown()
+
+    def test_clear_session_messages(self, tmp_path):
+        """测试清理会话消息"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        for i in range(10):
+            manager.add_message(session_id, "user", f"消息{i}")
+
+        success = manager.clear_session_messages(session_id)
+        assert success is True, "清理应该成功"
+
+        messages = manager.get_messages(session_id)
+        assert len(messages) == 0, "所有消息应该已清理"
+
+        session = manager.get_session(session_id)
+        assert session["message_count"] == 0, "消息计数应该为0"
+
+        manager.shutdown()
+
+    def test_get_statistics(self, tmp_path):
+        """测试获取统计信息"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id1 = manager.create_session(workspace_id="default")
+        session_id2 = manager.create_session(workspace_id="default")
+        manager.create_session(workspace_id="other")
+
+        for i in range(5):
+            manager.add_message(session_id1, "user", f"消息{i}")
+
+        for i in range(3):
+            manager.add_message(session_id2, "user", f"消息{i}")
+
+        stats = manager.get_statistics(workspace_id="default")
+        assert stats["total_sessions"] == 2, "应该有2个会话"
+        assert stats["active_sessions"] == 2, "应该有2个活动会话"
+        assert stats["total_messages"] == 8, "应该有8条消息"
+        assert stats["avg_messages_per_session"] == 4.0, "平均消息数应该是4"
+
+        manager.shutdown()
+
+    def test_add_message_with_metadata(self, tmp_path):
+        """测试添加带元数据的消息"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        message_id = manager.add_message(
+            session_id=session_id,
+            role="user",
+            content="测试消息",
+            content_type="text",
+            metadata={"key": "value"},
+            tokens=100
+        )
+
+        messages = manager.get_messages(session_id)
+        assert len(messages) == 1, "应该有一条消息"
+        assert messages[0]["metadata"]["key"] == "value", "元数据应该匹配"
+        assert messages[0]["tokens"] == 100, "token数应该匹配"
+
+        manager.shutdown()
+
+    def test_add_multiple_messages(self, tmp_path):
+        """测试添加多条消息"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        manager.add_message(session_id, "user", "用户消息1")
+        manager.add_message(session_id, "assistant", "助手回复1")
+        manager.add_message(session_id, "user", "用户消息2")
+        manager.add_message(session_id, "assistant", "助手回复2")
+
+        messages = manager.get_messages(session_id)
+        assert len(messages) == 4, "应该有4条消息"
+        assert messages[0]["role"] == "user", "第一条应该是用户消息"
+        assert messages[1]["role"] == "assistant", "第二条应该是助手消息"
+
+        session = manager.get_session(session_id)
+        assert session["message_count"] == 4, "消息计数应该是4"
+
+        manager.shutdown()
+
+    def test_mono_context_expiration(self, tmp_path):
+        """测试Mono上下文过期"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        manager.add_mono_context(session_id, "独白1", rounds=1)
+
+        context = manager.get_mono_context(session_id)
+        assert len(context) == 1, "应该有一条独白"
+
+        manager.shutdown()
+
+    def test_close_connection(self, tmp_path):
+        """测试关闭连接"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        manager.close_connection()
+
+        manager.shutdown()
+
+    def test_shutdown(self, tmp_path):
+        """测试关闭管理器"""
+        db_path = tmp_path / "test_context.db"
+        manager = ContextManager(str(db_path))
+
+        session_id = manager.create_session(workspace_id="default")
+
+        manager.shutdown()
+
+        manager.shutdown()

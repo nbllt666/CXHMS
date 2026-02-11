@@ -7,8 +7,6 @@ import os
 router = APIRouter()
 logger = get_contextual_logger(__name__)
 
-# 简单的 API Key 验证
-# 在生产环境中应该使用更安全的认证方式
 ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "chenxi-admin-default-key-change-in-production")
 
 
@@ -19,7 +17,7 @@ def verify_admin_key(x_api_key: Optional[str] = Header(None)) -> bool:
     return x_api_key == ADMIN_API_KEY
 
 
-@router.get("/api/admin/dashboard")
+@router.get("/admin/dashboard")
 async def get_dashboard(x_api_key: Optional[str] = Header(None)):
     if not verify_admin_key(x_api_key):
         raise HTTPException(status_code=401, detail="未授权访问")
@@ -57,7 +55,7 @@ async def get_dashboard(x_api_key: Optional[str] = Header(None)):
     }
 
 
-@router.get("/api/admin/stats")
+@router.get("/admin/stats")
 async def get_stats(x_api_key: Optional[str] = Header(None)):
     if not verify_admin_key(x_api_key):
         raise HTTPException(status_code=401, detail="未授权访问")
@@ -94,7 +92,7 @@ async def get_stats(x_api_key: Optional[str] = Header(None)):
     }
 
 
-@router.get("/api/admin/health")
+@router.get("/admin/health")
 async def health_check():
     """健康检查端点 - 不需要认证"""
     from backend.api.app import get_memory_manager, get_context_manager, get_acp_manager
@@ -132,40 +130,35 @@ async def health_check():
     }
 
 
-@router.get("/api/admin/config")
+@router.get("/admin/config")
 async def get_config(x_api_key: Optional[str] = Header(None)):
     if not verify_admin_key(x_api_key):
         raise HTTPException(status_code=401, detail="未授权访问")
 
     from config.settings import settings
 
-    # 只返回非敏感配置
     return {
         "status": "success",
         "config": {
             "llm": {
                 "provider": settings.config.llm.provider,
                 "model": settings.config.llm.model
-                # 注意：不返回 host 和 api_key 等敏感信息
             },
             "vector": {
                 "enabled": settings.config.vector.enabled
-                # 注意：不返回 host 和 port 等敏感信息
             },
             "acp": {
                 "enabled": settings.config.acp.enabled,
                 "agent_name": settings.config.acp.agent_name
-                # 注意：不返回 agent_id
             },
             "system": {
                 "debug": settings.config.system.debug
-                # 注意：不返回 host 和 port
             }
         }
     }
 
 
-@router.put("/api/admin/config")
+@router.put("/admin/config")
 async def update_config(config: Dict, x_api_key: Optional[str] = Header(None)):
     if not verify_admin_key(x_api_key):
         raise HTTPException(status_code=401, detail="未授权访问")
@@ -173,7 +166,6 @@ async def update_config(config: Dict, x_api_key: Optional[str] = Header(None)):
     from config.settings import settings
 
     try:
-        # 验证输入
         if not isinstance(config, dict):
             raise HTTPException(status_code=400, detail="配置必须是对象格式")
 
@@ -215,14 +207,13 @@ async def update_config(config: Dict, x_api_key: Optional[str] = Header(None)):
         raise HTTPException(status_code=500, detail="更新配置失败")
 
 
-@router.get("/api/admin/logs")
+@router.get("/admin/logs")
 async def get_logs(level: str = "INFO", lines: int = 50, x_api_key: Optional[str] = Header(None)):
     if not verify_admin_key(x_api_key):
         raise HTTPException(status_code=401, detail="未授权访问")
 
     import logging
 
-    # 验证参数
     if lines > 1000:
         lines = 1000
     if lines < 1:
@@ -241,7 +232,7 @@ async def get_logs(level: str = "INFO", lines: int = 50, x_api_key: Optional[str
     }
 
 
-@router.post("/api/admin/backup")
+@router.post("/admin/backup")
 async def create_backup(x_api_key: Optional[str] = Header(None)):
     if not verify_admin_key(x_api_key):
         raise HTTPException(status_code=401, detail="未授权访问")

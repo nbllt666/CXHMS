@@ -1,7 +1,12 @@
 import axios, { AxiosInstance, AxiosError } from 'axios'
+import type { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || ''
-const CONTROL_SERVICE_URL = ''
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const CONTROL_SERVICE_URL = import.meta.env.VITE_CONTROL_SERVICE_URL || 'http://localhost:8765'
+
+interface RetryConfig extends InternalAxiosRequestConfig {
+  retryCount?: number
+}
 
 // Type definitions
 export interface Agent {
@@ -22,6 +27,9 @@ export interface Agent {
 class ApiClient {
   private client: AxiosInstance
   private controlClient: AxiosInstance
+  private maxRetries: number = 3
+  private retryDelay: number = 1000
+  private cache: Map<string, { data: any; timestamp: number; ttl: number }>
 
   constructor() {
     this.client = axios.create({
@@ -32,7 +40,6 @@ class ApiClient {
       },
     })
 
-    // Control service client (for managing main backend)
     this.controlClient = axios.create({
       baseURL: CONTROL_SERVICE_URL,
       timeout: 30000,
@@ -41,10 +48,50 @@ class ApiClient {
       },
     })
 
-    // Request interceptor
-    this.client.interceptors.request.use(
+    this.cache = new Map()
+    this._setupInterceptors(this.client)
+    this._setupInterceptors(this.controlClient)
+  }
+
+  private _getCacheKey(url: string, params?: any): string {
+    return `${url}?${JSON.stringify(params || {})}`
+  }
+
+  private _getFromCache(key: string): any | null {
+    const cached = this.cache.get(key)
+    if (!cached) return null
+    
+    if (Date.now() - cached.timestamp > cached.ttl) {
+      this.cache.delete(key)
+      return null
+    }
+    
+    return cached.data
+  }
+
+  private _setCache(key: string, data: any, ttl: number = 60000): void {
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      ttl
+    })
+  }
+
+  private _clearCache(pattern?: string): void {
+    if (pattern) {
+      for (const key of this.cache.keys()) {
+        if (key.includes(pattern)) {
+          this.cache.delete(key)
+        }
+      }
+    } else {
+      this.cache.clear()
+    }
+  }
+
+  private _setupInterceptors(axiosInstance: AxiosInstance) {
+    axiosInstance.interceptors.request.use(
       (config) => {
-        // Add auth token if available
         const token = localStorage.getItem('cxhms-token')
         if (token) {
           config.headers.Authorization = `Bearer ${token}`
@@ -54,15 +101,30 @@ class ApiClient {
       (error) => Promise.reject(error)
     )
 
-    // Response interceptor
-    this.client.interceptors.response.use(
+    axiosInstance.interceptors.response.use(
       (response) => response,
-      (error: AxiosError) => {
+      async (error: AxiosError) => {
         if (error.response?.status === 401) {
-          // Handle unauthorized
           localStorage.removeItem('cxhms-token')
           window.location.href = '/login'
+          return Promise.reject(error)
         }
+
+        if (error.response?.status === 503) {
+          return Promise.reject(error)
+        }
+
+        const config = error.config as RetryConfig | undefined
+        if (!config || !config.retryCount) {
+          if (config) config.retryCount = 0
+        }
+
+        if (config && config.retryCount !== undefined && config.retryCount < this.maxRetries) {
+          config.retryCount += 1
+          await new Promise(resolve => setTimeout(resolve, this.retryDelay * (config.retryCount || 1)))
+          return axiosInstance.request(config as AxiosRequestConfig)
+        }
+
         return Promise.reject(error)
       }
     )
@@ -267,16 +329,27 @@ class ApiClient {
 
   // Context
   async getSessions() {
+    const cacheKey = this._getCacheKey('/api/context/sessions')
+    const cached = this._getFromCache(cacheKey)
+    if (cached) return cached
+    
     const response = await this.client.get('/api/context/sessions')
+    this._setCache(cacheKey, response.data, 30000)
     return response.data
   }
 
   async createSession(title?: string) {
-    const response = await this.client.post('/api/context/sessions', { title })
+    this._clearCache('/api/context/sessions')
+    const response = await this.client.post('/api/context/sessions', { 
+      workspace_id: 'default',
+      title: title || '新对话'
+    })
     return response.data
   }
 
   async deleteSession(sessionId: string) {
+    this._clearCache('/api/context/sessions')
+    this._clearCache(`/api/context/sessions/${sessionId}`)
     const response = await this.client.delete(`/api/context/sessions/${sessionId}`)
     return response.data
   }
@@ -337,12 +410,22 @@ class ApiClient {
   // ========== Chat Agent APIs ==========
 
   async getAgents() {
+    const cacheKey = this._getCacheKey('/api/agents')
+    const cached = this._getFromCache(cacheKey)
+    if (cached) return cached
+    
     const response = await this.client.get('/api/agents')
+    this._setCache(cacheKey, response.data, 300000)
     return response.data
   }
 
   async getAgent(id: string) {
+    const cacheKey = this._getCacheKey(`/api/agents/${id}`)
+    const cached = this._getFromCache(cacheKey)
+    if (cached) return cached
+    
     const response = await this.client.get(`/api/agents/${id}`)
+    this._setCache(cacheKey, response.data, 300000)
     return response.data
   }
 
@@ -357,6 +440,7 @@ class ApiClient {
     use_tools?: boolean
     memory_scene?: string
   }) {
+    this._clearCache('/api/agents')
     const response = await this.client.post('/api/agents', data)
     return response.data
   }
@@ -372,11 +456,15 @@ class ApiClient {
     use_tools: boolean
     memory_scene: string
   }>) {
+    this._clearCache('/api/agents')
+    this._clearCache(`/api/agents/${id}`)
     const response = await this.client.put(`/api/agents/${id}`, data)
     return response.data
   }
 
   async deleteAgent(id: string) {
+    this._clearCache('/api/agents')
+    this._clearCache(`/api/agents/${id}`)
     const response = await this.client.delete(`/api/agents/${id}`)
     return response.data
   }
@@ -437,7 +525,16 @@ class ApiClient {
   async sendMessageStream(
     message: string,
     sessionId: string,
-    onChunk: (chunk: { content?: string; done?: boolean; error?: string; session_id?: string }) => void,
+    onChunk: (chunk: { 
+      type: string; 
+      content?: string; 
+      done?: boolean; 
+      error?: string; 
+      session_id?: string;
+      tool_call?: any;
+      tool_name?: string;
+      result?: any;
+    }) => void,
     agentId?: string
   ) {
     try {
@@ -452,13 +549,13 @@ class ApiClient {
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Unknown error')
-        onChunk({ error: `HTTP ${response.status}: ${errorText}` })
+        onChunk({ type: 'error', error: `HTTP ${response.status}: ${errorText}` })
         return
       }
 
       const reader = response.body?.getReader()
       if (!reader) {
-        onChunk({ error: 'No response body' })
+        onChunk({ type: 'error', error: 'No response body' })
         return
       }
 
@@ -486,12 +583,12 @@ class ApiClient {
           }
         }
       } catch (streamError) {
-        onChunk({ error: `Stream error: ${streamError instanceof Error ? streamError.message : 'Unknown error'}` })
+        onChunk({ type: 'error', error: `Stream error: ${streamError instanceof Error ? streamError.message : 'Unknown error'}` })
       } finally {
         reader.releaseLock()
       }
     } catch (fetchError) {
-      onChunk({ error: `Fetch error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}` })
+      onChunk({ type: 'error', error: `Fetch error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}` })
     }
   }
 

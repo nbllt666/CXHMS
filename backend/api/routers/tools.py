@@ -52,7 +52,7 @@ class MCPToolCallRequest(BaseModel):
     arguments: Dict = {}
 
 
-@router.get("/api/tools")
+@router.get("/tools")
 async def list_tools(enabled_only: bool = True):
     """列出工具"""
     from backend.core.tools.registry import tool_registry
@@ -72,7 +72,7 @@ async def list_tools(enabled_only: bool = True):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.post("/api/tools")
+@router.post("/tools")
 async def register_tool(request: ToolRegisterRequest):
     from backend.core.tools.registry import tool_registry
 
@@ -98,7 +98,7 @@ async def register_tool(request: ToolRegisterRequest):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.get("/api/tools/{name}")
+@router.get("/tools/{name}")
 async def get_tool(name: str):
     from backend.core.tools.registry import tool_registry
 
@@ -118,7 +118,7 @@ async def get_tool(name: str):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.delete("/api/tools/{name}")
+@router.delete("/tools/{name}")
 async def delete_tool(name: str):
     from backend.core.tools.registry import tool_registry
 
@@ -138,7 +138,7 @@ async def delete_tool(name: str):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.post("/api/tools/call")
+@router.post("/tools/call")
 async def call_tool(request: ToolCallRequest):
     """调用工具"""
     from backend.core.tools.registry import tool_registry
@@ -155,7 +155,7 @@ async def call_tool(request: ToolCallRequest):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.get("/api/tools/openai")
+@router.get("/tools/openai")
 async def get_openai_functions(enabled_only: bool = True):
     """获取OpenAI格式的工具列表"""
     from backend.core.tools.registry import tool_registry
@@ -173,7 +173,7 @@ async def get_openai_functions(enabled_only: bool = True):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.get("/api/tools/stats")
+@router.get("/tools/stats")
 async def get_tool_stats():
     from backend.core.tools.registry import tool_registry
 
@@ -190,7 +190,7 @@ async def get_tool_stats():
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.post("/api/tools/export")
+@router.post("/tools/export")
 async def export_tools():
     from backend.core.tools.registry import tool_registry
 
@@ -208,7 +208,7 @@ async def export_tools():
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.post("/api/tools/import")
+@router.post("/tools/import")
 async def import_tools(tools: List[Dict]):
     from backend.core.tools.registry import tool_registry
 
@@ -226,7 +226,7 @@ async def import_tools(tools: List[Dict]):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.get("/api/tools/mcp/servers")
+@router.get("/tools/mcp/servers")
 async def get_mcp_servers():
     from backend.api.app import get_mcp_manager
 
@@ -246,7 +246,7 @@ async def get_mcp_servers():
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.post("/api/tools/mcp/servers")
+@router.post("/tools/mcp/servers")
 async def add_mcp_server(request: MCPServerAddRequest):
     from backend.api.app import get_mcp_manager
 
@@ -270,7 +270,7 @@ async def add_mcp_server(request: MCPServerAddRequest):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.delete("/api/tools/mcp/servers/{name}")
+@router.delete("/tools/mcp/servers/{name}")
 async def remove_mcp_server(name: str):
     from backend.api.app import get_mcp_manager
 
@@ -290,7 +290,7 @@ async def remove_mcp_server(name: str):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.post("/api/tools/mcp/servers/start")
+@router.post("/tools/mcp/servers/start")
 async def start_mcp_server(request: MCPServerStartRequest):
     from backend.api.app import get_mcp_manager
 
@@ -308,7 +308,7 @@ async def start_mcp_server(request: MCPServerStartRequest):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.post("/api/tools/mcp/servers/stop")
+@router.post("/tools/mcp/servers/stop")
 async def stop_mcp_server(request: MCPServerStopRequest):
     from backend.api.app import get_mcp_manager
 
@@ -326,7 +326,7 @@ async def stop_mcp_server(request: MCPServerStopRequest):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.get("/api/tools/mcp/servers/{name}/health")
+@router.get("/tools/mcp/servers/{name}/health")
 async def check_mcp_server_health(name: str):
     from backend.api.app import get_mcp_manager
 
@@ -344,7 +344,7 @@ async def check_mcp_server_health(name: str):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.get("/api/tools/mcp/servers/{name}/tools")
+@router.get("/tools/mcp/servers/{name}/tools")
 async def get_mcp_server_tools(name: str):
     from backend.api.app import get_mcp_manager
 
@@ -363,7 +363,7 @@ async def get_mcp_server_tools(name: str):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.post("/api/tools/mcp/call")
+@router.post("/tools/mcp/call")
 async def call_mcp_tool(request: MCPToolCallRequest):
     from backend.api.app import get_mcp_manager
 
@@ -384,7 +384,7 @@ async def call_mcp_tool(request: MCPToolCallRequest):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.post("/api/tools/mcp/sync")
+@router.post("/tools/mcp/sync")
 async def sync_mcp_tools(name: str):
     from backend.api.app import get_mcp_manager
 
@@ -402,7 +402,7 @@ async def sync_mcp_tools(name: str):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.get("/api/tools/plugins")
+@router.get("/tools/plugins")
 async def get_plugins():
     from backend.core.tools import tool_registry
 

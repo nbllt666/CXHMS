@@ -7,6 +7,9 @@ from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
 
+# 内置工具名称集合
+BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
+
 
 @dataclass
 class Tool:
@@ -124,10 +127,44 @@ class ToolRegistry:
     def list_tools_dict(self, enabled_only: bool = True) -> List[Dict]:
         return [t.to_dict() for t in self.list_tools(enabled_only)]
 
-    def list_openai_functions(self, enabled_only: bool = True) -> List[Dict]:
-        return [t.to_openai_function() for t in self.list_tools(enabled_only) if t.enabled]
+    def list_openai_functions(self, enabled_only: bool = True, include_builtin: bool = True, category: str = None) -> List[Dict]:
+        """
+        获取所有工具的 OpenAI 函数定义
+        
+        Args:
+            enabled_only: 是否只返回启用的工具
+            include_builtin: 是否包含内置工具（默认True，强制开启）
+            category: 按类别过滤工具（main/summary/memory/general）
+        """
+        # 获取工具列表
+        all_tools = self.list_tools(enabled_only)
+        
+        # 按类别过滤
+        if category:
+            filtered_tools = [t for t in all_tools if t.category == category]
+        else:
+            filtered_tools = all_tools
+        
+        tools = [t.to_openai_function() for t in filtered_tools if t.enabled]
+        
+        # 强制包含内置工具
+        if include_builtin:
+            from backend.core.tools.builtin import get_builtin_tools
+            builtin_tools = get_builtin_tools()
+            # 避免重复添加
+            existing_names = {t["function"]["name"] for t in tools}
+            for builtin in builtin_tools:
+                if builtin["function"]["name"] not in existing_names:
+                    tools.append(builtin)
+        
+        return tools
 
     def call_tool(self, name: str, arguments: Dict = None) -> Dict:
+        # 检查是否是内置工具
+        if name in BUILTIN_TOOL_NAMES:
+            from backend.core.tools.builtin import call_builtin_tool
+            return call_builtin_tool(name, arguments or {})
+        
         tool = self.get_tool(name)
         if tool is None:
             return {

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import uuid
 import json
 from pathlib import Path
-from functools import lru_cache
+import threading
 from backend.core.exceptions import ContextError, DatabaseError
 from backend.core.logging_config import get_contextual_logger
 
@@ -26,22 +26,41 @@ class ContextManager:
             db_path: 数据库文件路径
         """
         self.db_path = db_path
+        self._local = threading.local()
+        self._connection_lock = threading.Lock()
         self._init_db()
 
-    @lru_cache(maxsize=100)
-    def _get_connection_cached(self):
-        """缓存的数据库连接"""
-        return self._get_connection()
+    def _get_connection(self):
+        """获取线程本地数据库连接"""
+        if not hasattr(self._local, 'connection') or self._local.connection is None:
+            import sqlite3
+            conn = sqlite3.connect(self.db_path, timeout=20.0)
+            conn.row_factory = sqlite3.Row
+            self._local.connection = conn
+        return self._local.connection
+
+    def close_connection(self):
+        """关闭当前线程的数据库连接"""
+        if hasattr(self._local, 'connection') and self._local.connection:
+            try:
+                self._local.connection.close()
+            except Exception as e:
+                logger.warning(f"关闭数据库连接失败: {e}")
+            self._local.connection = None
+
+    def shutdown(self):
+        """关闭所有连接"""
+        self.close_connection()
+        logger.info("上下文管理器已关闭")
 
     def clear_cache(self):
         """清理缓存"""
-        self._get_connection_cached.cache_clear()
         logger.info("上下文管理器缓存已清理")
 
     def _init_db(self):
         import sqlite3
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-
+        
         conn = sqlite3.connect(self.db_path, timeout=20.0)
         cursor = conn.cursor()
 
@@ -87,12 +106,6 @@ class ContextManager:
         conn.commit()
         conn.close()
 
-    def _get_connection(self):
-        import sqlite3
-        conn = sqlite3.connect(self.db_path, timeout=20.0)
-        conn.row_factory = sqlite3.Row
-        return conn
-
     def create_session(
         self,
         workspace_id: str = "default",
@@ -129,7 +142,6 @@ class ContextManager:
         ))
 
         conn.commit()
-        conn.close()
 
         logger.info(f"会话已创建: id={session_id}")
         return session_id
@@ -140,7 +152,6 @@ class ContextManager:
 
         cursor.execute("SELECT * FROM sessions WHERE id = ?", (session_id,))
         row = cursor.fetchone()
-        conn.close()
 
         if row:
             return self._row_to_session(row)
@@ -166,7 +177,6 @@ class ContextManager:
 
         cursor.execute(query, params)
         rows = cursor.fetchall()
-        conn.close()
 
         return [self._row_to_session(row) for row in rows]
 
@@ -198,10 +208,8 @@ class ContextManager:
 
         query = f"UPDATE sessions SET {', '.join(updates)} WHERE id = ?"
         cursor.execute(query, params)
-
         success = cursor.rowcount > 0
         conn.commit()
-        conn.close()
 
         return success
 
@@ -214,7 +222,6 @@ class ContextManager:
 
         success = cursor.rowcount > 0
         conn.commit()
-        conn.close()
 
         return success
 
@@ -250,7 +257,6 @@ class ContextManager:
         ''', (datetime.now().isoformat(), session_id))
 
         conn.commit()
-        conn.close()
 
         return message_id
 
@@ -275,7 +281,6 @@ class ContextManager:
 
         cursor.execute(query, params)
         rows = cursor.fetchall()
-        conn.close()
 
         return [self._row_to_message(row) for row in rows]
 
@@ -284,10 +289,8 @@ class ContextManager:
         cursor = conn.cursor()
 
         cursor.execute("UPDATE messages SET is_deleted = TRUE WHERE id = ?", (message_id,))
-
         success = cursor.rowcount > 0
         conn.commit()
-        conn.close()
 
         return success
 
@@ -297,7 +300,6 @@ class ContextManager:
 
         cursor.execute("SELECT COUNT(*) FROM messages WHERE session_id = ? AND is_deleted = FALSE", (session_id,))
         count = cursor.fetchone()[0]
-        conn.close()
 
         return count
 
@@ -307,10 +309,8 @@ class ContextManager:
 
         cursor.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
         cursor.execute("UPDATE sessions SET message_count = 0 WHERE id = ?", (session_id,))
-
         success = cursor.rowcount >= 0
         conn.commit()
-        conn.close()
 
         return success
 
@@ -356,8 +356,6 @@ class ContextManager:
 
         avg_messages = total_messages / total_sessions if total_sessions > 0 else 0
 
-        conn.close()
-
         return {
             "total_sessions": total_sessions,
             "active_sessions": active_sessions,
@@ -378,7 +376,6 @@ class ContextManager:
             cursor = conn.cursor()
 
             expires_at = datetime.now() + timedelta(hours=rounds)
-
             cursor.execute('''
                 INSERT INTO messages (id, session_id, role, content, content_type, metadata, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -401,11 +398,9 @@ class ContextManager:
             ''', (datetime.now().isoformat(), session_id))
 
             conn.commit()
-            conn.close()
 
             logger.info(f"Mono上下文已添加: session_id={session_id}, rounds={rounds}")
             return True
-
         except Exception as e:
             logger.error(f"添加Mono上下文失败: {e}")
             return False
@@ -423,7 +418,6 @@ class ContextManager:
             ''', (session_id,))
 
             rows = cursor.fetchall()
-            conn.close()
 
             now = datetime.now()
             valid_contexts = []
@@ -442,7 +436,6 @@ class ContextManager:
                         pass
 
             return valid_contexts
-
         except Exception as e:
             logger.error(f"获取Mono上下文失败: {e}")
             return []
@@ -473,13 +466,11 @@ class ContextManager:
             deleted_count = cursor.rowcount
 
             conn.commit()
-            conn.close()
 
             if deleted_count > 0:
                 logger.info(f"清理了 {deleted_count} 条过期Mono上下文")
 
             return deleted_count
-
         except Exception as e:
             logger.error(f"清理过期Mono上下文失败: {e}")
             return 0

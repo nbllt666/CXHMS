@@ -26,7 +26,7 @@ class MemoryChatResponse(BaseModel):
     data: Optional[Dict] = None
 
 
-@router.post("/api/memory-chat", response_model=MemoryChatResponse)
+@router.post("/memory-chat", response_model=MemoryChatResponse)
 async def memory_chat(request: MemoryChatRequest):
     """
     与记忆管理模型对话
@@ -47,11 +47,9 @@ async def memory_chat(request: MemoryChatRequest):
         if not memory_mgr:
             raise HTTPException(status_code=503, detail="记忆服务不可用")
         
-        # 确保对话引擎已初始化
         if not hasattr(memory_mgr, 'conversation_engine') or memory_mgr.conversation_engine is None:
             from backend.core.memory.conversation import MemoryConversationEngine
             
-            # 获取 LLM 客户端
             llm_client = None
             try:
                 model_router = get_model_router()
@@ -66,7 +64,6 @@ async def memory_chat(request: MemoryChatRequest):
             )
             logger.info("记忆管理对话引擎已初始化")
         
-        # 处理消息
         result = await memory_mgr.conversation_engine.process_message(
             user_message=request.message,
             session_id=request.session_id
@@ -87,7 +84,7 @@ async def memory_chat(request: MemoryChatRequest):
         raise HTTPException(status_code=500, detail=f"对话处理失败: {str(e)}")
 
 
-@router.get("/api/memory-chat/sessions/{session_id}")
+@router.get("/memory-chat/sessions/{session_id}")
 async def get_chat_session(session_id: str):
     """获取对话会话历史"""
     from backend.api.app import get_memory_manager
@@ -118,7 +115,7 @@ async def get_chat_session(session_id: str):
         raise HTTPException(status_code=500, detail=f"获取会话失败: {str(e)}")
 
 
-@router.delete("/api/memory-chat/sessions/{session_id}")
+@router.delete("/memory-chat/sessions/{session_id}")
 async def clear_chat_session(session_id: str):
     """清除对话会话"""
     from backend.api.app import get_memory_manager
@@ -129,7 +126,6 @@ async def clear_chat_session(session_id: str):
         if not memory_mgr or not hasattr(memory_mgr, 'conversation_engine'):
             raise HTTPException(status_code=503, detail="对话服务不可用")
         
-        # 删除会话
         if session_id in memory_mgr.conversation_engine._sessions:
             del memory_mgr.conversation_engine._sessions[session_id]
         
@@ -145,7 +141,7 @@ async def clear_chat_session(session_id: str):
         raise HTTPException(status_code=500, detail=f"清除会话失败: {str(e)}")
 
 
-@router.get("/api/memory-chat/commands")
+@router.get("/memory-chat/commands")
 async def list_available_commands():
     """列出可用的记忆管理命令"""
     from backend.core.memory.conversation import MemoryConversationEngine

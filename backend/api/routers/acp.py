@@ -47,7 +47,7 @@ class ACPSendMessageRequest(BaseModel):
     msg_type: str = "chat"
 
 
-@router.post("/api/acp/discover")
+@router.post("/acp/discover")
 async def discover_agents(request: ACPDiscoverRequest = None):
     """发现Agents"""
     from backend.api.app import get_acp_manager
@@ -70,7 +70,7 @@ async def discover_agents(request: ACPDiscoverRequest = None):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.get("/api/acp/agents")
+@router.get("/acp/agents")
 async def list_agents(online_only: bool = False):
     from backend.api.app import get_acp_manager
 
@@ -86,7 +86,7 @@ async def list_agents(online_only: bool = False):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/acp/connect")
+@router.post("/acp/connect")
 async def connect_to_agent(request: ACPConnectRequest):
     from backend.api.app import get_acp_manager
     from backend.core.acp.manager import ACPConnectionInfo
@@ -116,7 +116,7 @@ async def connect_to_agent(request: ACPConnectRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/api/acp/connect/{connection_id}")
+@router.delete("/acp/connect/{connection_id}")
 async def disconnect_from_agent(connection_id: str):
     from backend.api.app import get_acp_manager
 
@@ -137,7 +137,7 @@ async def disconnect_from_agent(connection_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/acp/connections")
+@router.get("/acp/connections")
 async def list_connections(local_only: bool = True):
     """列出连接"""
     from backend.api.app import get_acp_manager
@@ -157,7 +157,7 @@ async def list_connections(local_only: bool = True):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.post("/api/acp/groups")
+@router.post("/acp/groups")
 async def create_group(request: ACPGroupCreateRequest):
     """创建群组"""
     from backend.api.app import get_acp_manager
@@ -187,7 +187,7 @@ async def create_group(request: ACPGroupCreateRequest):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.get("/api/acp/groups")
+@router.get("/acp/groups")
 async def list_groups():
     from backend.api.app import get_acp_manager
     from backend.core.acp.group import ACPGroupManager
@@ -206,7 +206,7 @@ async def list_groups():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/acp/groups/{group_id}/join")
+@router.post("/acp/groups/{group_id}/join")
 async def join_group(group_id: str):
     from backend.api.app import get_acp_manager
     from backend.core.acp.group import ACPGroupManager
@@ -234,7 +234,7 @@ async def join_group(group_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/acp/groups/{group_id}/leave")
+@router.post("/acp/groups/{group_id}/leave")
 async def leave_group(group_id: str):
     from backend.api.app import get_acp_manager
     from backend.core.acp.group import ACPGroupManager
@@ -261,7 +261,7 @@ async def leave_group(group_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/acp/send")
+@router.post("/acp/send")
 async def send_message(request: ACPSendMessageRequest):
     from backend.api.app import get_acp_manager
     from backend.core.acp.manager import ACPMessageInfo
@@ -292,7 +292,7 @@ async def send_message(request: ACPSendMessageRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/acp/send/group")
+@router.post("/acp/send/group")
 async def send_group_message(group_id: str, content: Dict):
     from backend.api.app import get_acp_manager
     from backend.core.acp.group import ACPGroupManager
@@ -317,7 +317,7 @@ async def send_group_message(group_id: str, content: Dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/acp/messages")
+@router.get("/acp/messages")
 async def get_messages(
     agent_id: Optional[str] = None,
     group_id: Optional[str] = None,
@@ -342,7 +342,7 @@ async def get_messages(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/acp/stats")
+@router.get("/acp/stats")
 async def get_acp_stats():
     from backend.api.app import get_acp_manager
 

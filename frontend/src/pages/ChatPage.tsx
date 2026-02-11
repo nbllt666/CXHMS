@@ -10,6 +10,15 @@ interface Message {
   content: string
   timestamp: string
   memory_refs?: number[]
+  tool_calls?: ToolCall[]
+}
+
+interface ToolCall {
+  id: string
+  name: string
+  arguments?: any
+  result?: any
+  status?: 'pending' | 'executing' | 'completed' | 'failed'
 }
 
 export function ChatPage() {
@@ -81,41 +90,111 @@ export function ChatPage() {
       timestamp: new Date().toISOString()
     }
 
-    setMessages(prev => [...prev, userMessage])
+    const tempAssistantId = (Date.now() + 1).toString()
+    const streamingMessage: Message = {
+      id: tempAssistantId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString(),
+      tool_calls: []
+    }
+
+    setMessages(prev => [...prev, userMessage, streamingMessage])
     setInput('')
     setIsLoading(true)
 
     try {
-      const response = await api.sendMessage(
+      await api.sendMessageStream(
         userMessage.content,
-        currentSessionId || undefined,
-        currentAgentId
+        currentSessionId || tempAssistantId,
+        (chunk) => {
+          if (chunk.session_id && !currentSessionId) {
+            setCurrentSessionId(chunk.session_id)
+            refreshSessions()
+          }
+
+          if (chunk.type === 'content' && chunk.content) {
+            setMessages(prev => {
+              const lastMsg = prev[prev.length - 1]
+              if (lastMsg && lastMsg.id === tempAssistantId) {
+                return [...prev.slice(0, -1), {
+                  ...lastMsg,
+                  content: lastMsg.content + chunk.content!
+                }]
+              }
+              return prev
+            })
+          } else if (chunk.type === 'tool_call' && chunk.tool_call) {
+            setMessages(prev => {
+              const lastMsg = prev[prev.length - 1]
+              if (lastMsg && lastMsg.id === tempAssistantId) {
+                return [...prev.slice(0, -1), {
+                  ...lastMsg,
+                  tool_calls: [...(lastMsg.tool_calls || []), {
+                    id: chunk.tool_call.id || Date.now().toString(),
+                    name: chunk.tool_call.name || chunk.tool_call.function?.name || 'unknown',
+                    arguments: chunk.tool_call.arguments || chunk.tool_call.function?.arguments,
+                    status: 'pending'
+                  }]
+                }]
+              }
+              return prev
+            })
+          } else if (chunk.type === 'tool_start' && chunk.tool_name) {
+            setMessages(prev => {
+              const lastMsg = prev[prev.length - 1]
+              if (lastMsg && lastMsg.id === tempAssistantId && lastMsg.tool_calls) {
+                return [...prev.slice(0, -1), {
+                  ...lastMsg,
+                  tool_calls: lastMsg.tool_calls.map(tc =>
+                    tc.name === chunk.tool_name ? { ...tc, status: 'executing' } : tc
+                  )
+                }]
+              }
+              return prev
+            })
+          } else if (chunk.type === 'tool_result' && chunk.tool_name && chunk.result) {
+            setMessages(prev => {
+              const lastMsg = prev[prev.length - 1]
+              if (lastMsg && lastMsg.id === tempAssistantId && lastMsg.tool_calls) {
+                return [...prev.slice(0, -1), {
+                  ...lastMsg,
+                  tool_calls: lastMsg.tool_calls.map(tc =>
+                    tc.name === chunk.tool_name ? { ...tc, status: 'completed', result: chunk.result } : tc
+                  )
+                }]
+              }
+              return prev
+            })
+          } else if (chunk.type === 'done') {
+            setMessages(prev => {
+              const lastMsg = prev[prev.length - 1]
+              if (lastMsg && lastMsg.id === tempAssistantId) {
+                return [...prev.slice(0, -1), {
+                  ...lastMsg,
+                  content: lastMsg.content || '响应已完成'
+                }]
+              }
+              return prev
+            })
+          } else if (chunk.type === 'error') {
+            throw new Error(chunk.error || '未知错误')
+          }
+        },
+        currentAgentId || undefined
       )
-
-      // 如果是新会话，保存会话ID
-      if (response.session_id && !currentSessionId) {
-        setCurrentSessionId(response.session_id)
-        refreshSessions() // 刷新会话列表
-      }
-
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: response.response || '抱歉，我没有理解您的问题。',
-        timestamp: new Date().toISOString(),
-        memory_refs: response.memory_refs
-      }
-
-      setMessages(prev => [...prev, assistantMessage])
     } catch (error) {
       console.error('发送消息失败:', error)
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: '抱歉，服务暂时不可用，请稍后重试。',
-        timestamp: new Date().toISOString()
-      }
-      setMessages(prev => [...prev, errorMessage])
+      setMessages(prev => {
+        const lastMsg = prev[prev.length - 1]
+        if (lastMsg && lastMsg.id === tempAssistantId) {
+          return [...prev.slice(0, -1), {
+            ...lastMsg,
+            content: '抱歉，服务暂时不可用，请稍后重试。'
+          }]
+        }
+        return prev
+      })
     } finally {
       setIsLoading(false)
     }
@@ -173,7 +252,12 @@ export function ChatPage() {
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-muted'
                 }`}>
-                  <p className="whitespace-pre-wrap">{message.content}</p>
+                  <p className="whitespace-pre-wrap">
+                    {message.content}
+                    {message.role === 'assistant' && isLoading && message.id === messages[messages.length - 1]?.id && (
+                      <span className="inline-block w-2 h-4 ml-1 bg-primary/60 animate-pulse" />
+                    )}
+                  </p>
                 </div>
                 <span className="text-xs text-muted-foreground mt-1 px-1">
                   {formatRelativeTime(message.timestamp)}
@@ -187,6 +271,41 @@ export function ChatPage() {
                       >
                         引用记忆 #{ref}
                       </span>
+                    ))}
+                  </div>
+                )}
+                {message.tool_calls && message.tool_calls.length > 0 && (
+                  <div className="mt-2 space-y-2">
+                    {message.tool_calls.map((toolCall, idx) => (
+                      <div
+                        key={idx}
+                        className="text-xs p-2 bg-muted/50 rounded-lg border border-border"
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium text-foreground">
+                            🔧 {toolCall.name}
+                          </span>
+                          {toolCall.status === 'executing' && (
+                            <span className="animate-pulse text-blue-500">执行中...</span>
+                          )}
+                          {toolCall.status === 'completed' && (
+                            <span className="text-green-500">✓ 完成</span>
+                          )}
+                          {toolCall.status === 'failed' && (
+                            <span className="text-red-500">✗ 失败</span>
+                          )}
+                        </div>
+                        {toolCall.arguments && (
+                          <div className="text-muted-foreground font-mono text-[10px] mb-1">
+                            参数: {JSON.stringify(toolCall.arguments, null, 2)}
+                          </div>
+                        )}
+                        {toolCall.result && (
+                          <div className="text-muted-foreground font-mono text-[10px]">
+                            结果: {JSON.stringify(toolCall.result, null, 2)}
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
                 )}

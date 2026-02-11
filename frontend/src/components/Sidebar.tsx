@@ -92,7 +92,7 @@ export function Sidebar() {
       console.log('Agents loaded:', data)
       setAgents(data)
       const defaultAgent = data.find((a: Agent) => a.is_default)
-      if (defaultAgent && !currentAgent) {
+      if (defaultAgent && !currentAgentId) {
         setCurrentAgentId(defaultAgent.id)
       }
     } catch (error) {
@@ -139,11 +139,23 @@ export function Sidebar() {
     navigate('/')
   }
 
-  const startNewChat = (agentId: string) => {
-    setCurrentAgentId(agentId)
-    setCurrentSessionId(null)
-    setShowNewSessionModal(false)
-    navigate('/')
+  const startNewChat = async (agentId: string) => {
+    try {
+      setCurrentAgentId(agentId)
+      setCurrentSessionId(null)
+      setShowNewSessionModal(false)
+      navigate('/')
+      
+      // 创建新会话
+      const data = await api.createSession()
+      if (data.session_id) {
+        setCurrentSessionId(data.session_id)
+        loadSessions()
+      }
+    } catch (error) {
+      console.error('创建新会话失败:', error)
+      alert('创建新会话失败，请重试')
+    }
   }
 
   // 点击外部关闭 Agent 选择器

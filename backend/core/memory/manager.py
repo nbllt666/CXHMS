@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import threading
 import time
+import sqlite3
 from backend.core.exceptions import DatabaseError, MemoryError, VectorStoreError
 from backend.core.logging_config import get_contextual_logger
 
@@ -105,13 +106,21 @@ class MemoryManager:
     def _cleanup_idle_connections(self):
         idle_threshold = time.time() - 300
         with self._lock:
-            idle_threads = [
-                tid for tid, conn_info in self._connection_pool.items()
-                if isinstance(conn_info, dict) and conn_info.get('last_used', 0) < idle_threshold
-            ] + [
-                tid for tid, conn in self._connection_pool.items()
-                if not isinstance(conn, dict) and getattr(conn, '_last_used', 0) < idle_threshold
-            ]
+            idle_threads = []
+            for tid, conn_info in list(self._connection_pool.items()):
+                try:
+                    if isinstance(conn_info, dict):
+                        last_used = conn_info.get('last_used', 0)
+                        if last_used < idle_threshold:
+                            idle_threads.append(tid)
+                    elif isinstance(conn_info, sqlite3.Connection):
+                        last_used = getattr(conn_info, '_last_used', 0)
+                        if last_used < idle_threshold:
+                            idle_threads.append(tid)
+                except Exception as e:
+                    logger.warning(f"检查连接 {tid} 时出错: {e}")
+                    idle_threads.append(tid)
+            
             for tid in idle_threads:
                 try:
                     conn_info = self._connection_pool[tid]
@@ -119,9 +128,12 @@ class MemoryManager:
                         conn_info['connection'].close()
                     else:
                         conn_info.close()
-                except Exception:
-                    pass
-                del self._connection_pool[tid]
+                    logger.debug(f"已清理空闲连接: {tid}")
+                except Exception as e:
+                    logger.warning(f"清理连接 {tid} 失败: {e}")
+                finally:
+                    del self._connection_pool[tid]
+            
             if idle_threads:
                 logger.info(f"清理了 {len(idle_threads)} 个空闲连接")
 
@@ -693,7 +705,7 @@ class MemoryManager:
             logger.error(f"语义搜索失败: {e}")
             return self.search_memories(query=query, memory_type=memory_type, limit=limit)
 
-    async def hybrid_search(self, query: str, memory_type: str = None, tags: List[str] = None, limit: int = 10) -> List[Dict]:
+    async def hybrid_search(self, query: str, memory_type: str = None, tags: List[str] = None, limit: int = 10, workspace_id: str = None) -> List[Dict]:
         if not self.is_vector_search_enabled():
             return self.search_memories(query=query, memory_type=memory_type, tags=tags, limit=limit)
 
@@ -703,7 +715,8 @@ class MemoryManager:
                 query=query,
                 memory_type=memory_type,
                 tags=tags,
-                limit=limit
+                limit=limit,
+                workspace_id=workspace_id
             )
 
             search_results = await self._hybrid_search.search(options)

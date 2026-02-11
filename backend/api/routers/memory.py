@@ -39,7 +39,7 @@ class MemorySearchRequest(BaseModel):
     include_deleted: bool = False
 
 
-@router.get("/api/memories")
+@router.get("/memories")
 async def list_memories(
     workspace_id: str = "default",
     memory_type: Optional[str] = None,
@@ -68,7 +68,7 @@ async def list_memories(
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.post("/api/memories")
+@router.post("/memories")
 async def create_memory(request: MemoryCreateRequest):
     from backend.api.app import get_memory_manager
     from backend.core.memory.emotion import get_emotion_for_decay
@@ -97,7 +97,7 @@ async def create_memory(request: MemoryCreateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/memories/{memory_id}")
+@router.get("/memories/{memory_id}")
 async def get_memory(memory_id: int):
     from backend.api.app import get_memory_manager
 
@@ -118,7 +118,7 @@ async def get_memory(memory_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/api/memories/{memory_id}")
+@router.put("/memories/{memory_id}")
 async def update_memory(memory_id: int, request: MemoryUpdateRequest):
     from backend.api.app import get_memory_manager
 
@@ -145,7 +145,7 @@ async def update_memory(memory_id: int, request: MemoryUpdateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/api/memories/{memory_id}")
+@router.delete("/memories/{memory_id}")
 async def delete_memory(memory_id: int, soft_delete: bool = True):
     from backend.api.app import get_memory_manager
 
@@ -166,7 +166,7 @@ async def delete_memory(memory_id: int, soft_delete: bool = True):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/memories/search")
+@router.post("/memories/search")
 async def search_memories(request: MemorySearchRequest):
     from backend.api.app import get_memory_manager
 
@@ -190,7 +190,7 @@ async def search_memories(request: MemorySearchRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/memories/rag")
+@router.post("/memories/rag")
 async def rag_search(query: str, workspace_id: str = "default", limit: int = 5):
     """RAG搜索"""
     from backend.api.app import get_memory_manager
@@ -225,7 +225,7 @@ async def rag_search(query: str, workspace_id: str = "default", limit: int = 5):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
-@router.get("/api/memories/stats")
+@router.get("/memories/stats")
 async def get_memory_stats(workspace_id: str = "default"):
     from backend.api.app import get_memory_manager
 
@@ -241,7 +241,7 @@ async def get_memory_stats(workspace_id: str = "default"):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/memories/permanent")
+@router.post("/memories/permanent")
 async def create_permanent_memory(
     content: str,
     tags: List[str] = None,
@@ -271,7 +271,7 @@ async def create_permanent_memory(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/memories/permanent/{memory_id}")
+@router.get("/memories/permanent/{memory_id}")
 async def get_permanent_memory(memory_id: int):
     from backend.api.app import get_memory_manager
 
@@ -292,7 +292,7 @@ async def get_permanent_memory(memory_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/memories/permanent")
+@router.get("/memories/permanent")
 async def list_permanent_memories(
     limit: int = 20,
     offset: int = 0,
@@ -317,7 +317,7 @@ async def list_permanent_memories(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/api/memories/permanent/{memory_id}")
+@router.put("/memories/permanent/{memory_id}")
 async def update_permanent_memory(
     memory_id: int,
     content: str = None,
@@ -348,7 +348,7 @@ async def update_permanent_memory(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/api/memories/permanent/{memory_id}")
+@router.delete("/memories/permanent/{memory_id}")
 async def delete_permanent_memory(memory_id: int):
     from backend.api.app import get_memory_manager
 
@@ -369,7 +369,7 @@ async def delete_permanent_memory(memory_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/memories/3d")
+@router.post("/memories/3d")
 async def search_memories_3d(
     query: str = None,
     memory_type: str = None,
@@ -411,7 +411,7 @@ async def search_memories_3d(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/memories/recall/{memory_id}")
+@router.post("/memories/recall/{memory_id}")
 async def recall_memory(memory_id: int, emotion_intensity: float = 0.0):
     from backend.api.app import get_memory_manager
 
@@ -433,7 +433,7 @@ async def recall_memory(memory_id: int, emotion_intensity: float = 0.0):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/memories/batch/write")
+@router.post("/memories/batch/write")
 async def batch_write_memories(memories: List[Dict], raise_on_error: bool = False):
     from backend.api.app import get_memory_manager
 
@@ -449,7 +449,7 @@ async def batch_write_memories(memories: List[Dict], raise_on_error: bool = Fals
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/memories/batch/update")
+@router.post("/memories/batch/update")
 async def batch_update_memories(updates: List[Dict], raise_on_error: bool = False):
     from backend.api.app import get_memory_manager
 
@@ -465,7 +465,7 @@ async def batch_update_memories(updates: List[Dict], raise_on_error: bool = Fals
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/memories/batch/delete")
+@router.post("/memories/batch/delete")
 async def batch_delete_memories(
     memory_ids: List[int],
     soft_delete: bool = True,
@@ -485,7 +485,7 @@ async def batch_delete_memories(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/memories/sync-decay")
+@router.post("/memories/sync-decay")
 async def sync_decay_values(workspace_id: str = "default"):
     from backend.api.app import get_memory_manager
 
@@ -501,7 +501,7 @@ async def sync_decay_values(workspace_id: str = "default"):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/memories/decay-stats")
+@router.get("/memories/decay-stats")
 async def get_decay_statistics(workspace_id: str = "default"):
     from backend.api.app import get_memory_manager
 
@@ -517,7 +517,7 @@ async def get_decay_statistics(workspace_id: str = "default"):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/memories/secondary/execute")
+@router.post("/memories/secondary/execute")
 async def execute_secondary_command(
     command: str,
     target_id: str = None,
@@ -556,7 +556,7 @@ async def execute_secondary_command(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/memories/secondary/commands")
+@router.get("/memories/secondary/commands")
 async def get_secondary_commands():
     from backend.api.app import get_secondary_router
 
@@ -578,7 +578,7 @@ async def get_secondary_commands():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/memories/secondary/history")
+@router.get("/memories/secondary/history")
 async def get_secondary_history(limit: int = 10):
     from backend.api.app import get_secondary_router
 
@@ -608,7 +608,7 @@ class SemanticSearchRequest(BaseModel):
     workspace_id: str = "default"
 
 
-@router.post("/api/memories/semantic-search")
+@router.post("/memories/semantic-search")
 async def semantic_search(request: SemanticSearchRequest):
     """语义搜索 - 基于向量相似度的搜索"""
     from backend.api.app import get_memory_manager
@@ -626,7 +626,6 @@ async def semantic_search(request: SemanticSearchRequest):
             workspace_id=request.workspace_id
         )
 
-        # 过滤低于阈值的結果
         filtered_results = [
             r for r in results
             if r.get("score", 0) >= request.threshold

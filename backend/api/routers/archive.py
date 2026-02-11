@@ -40,7 +40,7 @@ class SetDedupThresholdRequest(BaseModel):
     threshold: float
 
 
-@router.post("/api/archive/memory")
+@router.post("/archive/memory")
 async def archive_memory(request: ArchiveRequest):
     """归档单个记忆"""
     from backend.api.app import get_memory_manager
@@ -73,7 +73,7 @@ async def archive_memory(request: ArchiveRequest):
         raise HTTPException(status_code=500, detail=f"归档失败: {str(e)}")
 
 
-@router.post("/api/archive/merge")
+@router.post("/archive/merge")
 async def merge_memories(request: MergeRequest):
     """合并重复记忆"""
     from backend.api.app import get_memory_manager
@@ -111,7 +111,7 @@ async def merge_memories(request: MergeRequest):
         raise HTTPException(status_code=500, detail=f"合并失败: {str(e)}")
 
 
-@router.post("/api/archive/deduplicate")
+@router.post("/archive/deduplicate")
 async def detect_duplicates(request: DeduplicateRequest):
     """检测重复记忆"""
     from backend.api.app import get_memory_manager
@@ -124,7 +124,6 @@ async def detect_duplicates(request: DeduplicateRequest):
         
         dedup_engine = memory_mgr.deduplication_engine
         
-        # 使用配置中的阈值或请求中的阈值
         threshold = request.threshold
         if threshold is None:
             from config.settings import settings
@@ -149,7 +148,7 @@ async def detect_duplicates(request: DeduplicateRequest):
         raise HTTPException(status_code=500, detail=f"检测失败: {str(e)}")
 
 
-@router.get("/api/archive/duplicates")
+@router.get("/archive/duplicates")
 async def get_duplicate_groups():
     """获取所有去重组"""
     from backend.api.app import get_memory_manager
@@ -175,7 +174,7 @@ async def get_duplicate_groups():
         raise HTTPException(status_code=500, detail=f"获取失败: {str(e)}")
 
 
-@router.post("/api/archive/of-archives")
+@router.post("/archive/of-archives")
 async def archive_of_archives(request: ArchiveOfArchivesRequest):
     """归档的归档 - 对已有归档进行二次压缩"""
     from backend.api.app import get_memory_manager
@@ -204,7 +203,7 @@ async def archive_of_archives(request: ArchiveOfArchivesRequest):
         raise HTTPException(status_code=500, detail=f"操作失败: {str(e)}")
 
 
-@router.get("/api/archive/stats")
+@router.get("/archive/stats")
 async def get_archive_stats():
     """获取归档统计"""
     from backend.api.app import get_memory_manager
@@ -229,7 +228,7 @@ async def get_archive_stats():
         raise HTTPException(status_code=500, detail=f"获取统计失败: {str(e)}")
 
 
-@router.get("/api/archive/levels")
+@router.get("/archive/levels")
 async def get_archive_levels():
     """获取归档层级定义"""
     from backend.core.memory.archiver import AdvancedArchiver
@@ -256,7 +255,7 @@ async def get_archive_levels():
         raise HTTPException(status_code=500, detail=f"获取失败: {str(e)}")
 
 
-@router.post("/api/archive/threshold")
+@router.post("/archive/threshold")
 async def set_dedup_threshold(request: SetDedupThresholdRequest):
     """设置去重相似度阈值"""
     from backend.api.app import get_memory_manager
@@ -270,7 +269,6 @@ async def set_dedup_threshold(request: SetDedupThresholdRequest):
         if hasattr(memory_mgr, 'deduplication_engine') and memory_mgr.deduplication_engine:
             memory_mgr.deduplication_engine.threshold = request.threshold
         
-        # 更新配置
         from config.settings import settings
         settings.config.memory.dedup_threshold = request.threshold
         
@@ -287,7 +285,7 @@ async def set_dedup_threshold(request: SetDedupThresholdRequest):
         raise HTTPException(status_code=500, detail=f"设置失败: {str(e)}")
 
 
-@router.get("/api/archive/threshold")
+@router.get("/archive/threshold")
 async def get_dedup_threshold():
     """获取当前去重相似度阈值"""
     from config.settings import settings
@@ -305,7 +303,7 @@ async def get_dedup_threshold():
         raise HTTPException(status_code=500, detail=f"获取失败: {str(e)}")
 
 
-@router.post("/api/archive/auto-process")
+@router.post("/archive/auto-process")
 async def auto_archive_process(
     min_age_days: int = 30,
     target_level: int = 1,
@@ -327,7 +325,6 @@ async def auto_archive_process(
             "errors": []
         }
         
-        # 1. 检测重复并合并
         if auto_merge:
             from config.settings import settings
             threshold = settings.config.memory.dedup_threshold
@@ -350,7 +347,6 @@ async def auto_archive_process(
                                 "memory_count": len(group.memory_ids)
                             })
         
-        # 2. 归档旧记忆
         cutoff_date = (datetime.now() - timedelta(days=min_age_days)).isoformat()
         
         old_memories = memory_mgr.search_memories(

@@ -3,9 +3,45 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 import httpx
 import json
+import asyncio
+import time
 from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
+
+
+class CircuitBreaker:
+    """熔断器 - 防止级联失败"""
+    
+    def __init__(self, failure_threshold: int = 5, timeout: float = 60.0):
+        self.failure_threshold = failure_threshold
+        self.timeout = timeout
+        self.failure_count = 0
+        self.last_failure_time = 0
+        self.state = "closed"  # closed, open, half_open
+    
+    def record_success(self):
+        """记录成功调用"""
+        self.failure_count = 0
+        if self.state == "half_open":
+            self.state = "open"
+    
+    def record_failure(self):
+        """记录失败调用"""
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        
+        if self.failure_count >= self.failure_threshold:
+            self.state = "open"
+    
+    def can_request(self) -> bool:
+        """检查是否可以发起请求"""
+        if self.state == "closed":
+            if time.time() - self.last_failure_time > self.timeout:
+                self.state = "half_open"
+                return True
+            return False
+        return True
 
 
 class LLMError(Exception):
@@ -15,7 +51,6 @@ class LLMError(Exception):
         self.message = message
         self.status_code = status_code
         self.response_text = response_text
-
     def __str__(self):
         if self.status_code:
             return f"[HTTP {self.status_code}] {self.message}"
@@ -105,12 +140,14 @@ class OllamaClient(LLMClient):
         host: str = "http://localhost:11434",
         model: str = "llama3.2",
         temperature: float = 0.7,
-        max_tokens: int = 4096
+        max_tokens: int = 4096,
+        dimension: int = 768
     ):
         self.host = host.rstrip('/')
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.dimension = dimension
 
     def _validate_messages(self, messages: List[Dict]) -> None:
         """验证消息格式"""
@@ -178,8 +215,13 @@ class OllamaClient(LLMClient):
                     if message.get("tool_calls"):
                         tool_calls = message["tool_calls"]
                     
+                    # 优先使用 content，如果没有则使用 thinking（某些模型如 qwen3-vl）
+                    content = message.get("content", "")
+                    if not content:
+                        content = message.get("thinking", "")
+                    
                     return LLMResponse(
-                        content=message.get("content", ""),
+                        content=content,
                         finish_reason=result.get("done_reason", "stop"),
                         usage={"eval_count": result.get("eval_count", 0)},
                         tool_calls=tool_calls
@@ -240,31 +282,47 @@ class OllamaClient(LLMClient):
 
     async def stream_chat(self, messages: List[Dict], **kwargs):
         try:
+            request_body = {
+                "model": self.model,
+                "messages": messages,
+                "stream": True,
+                "options": {
+                    "temperature": kwargs.get("temperature", self.temperature),
+                    "num_predict": kwargs.get("max_tokens", self.max_tokens)
+                }
+            }
+            
+            if "tools" in kwargs and kwargs["tools"]:
+                request_body["tools"] = kwargs["tools"]
+            
             async with httpx.AsyncClient(timeout=120.0) as client:
                 async with client.stream(
                     "POST",
                     f"{self.host}/api/chat",
-                    json={
-                        "model": self.model,
-                        "messages": messages,
-                        "stream": True,
-                        "options": {
-                            "temperature": kwargs.get("temperature", self.temperature),
-                            "num_predict": kwargs.get("max_tokens", self.max_tokens)
-                        }
-                    }
+                    json=request_body
                 ) as response:
                     async for line in response.aiter_lines():
                         if line:
                             try:
                                 data = json.loads(line)
-                                content = data.get("message", {}).get("content", "")
-                                yield content
+                                message = data.get("message", {})
+                                
+                                # 优先使用 content，如果没有则使用 thinking（某些模型如 qwen3-vl）
+                                content = message.get("content", "")
+                                if not content:
+                                    content = message.get("thinking", "")
+                                
+                                if content:
+                                    yield content
+                                
                                 if data.get("done", False):
                                     break
+                                    
+                                tool_calls = message.get("tool_calls")
+                                if tool_calls:
+                                    yield {"tool_calls": tool_calls}
                             except json.JSONDecodeError:
                                 continue
-
         except Exception as e:
             logger.error(f"Ollama流式调用失败: {e}")
 
@@ -311,12 +369,14 @@ class VLLMClient(LLMClient):
         host: str = "http://localhost:8000",
         model: str = "llama3.2",
         temperature: float = 0.7,
-        max_tokens: int = 4096
+        max_tokens: int = 4096,
+        dimension: int = 768
     ):
         self.host = host.rstrip('/')
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.dimension = dimension
 
     def _validate_messages(self, messages: List[Dict]) -> None:
         """验证消息格式"""
@@ -438,17 +498,22 @@ class VLLMClient(LLMClient):
 
     async def stream_chat(self, messages: List[Dict], **kwargs):
         try:
+            request_body = {
+                "model": self.model,
+                "messages": messages,
+                "stream": True,
+                "temperature": kwargs.get("temperature", self.temperature),
+                "max_tokens": kwargs.get("max_tokens", self.max_tokens)
+            }
+            
+            if "tools" in kwargs and kwargs["tools"]:
+                request_body["tools"] = kwargs["tools"]
+            
             async with httpx.AsyncClient(timeout=120.0) as client:
                 async with client.stream(
                     "POST",
                     f"{self.host}/v1/chat/completions",
-                    json={
-                        "model": self.model,
-                        "messages": messages,
-                        "stream": True,
-                        "temperature": kwargs.get("temperature", self.temperature),
-                        "max_tokens": kwargs.get("max_tokens", self.max_tokens)
-                    }
+                    json=request_body
                 ) as response:
                     async for line in response.aiter_lines():
                         if line and line.startswith("data: "):
@@ -457,11 +522,16 @@ class VLLMClient(LLMClient):
                                 try:
                                     chunk = json.loads(data)
                                     content = chunk["choices"][0]["delta"].get("content", "")
+                                    
                                     if content:
                                         yield content
+                                    
+                                    delta = chunk["choices"][0].get("delta", {})
+                                    tool_calls = delta.get("tool_calls")
+                                    if tool_calls:
+                                        yield {"tool_calls": tool_calls}
                                 except json.JSONDecodeError:
                                     continue
-
         except Exception as e:
             logger.error(f"VLLM流式调用失败: {e}")
 

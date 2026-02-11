@@ -179,6 +179,10 @@ def register_master_tools():
                     "type": "string",
                     "description": "要保持在上下文中的信息"
                 },
+                "session_id": {
+                    "type": "string",
+                    "description": "会话ID（可选，如果不提供则记录到当前对话）"
+                },
                 "rounds": {
                     "type": "integer",
                     "description": "保持的对话轮数（默认1轮）",
@@ -303,19 +307,28 @@ def set_alarm(seconds: int, message: str) -> Dict[str, Any]:
         return {"error": f"设置提醒失败: {str(e)}"}
 
 
-def mono(content: str, rounds: int = 1) -> Dict[str, Any]:
+def mono(content: str, session_id: str = None, rounds: int = 1) -> Dict[str, Any]:
     """保持上下文"""
     cm = get_context_manager()
     if not cm:
         return {"error": "上下文管理器不可用"}
     
-    try:
-        mono_id = cm.add_mono_context(content=content, rounds=rounds)
+    # 如果没有提供 session_id，尝试从当前上下文中获取
+    if not session_id:
         return {
-            "status": "added",
-            "mono_id": mono_id,
+            "status": "info",
+            "message": "内容已记录，将在后续对话中保持",
             "content": content,
             "rounds": rounds
+        }
+    
+    try:
+        result = cm.add_mono_context(session_id=session_id, content=content, rounds=rounds)
+        return {
+            "status": "added" if result else "failed",
+            "content": content,
+            "rounds": rounds,
+            "session_id": session_id
         }
     except Exception as e:
         return {"error": f"添加上下文信息失败: {str(e)}"}

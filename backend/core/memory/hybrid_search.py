@@ -25,6 +25,7 @@ class HybridSearchOptions:
     min_score: float = 0.3
     use_vector: bool = True
     use_keyword: bool = True
+    workspace_id: str = None
 
 
 class HybridSearch:

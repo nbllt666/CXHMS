@@ -34,7 +34,7 @@ class TestChatFlow:
 
     def test_memory_endpoints_exist(self, client: TestClient):
         """Test that memory endpoints exist."""
-        response = client.get("/api/api/memories")
+        response = client.get("/api/memories")
         assert response.status_code in [200, 503]
 
     def test_api_documentation_accessible(self, client: TestClient):

@@ -130,8 +130,9 @@ async def lifespan(app: FastAPI):
         logger.info("内置工具已注册")
     except Exception as e:
         logger.warning(f"内置工具注册失败: {e}")
-
+    
     # 注册主模型工具
+    master_tools_registered = False
     try:
         from backend.core.tools import (
             register_master_tools,
@@ -143,11 +144,13 @@ async def lifespan(app: FastAPI):
             context_manager=context_manager
         )
         register_master_tools()
+        master_tools_registered = True
         logger.info("主模型工具已注册")
     except Exception as e:
         logger.warning(f"主模型工具注册失败: {e}")
-
+    
     # 注册摘要模型工具
+    summary_tools_registered = False
     try:
         from backend.core.tools import (
             register_summary_tools,
@@ -158,11 +161,13 @@ async def lifespan(app: FastAPI):
             model_router=model_router
         )
         register_summary_tools()
+        summary_tools_registered = True
         logger.info("摘要模型工具已注册")
     except Exception as e:
         logger.warning(f"摘要模型工具注册失败: {e}")
-
+    
     # 注册记忆管理模型工具
+    assistant_tools_registered = False
     try:
         from backend.core.tools import (
             register_assistant_tools,
@@ -174,9 +179,20 @@ async def lifespan(app: FastAPI):
             context_manager=context_manager
         )
         register_assistant_tools()
+        assistant_tools_registered = True
         logger.info("记忆管理模型工具已注册")
     except Exception as e:
         logger.warning(f"记忆管理模型工具注册失败: {e}")
+    
+    # 验证工具注册状态
+    from backend.core.tools import tool_registry
+    tools_stats = tool_registry.get_tool_stats()
+    logger.info(f"工具注册统计: 总计{tools_stats['total_tools']}个, "
+                f"启用{tools_stats['enabled_tools']}个, "
+                f"禁用{tools_stats['disabled_tools']}个")
+    
+    if not (master_tools_registered and summary_tools_registered and assistant_tools_registered):
+        logger.warning("部分工具注册失败，系统可能无法正常工作")
 
     try:
         if memory_manager and llm_client and settings.config.memory.vector_enabled:

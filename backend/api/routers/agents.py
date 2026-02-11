@@ -71,11 +71,12 @@ def _load_agents() -> List[dict]:
     _ensure_data_dir()
     if not os.path.exists(AGENTS_CONFIG_PATH):
         # 创建默认 Agent
+        # 注意：内置工具（calculator, datetime, random, json_format）现在强制开启，无需在 tools 列表中配置
         default_agent = {
             "id": "default",
             "name": "默认助手",
-            "description": "通用AI助手",
-            "system_prompt": "你是一个有帮助的AI助手。请用中文回答用户的问题。",
+            "description": "通用AI助手，支持数学计算、记忆管理、提醒设置等多种工具",
+            "system_prompt": "你是一个有帮助的AI助手。请用中文回答用户的问题。\n\n你可以使用以下工具来帮助用户：\n\n### 基础工具\n1. calculator - 数学计算工具，支持基本运算、三角函数、对数等\n2. datetime - 获取当前日期和时间\n3. random - 生成随机数\n4. json_format - 格式化JSON字符串\n\n### 记忆与上下文工具\n5. write_long_term_memory - 写入长期记忆，保存用户的重要信息、偏好、事件等\n6. search_all_memories - 搜索所有记忆，检索与当前话题相关的历史信息\n7. call_assistant - 调用记忆管理模型，获取专业处理结果\n8. set_alarm - 设置定时提醒，在指定时间后提醒用户\n9. mono - 保持信息在上下文中，跨多轮对话记住重要信息\n\n当用户需要进行计算、获取时间、生成随机数、处理JSON、保存记忆、搜索记忆或设置提醒时，请主动使用这些工具。",
             "model": "main",
             "temperature": 0.7,
             "max_tokens": 4096,
