@@ -32,7 +32,7 @@ function MarkdownContent({ content }: { content: string }) {
       remarkPlugins={[remarkGfm]}
       className="prose prose-sm dark:prose-invert max-w-none"
       components={{
-        code({ node, inline, className, children, ...props }: any) {
+        code({ inline, className, children, ...props }: any) {
           const match = /language-(\w+)/.exec(className || '')
           return !inline && match ? (
             <div className="relative group">
@@ -150,8 +150,7 @@ export function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [currentThinking, setCurrentThinking] = useState('') // 当前思考过程
-  const [showSummaryModal, setShowSummaryModal] = useState(false) // 摘要弹窗
+  const [showSummaryModal, setShowSummaryModal] = useState(false)
   
   const {
     agents,
@@ -231,7 +230,6 @@ export function ChatPage() {
     setMessages(prev => [...prev, userMessage, streamingMessage])
     setInput('')
     setIsLoading(true)
-    setCurrentThinking('')
 
     try {
       await api.sendMessageStream(
@@ -297,8 +295,6 @@ export function ChatPage() {
               return prev
             })
           } else if (chunk.type === 'thinking' && chunk.content) {
-            // 接收思考过程
-            setCurrentThinking(prev => prev + chunk.content)
             setMessages(prev => {
               const lastMsg = prev[prev.length - 1]
               if (lastMsg && lastMsg.id === tempAssistantId) {
@@ -340,7 +336,6 @@ export function ChatPage() {
       })
     } finally {
       setIsLoading(false)
-      setCurrentThinking('')
     }
   }
 

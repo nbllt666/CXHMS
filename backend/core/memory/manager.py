@@ -86,6 +86,99 @@ class MemoryManager:
         logger.info(f"记忆管理器初始化完成: db={db_path}")
         self._initialized = True
 
+    def _get_table_name(self, agent_id: str = "default") -> str:
+        """获取Agent对应的记忆表名
+        
+        Args:
+            agent_id: Agent唯一标识，默认为"default"
+            
+        Returns:
+            表名
+        """
+        if agent_id == "default" or not agent_id:
+            return "memories"
+        # 将agent_id中的特殊字符替换为下划线
+        safe_agent_id = agent_id.replace("-", "_").replace(" ", "_")
+        return f"memories_{safe_agent_id}"
+
+    def _ensure_agent_table(self, agent_id: str):
+        """确保Agent的记忆表存在，不存在则创建
+        
+        Args:
+            agent_id: Agent唯一标识
+        """
+        table_name = self._get_table_name(agent_id)
+        
+        if agent_id == "default" or not agent_id:
+            return  # 默认表已在_init_db中创建
+        
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # 检查表是否存在
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,)
+            )
+            if cursor.fetchone():
+                return  # 表已存在
+            
+            # 创建Agent专属记忆表
+            cursor.execute(f'''
+                CREATE TABLE IF NOT EXISTS {table_name} (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    type VARCHAR(20) NOT NULL,
+                    content TEXT NOT NULL,
+                    vector_id VARCHAR(100),
+                    metadata TEXT,
+                    importance INTEGER DEFAULT 3,
+                    importance_score FLOAT DEFAULT 0.6,
+                    decay_type VARCHAR(20) DEFAULT 'exponential',
+                    decay_params TEXT,
+                    reactivation_count INTEGER DEFAULT 0,
+                    emotion_score FLOAT DEFAULT 0.0,
+                    permanent BOOLEAN DEFAULT FALSE,
+                    psychological_age FLOAT DEFAULT 1.0,
+                    tags TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP,
+                    archived_at TIMESTAMP,
+                    is_deleted BOOLEAN DEFAULT FALSE,
+                    source VARCHAR(50) DEFAULT 'user',
+                    workspace_id VARCHAR(100) DEFAULT 'default',
+                    agent_id VARCHAR(100) DEFAULT '{agent_id}'
+                )
+            ''')
+            
+            # 创建索引
+            cursor.execute(f'''
+                CREATE INDEX IF NOT EXISTS idx_{table_name}_type ON {table_name}(type)
+            ''')
+            cursor.execute(f'''
+                CREATE INDEX IF NOT EXISTS idx_{table_name}_created ON {table_name}(created_at)
+            ''')
+            cursor.execute(f'''
+                CREATE INDEX IF NOT EXISTS idx_{table_name}_deleted ON {table_name}(is_deleted)
+            ''')
+            cursor.execute(f'''
+                CREATE INDEX IF NOT EXISTS idx_{table_name}_agent ON {table_name}(agent_id)
+            ''')
+            
+            # 记录到agent_memory_tables
+            cursor.execute('''
+                INSERT OR REPLACE INTO agent_memory_tables (agent_id, table_name, updated_at)
+                VALUES (?, ?, ?)
+            ''', (agent_id, table_name, datetime.now().isoformat()))
+            
+            conn.commit()
+            logger.info(f"已创建Agent '{agent_id}' 的记忆表: {table_name}")
+        except Exception as e:
+            logger.error(f"创建Agent记忆表失败: {e}")
+            raise
+        finally:
+            conn.close()
+
     def _start_cleanup_task(self):
         def cleanup_task():
             while not self._stop_event.wait(60):
@@ -224,8 +317,44 @@ class MemoryManager:
             )
         ''')
 
+        # 创建 agent_memory_tables 表（用于记录Agent的记忆表映射）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS agent_memory_tables (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id VARCHAR(100) NOT NULL UNIQUE,
+                table_name VARCHAR(100) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP
+            )
+        ''')
+
         # 检查并添加缺失的列（用于兼容旧数据库）
-        columns_to_add = [
+        def get_existing_columns(cursor, table_name: str) -> set:
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            return {row[1] for row in cursor.fetchall()}
+
+        # 1. memories 表的列
+        memories_columns_to_add = [
+            ("emotion_score", "FLOAT DEFAULT 0.0"),
+            ("source", "VARCHAR(50) DEFAULT 'user'"),
+            ("vector_id", "VARCHAR(100)"),
+            ("importance_score", "FLOAT DEFAULT 1.0"),
+            ("tags", "TEXT"),
+            ("metadata", "TEXT"),
+            ("updated_at", "TIMESTAMP"),
+            ("archived_at", "TIMESTAMP"),
+            ("is_deleted", "BOOLEAN DEFAULT FALSE"),
+            ("agent_id", "VARCHAR(100) DEFAULT 'default'")
+        ]
+
+        existing_columns = get_existing_columns(cursor, "memories")
+        for col_name, col_type in memories_columns_to_add:
+            if col_name not in existing_columns:
+                cursor.execute(f"ALTER TABLE memories ADD COLUMN {col_name} {col_type}")
+                logger.info(f"已添加 {col_name} 列到 memories 表")
+
+        # 2. permanent_memories 表的列
+        permanent_columns_to_add = [
             ("emotion_score", "FLOAT DEFAULT 0.0"),
             ("source", "VARCHAR(50) DEFAULT 'user'"),
             ("verified", "BOOLEAN DEFAULT TRUE"),
@@ -236,11 +365,9 @@ class MemoryManager:
             ("updated_at", "TIMESTAMP")
         ]
 
-        for col_name, col_type in columns_to_add:
-            try:
-                cursor.execute(f"SELECT {col_name} FROM permanent_memories LIMIT 1")
-            except sqlite3.OperationalError:
-                # 列不存在，添加它
+        existing_columns = get_existing_columns(cursor, "permanent_memories")
+        for col_name, col_type in permanent_columns_to_add:
+            if col_name not in existing_columns:
                 cursor.execute(f"ALTER TABLE permanent_memories ADD COLUMN {col_name} {col_type}")
                 logger.info(f"已添加 {col_name} 列到 permanent_memories 表")
 
@@ -334,7 +461,8 @@ class MemoryManager:
         metadata: Optional[Dict] = None,
         permanent: bool = False,
         emotion_score: float = 0.0,
-        workspace_id: str = "default"
+        workspace_id: str = "default",
+        agent_id: str = "default"
     ) -> int:
         """写入记忆
         
@@ -347,6 +475,7 @@ class MemoryManager:
             permanent: 是否为永久记忆
             emotion_score: 情感分数
             workspace_id: 工作区ID
+            agent_id: Agent ID，用于隔离不同Agent的记忆
             
         Returns:
             记忆ID
@@ -354,17 +483,21 @@ class MemoryManager:
         Raises:
             DatabaseError: 数据库操作失败
         """
+        # 确保Agent的记忆表存在
+        self._ensure_agent_table(agent_id)
+        table_name = self._get_table_name(agent_id)
+        
         conn = self._get_connection()
         cursor = conn.cursor()
 
         try:
-            cursor.execute('''
-                INSERT INTO memories (
+            cursor.execute(f'''
+                INSERT INTO {table_name} (
                     type, content, importance, importance_score,
                     decay_type, decay_params, reactivation_count,
                     emotion_score, permanent, psychological_age,
-                    tags, metadata, created_at, workspace_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    tags, metadata, created_at, workspace_id, agent_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 memory_type,
                 content,
@@ -379,7 +512,8 @@ class MemoryManager:
                 json_dumps(tags or [], ensure_ascii=False),
                 json_dumps(metadata or {}, ensure_ascii=False),
                 datetime.now().isoformat(),
-                workspace_id
+                workspace_id,
+                agent_id
             ))
 
             memory_id = cursor.lastrowid
@@ -387,19 +521,16 @@ class MemoryManager:
             cursor.execute('''
                 INSERT INTO audit_logs (operation, memory_id, operator, details)
                 VALUES (?, ?, ?, ?)
-            ''', ("create", memory_id, "system", json_dumps({"type": memory_type})))
+            ''', ("create", memory_id, "system", json_dumps({"type": memory_type, "agent_id": agent_id})))
 
             conn.commit()
-            logger.info(f"记忆已写入: id={memory_id}, type={memory_type}")
+            logger.info(f"记忆已写入: id={memory_id}, type={memory_type}, agent={agent_id}")
             return memory_id
         except Exception as e:
             if conn:
                 conn.rollback()
             logger.error(f"写入记忆失败: {e}", exc_info=True)
             raise
-        finally:
-            if conn:
-                conn.close()
 
     def get_memory(self, memory_id: int, include_deleted: bool = False) -> Optional[Dict]:
         """获取记忆
@@ -425,8 +556,9 @@ class MemoryManager:
             if row:
                 return self._row_to_memory(row)
             return None
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.error(f"获取记忆失败: {e}", exc_info=True)
+            return None
 
     def search_memories(
         self,
@@ -435,8 +567,10 @@ class MemoryManager:
         tags: Optional[List[str]] = None,
         time_range: Optional[str] = None,
         limit: int = 10,
+        offset: int = 0,
         include_deleted: bool = False,
-        workspace_id: str = "default"
+        workspace_id: str = "default",
+        agent_id: str = "default"
     ) -> List[Dict]:
         """搜索记忆
         
@@ -446,12 +580,16 @@ class MemoryManager:
             tags: 标签列表
             time_range: 时间范围（today, last_week, last_month）
             limit: 返回数量限制
+            offset: 偏移量，用于分页
             include_deleted: 是否包含已删除的记忆
             workspace_id: 工作区ID
+            agent_id: Agent ID，指定搜索哪个Agent的记忆表
             
         Returns:
             记忆列表
         """
+        table_name = self._get_table_name(agent_id)
+        
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -491,16 +629,18 @@ class MemoryManager:
 
             where_clause = " AND ".join(conditions) if conditions else "1=1"
             params.append(limit)
+            params.append(offset)
 
             cursor.execute(
-                f"SELECT * FROM memories WHERE {where_clause} ORDER BY importance DESC, created_at DESC LIMIT ?",
+                f"SELECT * FROM {table_name} WHERE {where_clause} ORDER BY importance DESC, created_at DESC LIMIT ? OFFSET ?",
                 params
             )
 
             rows = cursor.fetchall()
             return [self._row_to_memory(row) for row in rows]
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.error(f"搜索记忆失败: {e}", exc_info=True)
+            return []
 
     def update_memory(
         self,
@@ -508,8 +648,20 @@ class MemoryManager:
         new_content: str = None,
         new_tags: List[str] = None,
         new_importance: int = None,
-        new_metadata: Dict = None
+        new_metadata: Dict = None,
+        agent_id: str = "default"
     ) -> bool:
+        """更新记忆
+        
+        Args:
+            memory_id: 记忆ID
+            new_content: 新内容
+            new_tags: 新标签
+            new_importance: 新重要性
+            new_metadata: 新元数据
+            agent_id: Agent ID，用于指定记忆表
+        """
+        table_name = self._get_table_name(agent_id)
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -540,25 +692,36 @@ class MemoryManager:
             params.append(datetime.now().isoformat())
             params.append(memory_id)
 
-            query = f"UPDATE memories SET {', '.join(updates)} WHERE id = ? AND is_deleted = FALSE"
+            query = f"UPDATE {table_name} SET {', '.join(updates)} WHERE id = ? AND is_deleted = FALSE"
             cursor.execute(query, params)
 
             success = cursor.rowcount > 0
             conn.commit()
             return success
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.error(f"更新记忆失败: {e}", exc_info=True)
+            if conn:
+                conn.rollback()
+            return False
 
-    def delete_memory(self, memory_id: int, soft_delete: bool = True) -> bool:
+    def delete_memory(self, memory_id: int, soft_delete: bool = True, agent_id: str = "default") -> bool:
+        """删除记忆
+        
+        Args:
+            memory_id: 记忆ID
+            soft_delete: 是否软删除
+            agent_id: Agent ID，用于指定记忆表
+        """
+        table_name = self._get_table_name(agent_id)
         conn = self._get_connection()
         cursor = conn.cursor()
 
         try:
             if soft_delete:
-                query = "UPDATE memories SET is_deleted = TRUE, updated_at = ? WHERE id = ? AND is_deleted = FALSE"
+                query = f"UPDATE {table_name} SET is_deleted = TRUE, updated_at = ? WHERE id = ? AND is_deleted = FALSE"
                 params = (datetime.now().isoformat(), memory_id)
             else:
-                query = "DELETE FROM memories WHERE id = ?"
+                query = f"DELETE FROM {table_name} WHERE id = ?"
                 params = (memory_id,)
 
             cursor.execute(query, params)
@@ -569,12 +732,49 @@ class MemoryManager:
                 cursor.execute('''
                     INSERT INTO audit_logs (operation, memory_id, operator, details)
                     VALUES (?, ?, ?, ?)
-                ''', ("delete" if not soft_delete else "soft_delete", memory_id, "system", json_dumps({"soft_delete": soft_delete})))
+                ''', ("delete" if not soft_delete else "soft_delete", memory_id, "system", json_dumps({"soft_delete": soft_delete, "agent_id": agent_id})))
 
             conn.commit()
             return success
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.error(f"删除记忆失败: {e}", exc_info=True)
+            if conn:
+                conn.rollback()
+            return False
+
+    def restore_memory(self, memory_id: int, agent_id: str = "default") -> bool:
+        """恢复软删除的记忆
+        
+        Args:
+            memory_id: 记忆ID
+            agent_id: Agent ID，用于指定记忆表
+        """
+        table_name = self._get_table_name(agent_id)
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(f'''
+                UPDATE {table_name} 
+                SET is_deleted = FALSE, updated_at = ?
+                WHERE id = ? AND is_deleted = TRUE
+            ''', (datetime.now().isoformat(), memory_id))
+
+            success = cursor.rowcount > 0
+
+            if success:
+                cursor.execute('''
+                    INSERT INTO audit_logs (operation, memory_id, operator, details)
+                    VALUES (?, ?, ?, ?)
+                ''', ("restore", memory_id, "system", json_dumps({"agent_id": agent_id})))
+
+            conn.commit()
+            return success
+        except Exception as e:
+            logger.error(f"恢复记忆失败: {e}", exc_info=True)
+            if conn:
+                conn.rollback()
+            return False
 
     def get_statistics(self, workspace_id: str = "default") -> Dict:
         conn = self._get_connection()
@@ -599,40 +799,41 @@ class MemoryManager:
                 "soft_deleted": soft_deleted,
                 "permanent": permanent
             }
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.error(f"获取统计信息失败: {e}", exc_info=True)
+            return {"total": 0, "by_type": {}, "soft_deleted": 0, "permanent": 0}
 
     def _row_to_memory(self, row) -> Dict:
         try:
-            metadata = json_loads(row[4] or "{}")
-            tags = json_loads(row[13] or "[]")
-            decay_params = json_loads(row[8] or "{}")
+            metadata = json_loads(row["metadata"] or "{}")
+            tags = json_loads(row["tags"] or "[]")
+            decay_params = json_loads(row["decay_params"] or "{}")
         except Exception:
             metadata = {}
             tags = []
             decay_params = {}
 
         return {
-            "id": row[0],
-            "type": row[1],
-            "content": row[2],
-            "vector_id": row[3],
+            "id": row["id"],
+            "type": row["type"],
+            "content": row["content"],
+            "vector_id": row["vector_id"],
             "metadata": metadata,
-            "importance": row[5],
-            "importance_score": row[6],
-            "decay_type": row[7],
+            "importance": row["importance"],
+            "importance_score": row["importance_score"],
+            "decay_type": row["decay_type"],
             "decay_params": decay_params,
-            "reactivation_count": row[9],
-            "emotion_score": row[10],
-            "permanent": bool(row[11]),
-            "psychological_age": row[12],
+            "reactivation_count": row["reactivation_count"],
+            "emotion_score": row["emotion_score"],
+            "permanent": bool(row["permanent"]),
+            "psychological_age": row["psychological_age"],
             "tags": tags,
-            "created_at": row[14],
-            "updated_at": row[15],
-            "archived_at": row[16],
-            "is_deleted": bool(row[17]),
-            "source": row[18],
-            "workspace_id": row[19]
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "archived_at": row["archived_at"],
+            "is_deleted": bool(row["is_deleted"]),
+            "source": row["source"],
+            "workspace_id": row["workspace_id"]
         }
 
     def enable_vector_search(
@@ -774,8 +975,11 @@ class MemoryManager:
             conn.commit()
             logger.info(f"永久记忆已写入: id={memory_id}, source={source}")
             return memory_id
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.error(f"写入永久记忆失败: {e}", exc_info=True)
+            if conn:
+                conn.rollback()
+            raise
 
     def get_permanent_memory(self, memory_id: int) -> Optional[Dict]:
         conn = self._get_connection()
@@ -788,8 +992,9 @@ class MemoryManager:
             if row:
                 return self._row_to_permanent_memory(row)
             return None
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.error(f"获取永久记忆失败: {e}", exc_info=True)
+            return None
 
     def get_permanent_memories(
         self,
@@ -815,8 +1020,9 @@ class MemoryManager:
             cursor.execute(query, params)
             rows = cursor.fetchall()
             return [self._row_to_permanent_memory(row) for row in rows]
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.error(f"获取永久记忆列表失败: {e}", exc_info=True)
+            return []
 
     def update_permanent_memory(
         self,
@@ -864,8 +1070,11 @@ class MemoryManager:
 
             conn.commit()
             return success
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.error(f"更新永久记忆失败: {e}", exc_info=True)
+            if conn:
+                conn.rollback()
+            return False
 
     def delete_permanent_memory(self, memory_id: int, is_from_main: bool = True) -> bool:
         if not is_from_main:
@@ -888,28 +1097,31 @@ class MemoryManager:
 
             conn.commit()
             return success
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.error(f"删除永久记忆失败: {e}", exc_info=True)
+            if conn:
+                conn.rollback()
+            return False
 
     def _row_to_permanent_memory(self, row) -> Dict:
         try:
-            metadata = json_loads(row[7] or "{}")
-            tags = json_loads(row[4] or "[]")
+            metadata = json_loads(row["metadata"] or "{}")
+            tags = json_loads(row["tags"] or "[]")
         except Exception:
             metadata = {}
             tags = []
 
         return {
-            "id": row[0],
-            "content": row[1],
-            "importance_score": row[2],
-            "emotion_score": row[3],
+            "id": row["id"],
+            "content": row["content"],
+            "importance_score": row["importance_score"],
+            "emotion_score": row["emotion_score"],
             "tags": tags,
-            "created_at": row[5],
-            "updated_at": row[6],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
             "metadata": metadata,
-            "source": row[8],
-            "verified": row[9] if len(row) > 9 else True
+            "source": row["source"],
+            "verified": bool(row["verified"]) if "verified" in row.keys() else True
         }
 
     def search_memories_3d(
@@ -952,8 +1164,9 @@ class MemoryManager:
             )
 
             rows = cursor.fetchall()
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.error(f"3D搜索失败: {e}", exc_info=True)
+            rows = []
 
         decay_calculator = DecayCalculator()
         scored_memories = []
@@ -1055,8 +1268,11 @@ class MemoryManager:
                 }
 
             return updated_memory
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.error(f"召回记忆失败: {e}", exc_info=True)
+            if conn:
+                conn.rollback()
+            return None
 
     def batch_write_memories(
         self,
@@ -1096,8 +1312,16 @@ class MemoryManager:
     def batch_update_memories(
         self,
         updates: List[Dict],
-        raise_on_error: bool = False
+        raise_on_error: bool = False,
+        agent_id: str = "default"
     ) -> Dict:
+        """批量更新记忆
+        
+        Args:
+            updates: 更新列表，每个包含 memory_id 和要更新的字段
+            raise_on_error: 遇到错误是否抛出异常
+            agent_id: Agent ID，用于指定记忆表
+        """
         results = {
             "success": 0,
             "failed": 0,
@@ -1116,7 +1340,8 @@ class MemoryManager:
                     new_content=update_data.get("content"),
                     new_tags=update_data.get("tags"),
                     new_importance=update_data.get("importance"),
-                    new_metadata=update_data.get("metadata")
+                    new_metadata=update_data.get("metadata"),
+                    agent_id=agent_id
                 )
 
                 if success:
@@ -1138,8 +1363,17 @@ class MemoryManager:
         self,
         memory_ids: List[int],
         soft_delete: bool = True,
-        raise_on_error: bool = False
+        raise_on_error: bool = False,
+        agent_id: str = "default"
     ) -> Dict:
+        """批量删除记忆
+        
+        Args:
+            memory_ids: 记忆ID列表
+            soft_delete: 是否软删除
+            raise_on_error: 遇到错误是否抛出异常
+            agent_id: Agent ID，用于指定记忆表
+        """
         results = {
             "success": 0,
             "failed": 0,
@@ -1149,7 +1383,7 @@ class MemoryManager:
 
         for memory_id in memory_ids:
             try:
-                success = self.delete_memory(memory_id, soft_delete=soft_delete)
+                success = self.delete_memory(memory_id, soft_delete=soft_delete, agent_id=agent_id)
 
                 if success:
                     results["success"] += 1
@@ -1167,59 +1401,55 @@ class MemoryManager:
         return results
 
     def sync_decay_values(self, workspace_id: str = "default") -> Dict:
+        """同步衰减值 - 已改为实时计算模式，此函数仅返回统计信息
+        
+        注意：时间分数现在实时计算，不再预存储到数据库
+        """
         from backend.core.memory.decay import DecayCalculator
 
-        conn = None
-        cursor = None
-
         try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-
-            cursor.execute("SELECT * FROM memories WHERE is_deleted = FALSE AND workspace_id = ?", (workspace_id,))
-            rows = cursor.fetchall()
-
+            # 获取所有记忆用于统计
+            memories = self.search_memories(limit=10000, workspace_id=workspace_id)
+            
             decay_calculator = DecayCalculator()
-            updated_count = 0
-            failed_count = 0
+            total = len(memories)
+            permanent_count = sum(1 for m in memories if m.get("permanent"))
+            
+            # 实时计算统计信息
+            time_scores = []
+            for memory in memories:
+                if not memory.get("permanent"):
+                    time_score = decay_calculator.calculate_time_score_realtime(
+                        importance=memory.get("importance_score", memory.get("importance", 3) / 5.0),
+                        created_at=memory.get("created_at", datetime.now().isoformat()),
+                        decay_type=memory.get("decay_type", "exponential"),
+                        decay_params=memory.get("decay_params"),
+                        permanent=False,
+                        reactivation_count=memory.get("reactivation_count", 0),
+                        emotion_score=memory.get("emotion_score", 0.0)
+                    )
+                    time_scores.append(time_score)
 
-            for row in rows:
-                try:
-                    memory = self._row_to_memory(row)
+            avg_time_score = sum(time_scores) / len(time_scores) if time_scores else 0.0
 
-                    if memory.get("permanent"):
-                        continue
-
-                    time_score = decay_calculator.calculate_time_score(memory, apply_reactivation=True)
-
-                    cursor.execute('''
-                        UPDATE memories
-                        SET importance_score = ?, updated_at = ?
-                        WHERE id = ?
-                    ''', (time_score, datetime.now().isoformat(), memory["id"]))
-
-                    updated_count += 1
-                except Exception as e:
-                    logger.warning(f"更新衰减值失败 id={row[0]}: {e}")
-                    failed_count += 1
-
-            conn.commit()
-
-            logger.info(f"衰减同步完成: 更新={updated_count}, 失败={failed_count}")
+            logger.info(f"衰减统计完成: 总计={total}, 永久={permanent_count}, 平均时间分={avg_time_score:.3f}")
 
             return {
-                "updated": updated_count,
-                "failed": failed_count,
-                "total": len(rows)
+                "updated": 0,  # 不再更新数据库
+                "failed": 0,
+                "total": total,
+                "permanent_count": permanent_count,
+                "avg_time_score": avg_time_score,
+                "mode": "realtime"  # 标记为实时计算模式
             }
         except Exception as e:
-            logger.error(f"同步衰减值失败: {e}", exc_info=True)
-            if conn:
-                conn.rollback()
-            raise
-        finally:
-            if conn:
-                conn.close()
+            logger.error(f"统计衰减值失败: {e}", exc_info=True)
+            return {
+                "updated": 0,
+                "failed": 0,
+                "total": 0,
+                "error": str(e)
+            }
 
     def get_decay_statistics(self, workspace_id: str = "default") -> Dict:
         from backend.core.memory.decay import DecayCalculator
@@ -1271,8 +1501,6 @@ class MemoryManager:
 
         if reactivation_stats["total"] > 0:
             reactivation_stats["avg_count"] /= reactivation_stats["total"]
-
-        conn.close()
 
         return {
             "total_memories": total,
@@ -1351,9 +1579,6 @@ class MemoryManager:
         except Exception as e:
             logger.error(f"获取记忆上下文失败: {e}", exc_info=True)
             return {"status": "error", "message": str(e)}
-        finally:
-            if conn:
-                conn.close()
 
     def cleanup_old_sessions(self, days: int = 30) -> Dict:
         """清理过期的会话记忆
@@ -1406,9 +1631,6 @@ class MemoryManager:
             if conn:
                 conn.rollback()
             return {"status": "error", "message": str(e)}
-        finally:
-            if conn:
-                conn.close()
 
     def search_by_tag(self, tag: str, workspace_id: str = "default", limit: int = 50) -> List[Dict]:
         """通过标签搜索记忆
@@ -1448,9 +1670,6 @@ class MemoryManager:
         except Exception as e:
             logger.error(f"标签搜索失败: {e}", exc_info=True)
             return []
-        finally:
-            if conn:
-                conn.close()
 
     def get_memory_timeline(self, workspace_id: str = "default", days: int = 30) -> Dict:
         """获取记忆时间线
@@ -1505,9 +1724,6 @@ class MemoryManager:
         except Exception as e:
             logger.error(f"获取时间线失败: {e}", exc_info=True)
             return {"status": "error", "message": str(e)}
-        finally:
-            if conn:
-                conn.close()
 
     def get_memory_statistics(self, workspace_id: str = "default") -> Dict:
         """获取记忆统计信息
@@ -1574,9 +1790,6 @@ class MemoryManager:
         except Exception as e:
             logger.error(f"获取统计信息失败: {e}", exc_info=True)
             return {"status": "error", "message": str(e)}
-        finally:
-            if conn:
-                conn.close()
 
     def get_session_memories(self, session_id: str, limit: int = 100) -> List[Dict]:
         """获取特定会话的记忆
@@ -1612,64 +1825,70 @@ class MemoryManager:
         except Exception as e:
             logger.error(f"获取会话记忆失败: {e}", exc_info=True)
             return []
-        finally:
-            if conn:
-                conn.close()
 
-    def batch_update_tags(self, memory_ids: List[int], tags: List[str], operation: str = "add") -> Dict:
+    def batch_update_tags(self, memory_ids: List[int], tags: List[str], operation: str = "add", agent_id: str = "default") -> Dict:
         """批量更新记忆标签
         
         Args:
             memory_ids: 记忆ID列表
             tags: 标签列表
             operation: 操作类型 (add/remove/set)
+            agent_id: Agent ID，用于指定记忆表
             
         Returns:
             更新结果
         """
+        table_name = self._get_table_name(agent_id)
         conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
             
             updated_count = 0
+            failed_count = 0
             
             for memory_id in memory_ids:
-                cursor.execute("SELECT tags FROM memories WHERE id = ? AND is_deleted = FALSE", (memory_id,))
-                row = cursor.fetchone()
-                
-                if not row:
-                    continue
-                
                 try:
-                    current_tags = set(json.loads(row[0]) if row[0] else [])
-                except:
-                    current_tags = set()
-                
-                if operation == "add":
-                    current_tags.update(tags)
-                elif operation == "remove":
-                    current_tags.difference_update(tags)
-                elif operation == "set":
-                    current_tags = set(tags)
-                
-                new_tags = list(current_tags)
-                
-                cursor.execute('''
-                    UPDATE memories 
-                    SET tags = ?, updated_at = ?
-                    WHERE id = ?
-                ''', (json.dumps(new_tags, ensure_ascii=False), datetime.now().isoformat(), memory_id))
-                
-                updated_count += 1
+                    cursor.execute(f"SELECT tags FROM {table_name} WHERE id = ? AND is_deleted = FALSE", (memory_id,))
+                    row = cursor.fetchone()
+                    
+                    if not row:
+                        failed_count += 1
+                        continue
+                    
+                    try:
+                        current_tags = set(json.loads(row[0]) if row[0] else [])
+                    except:
+                        current_tags = set()
+                    
+                    if operation == "add":
+                        current_tags.update(tags)
+                    elif operation == "remove":
+                        current_tags.difference_update(tags)
+                    elif operation == "set":
+                        current_tags = set(tags)
+                    
+                    new_tags = list(current_tags)
+                    
+                    cursor.execute(f'''
+                        UPDATE {table_name} 
+                        SET tags = ?, updated_at = ?
+                        WHERE id = ?
+                    ''', (json.dumps(new_tags, ensure_ascii=False), datetime.now().isoformat(), memory_id))
+                    
+                    updated_count += 1
+                except Exception as e:
+                    logger.warning(f"更新记忆 {memory_id} 标签失败: {e}")
+                    failed_count += 1
             
             conn.commit()
             
-            logger.info(f"批量更新标签: {updated_count} 条记忆")
+            logger.info(f"批量更新标签: 成功 {updated_count} 条, 失败 {failed_count} 条")
             
             return {
                 "status": "success",
                 "updated_count": updated_count,
+                "failed_count": failed_count,
                 "operation": operation,
                 "tags": tags
             }
@@ -1679,9 +1898,59 @@ class MemoryManager:
             if conn:
                 conn.rollback()
             return {"status": "error", "message": str(e)}
-        finally:
+
+    def batch_archive_memories(self, memory_ids: List[int], agent_id: str = "default") -> Dict:
+        """批量归档记忆
+        
+        Args:
+            memory_ids: 记忆ID列表
+            agent_id: Agent ID，用于指定记忆表
+            
+        Returns:
+            归档结果
+        """
+        table_name = self._get_table_name(agent_id)
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            archived_count = 0
+            failed_count = 0
+            now = datetime.now().isoformat()
+            
+            for memory_id in memory_ids:
+                try:
+                    # 将记忆标记为归档状态（通过设置 archived_at 字段）
+                    cursor.execute(f'''
+                        UPDATE {table_name} 
+                        SET archived_at = ?, updated_at = ?
+                        WHERE id = ? AND is_deleted = FALSE
+                    ''', (now, now, memory_id))
+                    
+                    if cursor.rowcount > 0:
+                        archived_count += 1
+                    else:
+                        failed_count += 1
+                except Exception as e:
+                    logger.warning(f"归档记忆 {memory_id} 失败: {e}")
+                    failed_count += 1
+            
+            conn.commit()
+            
+            logger.info(f"批量归档: 成功 {archived_count} 条, 失败 {failed_count} 条")
+            
+            return {
+                "status": "success",
+                "archived_count": archived_count,
+                "failed_count": failed_count
+            }
+            
+        except Exception as e:
+            logger.error(f"批量归档失败: {e}", exc_info=True)
             if conn:
-                conn.close()
+                conn.rollback()
+            return {"status": "error", "message": str(e)}
 
     def get_memories_by_type(self, memory_type: str, workspace_id: str = "default", limit: int = 100) -> List[Dict]:
         """按类型获取记忆
@@ -1727,9 +1996,6 @@ class MemoryManager:
         except Exception as e:
             logger.error(f"按类型获取记忆失败: {e}", exc_info=True)
             return []
-        finally:
-            if conn:
-                conn.close()
 
     def get_memory_relationships(self, memory_id: int) -> Dict:
         """获取记忆的关系网络
@@ -1790,9 +2056,6 @@ class MemoryManager:
         except Exception as e:
             logger.error(f"获取记忆关系失败: {e}", exc_info=True)
             return {"status": "error", "message": str(e)}
-        finally:
-            if conn:
-                conn.close()
 
     def get_memories_by_emotion(self, emotion_range: Tuple[float, float], workspace_id: str = "default", limit: int = 50) -> List[Dict]:
         """按情感分数范围获取记忆
@@ -1831,7 +2094,4 @@ class MemoryManager:
         except Exception as e:
             logger.error(f"按情感获取记忆失败: {e}", exc_info=True)
             return []
-        finally:
-            if conn:
-                conn.close()
 

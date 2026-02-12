@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { X, Send, Sparkles, Save, Trash2 } from 'lucide-react'
+import { X, Send, Sparkles, Trash2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from '../api/client'
@@ -87,9 +87,8 @@ ${contextText}
 
       await api.sendMessageStream(
         fullPrompt,
-        agentId,
         sessionId,
-        (chunk) => {
+        (chunk: { type: string; content?: string; done?: boolean; error?: string; session_id?: string; tool_call?: any; tool_name?: string; result?: any }) => {
           setMessages(prev => {
             const lastMsg = prev[prev.length - 1]
             if (lastMsg.role === 'assistant' && lastMsg.isStreaming) {
@@ -104,7 +103,8 @@ ${contextText}
             }
             return prev
           })
-        }
+        },
+        agentId
       )
     } catch (error) {
       console.error('摘要生成失败:', error)

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from pydantic import BaseModel
 from datetime import datetime
 from backend.core.exceptions import MemoryError
@@ -32,16 +32,21 @@ class MemoryUpdateRequest(BaseModel):
 class MemorySearchRequest(BaseModel):
     """搜索记忆请求"""
     query: Optional[str] = None
+    type: Optional[str] = None
     memory_type: Optional[str] = None
     tags: Optional[List[str]] = None
     time_range: Optional[str] = None
     limit: int = 10
+    offset: int = 0
     include_deleted: bool = False
+    workspace_id: str = "default"
+    agent_id: str = "default"
 
 
 @router.get("/memories")
 async def list_memories(
     workspace_id: str = "default",
+    type: Optional[str] = None,
     memory_type: Optional[str] = None,
     limit: int = 20,
     offset: int = 0
@@ -49,16 +54,19 @@ async def list_memories(
     """列出记忆"""
     from backend.api.app import get_memory_manager
 
+    actual_type = type or memory_type
+    
     try:
         memory_mgr = get_memory_manager()
         memories = memory_mgr.search_memories(
-            memory_type=memory_type,
+            memory_type=actual_type,
             limit=limit,
+            offset=offset,
             workspace_id=workspace_id
         )
         return {
             "status": "success",
-            "memories": memories[offset:offset+limit],
+            "memories": memories,
             "total": len(memories)
         }
     except MemoryError as e:
@@ -93,8 +101,15 @@ async def create_memory(request: MemoryCreateRequest):
             "memory_id": memory_id,
             "message": "记忆创建成功"
         }
+    except MemoryError as e:
+        logger.error(f"创建记忆失败: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError as e:
+        logger.warning(f"创建记忆参数错误: {e}")
+        raise HTTPException(status_code=400, detail=f"参数错误: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"创建记忆失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
 @router.get("/memories/{memory_id}")
@@ -172,13 +187,17 @@ async def search_memories(request: MemorySearchRequest):
 
     try:
         memory_mgr = get_memory_manager()
+        actual_type = request.type or request.memory_type
         memories = memory_mgr.search_memories(
             query=request.query,
-            memory_type=request.memory_type,
+            memory_type=actual_type,
             tags=request.tags,
             time_range=request.time_range,
             limit=request.limit,
-            include_deleted=request.include_deleted
+            offset=request.offset,
+            include_deleted=request.include_deleted,
+            workspace_id=request.workspace_id,
+            agent_id=request.agent_id
         )
 
         return {
@@ -449,13 +468,34 @@ async def batch_write_memories(memories: List[Dict], raise_on_error: bool = Fals
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class BatchUpdateRequest(BaseModel):
+    """批量更新请求"""
+    ids: List[int]
+    data: Dict[str, Any]  # { content?, tags?, importance? }
+    agent_id: str = "default"
+
+
 @router.post("/memories/batch/update")
-async def batch_update_memories(updates: List[Dict], raise_on_error: bool = False):
+async def batch_update_memories(request: BatchUpdateRequest):
+    """批量更新记忆"""
     from backend.api.app import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
-        result = memory_mgr.batch_update_memories(updates, raise_on_error)
+        
+        # 将前端格式转换为后端格式
+        updates = []
+        for memory_id in request.ids:
+            update_item = {"memory_id": memory_id}
+            if "content" in request.data:
+                update_item["content"] = request.data["content"]
+            if "tags" in request.data:
+                update_item["tags"] = request.data["tags"]
+            if "importance" in request.data:
+                update_item["importance"] = request.data["importance"]
+            updates.append(update_item)
+        
+        result = memory_mgr.batch_update_memories(updates, agent_id=request.agent_id)
 
         return {
             "status": "success",
@@ -465,21 +505,270 @@ async def batch_update_memories(updates: List[Dict], raise_on_error: bool = Fals
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class BatchIdsRequest(BaseModel):
+    """批量操作请求"""
+    ids: List[int]
+    agent_id: str = "default"
+
+
+class BatchTagsRequest(BaseModel):
+    """批量标签更新请求"""
+    ids: List[int]
+    tags: List[str]
+    operation: str = "add"
+    agent_id: str = "default"
+
+
 @router.post("/memories/batch/delete")
 async def batch_delete_memories(
-    memory_ids: List[int],
+    request: BatchIdsRequest,
     soft_delete: bool = True,
     raise_on_error: bool = False
 ):
+    """批量删除记忆"""
     from backend.api.app import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
-        result = memory_mgr.batch_delete_memories(memory_ids, soft_delete, raise_on_error)
+        result = memory_mgr.batch_delete_memories(request.ids, soft_delete, raise_on_error, request.agent_id)
 
         return {
             "status": "success",
             "result": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/memories/batch/tags")
+async def batch_update_memory_tags(request: BatchTagsRequest):
+    """批量更新记忆标签
+    
+    Args:
+        request: 包含ids(记忆ID列表), tags(标签列表), operation(操作类型), agent_id
+    """
+    from backend.api.app import get_memory_manager
+
+    try:
+        memory_mgr = get_memory_manager()
+        result = memory_mgr.batch_update_tags(
+            memory_ids=request.ids,
+            tags=request.tags,
+            operation=request.operation,
+            agent_id=request.agent_id
+        )
+
+        return {
+            "status": "success",
+            "result": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/memories/batch/archive")
+async def batch_archive_memories(request: BatchIdsRequest):
+    """批量归档记忆"""
+    from backend.api.app import get_memory_manager
+
+    try:
+        memory_mgr = get_memory_manager()
+        result = memory_mgr.batch_archive_memories(request.ids, request.agent_id)
+
+        return {
+            "status": "success",
+            "result": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/memories/batch/restore")
+async def batch_restore_memories(request: BatchIdsRequest):
+    """批量恢复记忆"""
+    from backend.api.app import get_memory_manager
+
+    try:
+        memory_mgr = get_memory_manager()
+        restored_count = 0
+        failed_count = 0
+        
+        for memory_id in request.ids:
+            try:
+                success = memory_mgr.restore_memory(memory_id, request.agent_id)
+                if success:
+                    restored_count += 1
+                else:
+                    failed_count += 1
+            except Exception:
+                failed_count += 1
+
+        return {
+            "status": "success",
+            "result": {
+                "restored_count": restored_count,
+                "failed_count": failed_count
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BatchTagByQueryRequest(BaseModel):
+    """按查询批量更新标签请求"""
+    query: str
+    tags: List[str]
+    operation: str = "add"
+    agent_id: str = "default"
+
+
+@router.post("/memories/batch/tag-by-query")
+async def batch_tag_by_query(request: BatchTagByQueryRequest):
+    """按查询批量更新标签"""
+    from backend.api.app import get_memory_manager
+
+    try:
+        memory_mgr = get_memory_manager()
+        memories = memory_mgr.search_memories(query=request.query, limit=100, agent_id=request.agent_id)
+        ids = [m["id"] for m in memories]
+        
+        if not ids:
+            return {
+                "status": "success",
+                "result": {"updated_count": 0, "message": "没有找到匹配的记忆"}
+            }
+        
+        result = memory_mgr.batch_update_tags(
+            memory_ids=ids,
+            tags=request.tags,
+            operation=request.operation,
+            agent_id=request.agent_id
+        )
+
+        return {
+            "status": "success",
+            "result": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BatchDeleteByQueryRequest(BaseModel):
+    """按查询批量删除请求"""
+    query: str
+    agent_id: str = "default"
+
+
+@router.post("/memories/batch/delete-by-query")
+async def batch_delete_by_query(request: BatchDeleteByQueryRequest):
+    """按查询批量删除"""
+    from backend.api.app import get_memory_manager
+
+    try:
+        memory_mgr = get_memory_manager()
+        memories = memory_mgr.search_memories(query=request.query, limit=100, agent_id=request.agent_id)
+        ids = [m["id"] for m in memories]
+        
+        if not ids:
+            return {
+                "status": "success",
+                "result": {"deleted_count": 0, "message": "没有找到匹配的记忆"}
+            }
+        
+        result = memory_mgr.batch_delete_memories(ids, agent_id=request.agent_id)
+
+        return {
+            "status": "success",
+            "result": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BatchArchiveByQueryRequest(BaseModel):
+    """按查询批量归档请求"""
+    query: str
+    target_level: int = 1
+    agent_id: str = "default"
+
+
+@router.post("/memories/batch/archive-by-query")
+async def batch_archive_by_query(request: BatchArchiveByQueryRequest):
+    """按查询批量归档"""
+    from backend.api.app import get_memory_manager
+
+    try:
+        memory_mgr = get_memory_manager()
+        memories = memory_mgr.search_memories(query=request.query, limit=100, agent_id=request.agent_id)
+        ids = [m["id"] for m in memories]
+        
+        if not ids:
+            return {
+                "status": "success",
+                "result": {"archived_count": 0, "message": "没有找到匹配的记忆"}
+            }
+        
+        result = memory_mgr.batch_archive_memories(ids, request.agent_id)
+
+        return {
+            "status": "success",
+            "result": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/memories/type/{memory_type}")
+async def get_memories_by_type(
+    memory_type: str,
+    limit: int = 20,
+    workspace_id: str = "default",
+    agent_id: str = "default"
+):
+    """按类型获取记忆"""
+    from backend.api.app import get_memory_manager
+
+    try:
+        memory_mgr = get_memory_manager()
+        memories = memory_mgr.search_memories(
+            memory_type=memory_type,
+            limit=limit,
+            workspace_id=workspace_id,
+            agent_id=agent_id
+        )
+
+        return {
+            "status": "success",
+            "memories": memories,
+            "count": len(memories)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/memories/search-by-tag")
+async def search_by_tag(
+    tag: str,
+    limit: int = 20,
+    workspace_id: str = "default",
+    agent_id: str = "default"
+):
+    """按标签搜索记忆"""
+    from backend.api.app import get_memory_manager
+
+    try:
+        memory_mgr = get_memory_manager()
+        memories = memory_mgr.search_memories(
+            tags=[tag],
+            limit=limit,
+            workspace_id=workspace_id,
+            agent_id=agent_id
+        )
+
+        return {
+            "status": "success",
+            "memories": memories,
+            "count": len(memories)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

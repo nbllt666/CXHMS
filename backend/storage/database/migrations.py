@@ -150,6 +150,37 @@ async def run_migrations(db_path: str = "data/memories.db"):
             is_sent BOOLEAN DEFAULT FALSE,
             metadata TEXT
         )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS agent_contexts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_id VARCHAR(100) NOT NULL UNIQUE,
+            session_id VARCHAR(36),
+            context_data TEXT,
+            memory_state TEXT,
+            last_active TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS agent_context_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_id VARCHAR(100) NOT NULL,
+            role VARCHAR(20) NOT NULL,
+            content TEXT NOT NULL,
+            metadata TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS agent_memory_tables (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_id VARCHAR(100) NOT NULL UNIQUE,
+            table_name VARCHAR(100) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP
+        )
         """
     ]
 
@@ -178,7 +209,10 @@ async def run_migrations(db_path: str = "data/memories.db"):
         "CREATE INDEX IF NOT EXISTS idx_audit_logs_operation ON audit_logs(operation)",
         "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)",
         "CREATE INDEX IF NOT EXISTS idx_permanent_memories_created ON permanent_memories(created_at)",
-        "CREATE INDEX IF NOT EXISTS idx_permanent_memories_importance_score ON permanent_memories(importance_score)"
+        "CREATE INDEX IF NOT EXISTS idx_permanent_memories_importance_score ON permanent_memories(importance_score)",
+        "CREATE INDEX IF NOT EXISTS idx_agent_contexts_agent_id ON agent_contexts(agent_id)",
+        "CREATE INDEX IF NOT EXISTS idx_agent_context_messages_agent_id ON agent_context_messages(agent_id)",
+        "CREATE INDEX IF NOT EXISTS idx_agent_memory_tables_agent_id ON agent_memory_tables(agent_id)"
     ]
 
     for idx_sql in indexes:

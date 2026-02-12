@@ -11,37 +11,48 @@ logger = get_contextual_logger(__name__)
 
 
 class CircuitBreaker:
-    """熔断器 - 防止级联失败"""
+    """熔断器 - 防止级联失败
+    
+    状态说明:
+    - closed: 正常状态，允许请求通过
+    - open: 熔断状态，拒绝请求
+    - half_open: 半开状态，允许测试请求
+    """
     
     def __init__(self, failure_threshold: int = 5, timeout: float = 60.0):
         self.failure_threshold = failure_threshold
         self.timeout = timeout
         self.failure_count = 0
         self.last_failure_time = 0
-        self.state = "closed"  # closed, open, half_open
+        self.state = "closed"
     
     def record_success(self):
         """记录成功调用"""
         self.failure_count = 0
         if self.state == "half_open":
-            self.state = "open"
+            self.state = "closed"
     
     def record_failure(self):
         """记录失败调用"""
         self.failure_count += 1
         self.last_failure_time = time.time()
         
-        if self.failure_count >= self.failure_threshold:
+        if self.state == "half_open":
+            self.state = "open"
+        elif self.failure_count >= self.failure_threshold:
             self.state = "open"
     
     def can_request(self) -> bool:
         """检查是否可以发起请求"""
         if self.state == "closed":
+            return True
+        elif self.state == "open":
             if time.time() - self.last_failure_time > self.timeout:
                 self.state = "half_open"
                 return True
             return False
-        return True
+        else:
+            return True
 
 
 class LLMError(Exception):

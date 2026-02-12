@@ -304,6 +304,7 @@ class DecayCalculator:
         apply_reactivation: bool = True,
         apply_network: bool = False
     ) -> float:
+        """计算时间分数（基于当前时间实时计算）"""
         importance = memory.get("importance_score", memory.get("importance", 3) / 5.0)
         created_at = memory.get("created_at", datetime.now().isoformat())
         permanent = memory.get("permanent", False)
@@ -314,6 +315,7 @@ class DecayCalculator:
         decay_type = memory.get("decay_type", "exponential")
         decay_params = memory.get("decay_params")
 
+        # 实时计算衰减分数
         time_score = self.calculate_decay(
             importance=importance,
             created_at=created_at,
@@ -324,6 +326,51 @@ class DecayCalculator:
         if apply_reactivation:
             reactivation_count = memory.get("reactivation_count", 0)
             emotion_score = memory.get("emotion_score", 0.0)
+            time_score = self.calculate_reactivation_score(
+                base_score=time_score,
+                reactivation_count=reactivation_count,
+                emotion_intensity=emotion_score
+            )
+
+        return max(time_score, 0.0)
+
+    def calculate_time_score_realtime(
+        self,
+        importance: float,
+        created_at: str,
+        decay_type: str = "exponential",
+        decay_params: Optional[Dict] = None,
+        permanent: bool = False,
+        reactivation_count: int = 0,
+        emotion_score: float = 0.0
+    ) -> float:
+        """实时计算时间分数（纯函数，不依赖内存状态）
+        
+        Args:
+            importance: 重要性分数 (0-1)
+            created_at: 创建时间 (ISO格式)
+            decay_type: 衰减类型
+            decay_params: 衰减参数
+            permanent: 是否永久记忆
+            reactivation_count: 再激活次数
+            emotion_score: 情感分数
+            
+        Returns:
+            实时计算的时间分数 (0-1)
+        """
+        if permanent or importance >= 0.95:
+            return 1.0
+
+        # 实时计算衰减
+        time_score = self.calculate_decay(
+            importance=importance,
+            created_at=created_at,
+            decay_type=decay_type,
+            decay_params=decay_params
+        )
+
+        # 应用再激活加成
+        if reactivation_count > 0:
             time_score = self.calculate_reactivation_score(
                 base_score=time_score,
                 reactivation_count=reactivation_count,

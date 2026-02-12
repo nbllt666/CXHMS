@@ -140,18 +140,26 @@ export function MemoriesPage() {
 
   // Batch mutations
   const batchDeleteMutation = useMutation({
-    mutationFn: api.batchDeleteMemories,
+    mutationFn: (ids: number[]) => api.batchDeleteMemories(ids),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['memories'] })
       clearSelection()
+    },
+    onError: (error: any) => {
+      console.error('批量删除失败:', error)
+      alert(`批量删除失败: ${error?.response?.data?.detail || error?.message || '未知错误'}`)
     }
   })
 
   const batchArchiveMutation = useMutation({
-    mutationFn: api.batchArchiveMemories,
+    mutationFn: (ids: number[]) => api.batchArchiveMemories(ids),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['memories'] })
       clearSelection()
+    },
+    onError: (error: any) => {
+      console.error('批量归档失败:', error)
+      alert(`批量归档失败: ${error?.response?.data?.detail || error?.message || '未知错误'}`)
     }
   })
 
@@ -163,6 +171,10 @@ export function MemoriesPage() {
       setShowBatchTagModal(false)
       setBatchTags('')
       clearSelection()
+    },
+    onError: (error: any) => {
+      console.error('批量更新标签失败:', error)
+      alert(`批量更新标签失败: ${error?.response?.data?.detail || error?.message || '未知错误'}`)
     }
   })
 

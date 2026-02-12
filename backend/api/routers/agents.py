@@ -286,3 +286,66 @@ async def get_agent_stats(agent_id: str):
             "total_messages": 0,
             "error": str(e)
         }
+
+
+@router.get("/agents/{agent_id}/context")
+async def get_agent_context(agent_id: str, limit: int = 20):
+    """获取Agent上下文
+    
+    Args:
+        agent_id: Agent唯一标识
+        limit: 返回的最大消息数量
+    """
+    from backend.core.context.agent_context_manager import AgentContextManager
+    
+    agents = _load_agents()
+    agent = next((a for a in agents if a["id"] == agent_id), None)
+    
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' 不存在")
+    
+    try:
+        context_mgr = AgentContextManager()
+        summary = context_mgr.get_context_summary(agent_id)
+        messages = context_mgr.get_message_history(agent_id, limit=limit)
+        
+        return {
+            "agent_id": agent_id,
+            "has_context": summary.get("has_context", False),
+            "session_id": summary.get("session_id"),
+            "last_active": summary.get("last_active"),
+            "created_at": summary.get("created_at"),
+            "updated_at": summary.get("updated_at"),
+            "total_messages": summary.get("total_messages", 0),
+            "role_counts": summary.get("role_counts", {}),
+            "recent_messages": messages
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取Agent上下文失败: {str(e)}")
+
+
+@router.delete("/agents/{agent_id}/context")
+async def clear_agent_context(agent_id: str):
+    """清空Agent上下文
+    
+    Args:
+        agent_id: Agent唯一标识
+    """
+    from backend.core.context.agent_context_manager import AgentContextManager
+    
+    agents = _load_agents()
+    agent = next((a for a in agents if a["id"] == agent_id), None)
+    
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' 不存在")
+    
+    try:
+        context_mgr = AgentContextManager()
+        context_mgr.clear_context(agent_id)
+        
+        return {
+            "status": "success",
+            "message": f"Agent '{agent_id}' 的上下文已清空"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"清空Agent上下文失败: {str(e)}")

@@ -10,6 +10,7 @@ CXHMS (CX-O History & Memory Service) 是一个智能记忆管理平台，提供
 | **版本** | v1.0.0 |
 | **架构** | 前后端分离 (B/S 架构) |
 | **许可证** | MIT License |
+| **最后更新** | 2026-02-12 |
 
 ## ✨ 核心特性
 
@@ -19,6 +20,7 @@ CXHMS (CX-O History & Memory Service) 是一个智能记忆管理平台，提供
 - **记忆衰减模型**: 艾宾浩斯遗忘曲线 + 双阶段指数衰减
 - **三维评分系统**: 重要性 × 时间衰减 × 相关性
 - **情感分析**: 自动标记记忆情感倾向
+- **混合搜索**: 向量相似度 + 关键词搜索融合 (RRF算法)
 
 ### 🤖 ACP 协议支持
 - **局域网自动发现**: UDP 广播发现同网络 Agent
@@ -28,7 +30,7 @@ CXHMS (CX-O History & Memory Service) 是一个智能记忆管理平台，提供
 
 ### 🛠️ 工具生态系统
 - **MCP 协议**: Model Context Protocol 完整支持
-- **内置工具**: 计算器、日期时间、记忆搜索等
+- **内置工具**: 计算器、日期时间、天气、记忆搜索等
 - **动态注册**: 自定义工具热注册
 - **工具调用**: OpenAI Functions 兼容格式
 
@@ -37,6 +39,7 @@ CXHMS (CX-O History & Memory Service) 是一个智能记忆管理平台，提供
 - **记忆增强**: RAG 检索增强生成
 - **上下文管理**: 会话历史、Mono 上下文持久化
 - **多 Agent**: 默认助手、创意助手、任务助手
+- **场景感知路由**: 7种记忆检索场景配置
 
 ## 🏗️ 系统架构
 
@@ -77,12 +80,13 @@ CXHMS (CX-O History & Memory Service) 是一个智能记忆管理平台，提供
 | **Node.js** | 18+ | 前端构建环境 |
 | **Ollama** | latest | 本地 LLM (推荐) |
 | **向量数据库** | 可选 | Milvus Lite / Qdrant / Weaviate |
+| **Conda** | 可选 | Python 环境管理 (推荐) |
 
 ### 1. 安装后端依赖
 
 ```bash
 # 创建 conda 环境 (推荐)
-conda create -n cxhms python=3.10
+conda create -n cxhms python=3.10 -y
 conda activate cxhms
 
 # 安装 Python 依赖
@@ -91,6 +95,7 @@ pip install -r requirements.txt
 # 安装 Ollama (如需本地 LLM)
 # Windows: https://ollama.com/download
 # macOS: brew install ollama
+# Linux: curl -fsSL https://ollama.ai/install.sh | sh
 ```
 
 ### 2. 启动后端服务
@@ -134,6 +139,110 @@ npm run dev
 # 使用系统环境启动前端和控制服务
 .\1.2.启动前端(含控制服务)(系统).bat
 ```
+
+### 5. 安装必需模型
+
+启动服务前，请确保已安装 LLM 模型：
+
+```bash
+# 安装主模型 (Qwen3-VL 推荐)
+ollama pull qwen3vl:8b
+
+# 安装摘要模型 (可选)
+ollama pull llama3.2:3b
+
+# 安装嵌入模型 (用于向量搜索)
+ollama pull nomic-embed-text:latest
+```
+
+## 🎯 快速体验
+
+### 1. 创建第一个记忆
+
+启动服务后，通过 API 创建第一条记忆：
+
+```bash
+curl -X POST "http://localhost:8000/api/memories" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "用户喜欢使用 Python 进行开发",
+    "type": "long_term",
+    "importance": 4,
+    "tags": ["编程", "Python", "偏好"],
+    "workspace_id": "default"
+  }'
+```
+
+响应示例：
+```json
+{
+  "status": "success",
+  "memory_id": 1,
+  "message": "记忆已创建"
+}
+```
+
+### 2. 开始对话
+
+```bash
+curl -X POST "http://localhost:8000/api/chat" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "我喜欢用什么语言编程？",
+    "session_id": null,
+    "workspace_id": "default",
+    "use_memory": true,
+    "use_tools": true
+  }'
+```
+
+系统会自动检索相关记忆并回答。
+
+### 3. 搜索记忆
+
+```bash
+curl -X POST "http://localhost:8000/api/memories/search" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "编程偏好",
+    "memory_type": "long_term",
+    "limit": 5
+  }'
+```
+
+### 4. 使用 ACP 发现其他 Agent
+
+```bash
+curl -X POST "http://localhost:8000/api/acp/discover" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "timeout": 5.0
+  }'
+```
+
+### 5. 体验工具调用
+
+内置工具使用示例：
+
+```python
+# 计算器工具
+result = calculator("2 + 3 * 4")
+# 返回: 14
+
+# 日期时间工具
+result = get_datetime("%Y年%m月%d日 %H:%M:%S")
+# 返回: 2026年02月12日 15:30:00
+```
+
+### 6. 使用 Gradio WebUI
+
+启动服务后，在浏览器中访问 http://localhost:7860 可以使用图形界面：
+
+- 📝 聊天对话
+- 🧠 记忆管理
+- 🤖 Agent 配置
+- 🛠️ 工具测试
+- 📊 系统状态
 
 ## 📁 项目结构
 
@@ -257,32 +366,66 @@ CXHMS/
 
 ## ⚙️ 配置说明
 
-### 默认配置
+### 配置文件
+
+主配置文件: `config/default.yaml`
+
+### 必需服务
+
+1. **Ollama** (本地 LLM)
+   ```bash
+   # 启动 Ollama 服务
+   ollama serve
+   
+   # 安装推荐模型
+   ollama pull qwen3vl:8b    # 主模型
+   ollama pull llama3.2:3b   # 辅助模型
+   ollama pull nomic-embed-text  # 嵌入模型
+   ```
+
+2. **向量数据库** (根据配置选择)
+   - **Milvus Lite** (默认): 自动创建本地数据库，无需额外安装
+   - **Qdrant**: `docker run -p 6333:6333 qdrant/qdrant`
+   - **Weaviate**: `docker run -p 8080:8080 semitechnologies/weaviate`
+
+### 详细配置示例
 
 编辑 `config/default.yaml` 配置文件：
 
 ```yaml
+# 服务器配置
 server:
   host: "0.0.0.0"
   port: 8000
+  debug: true
 
 # LLM 模型配置
 models:
   main:
     provider: "ollama"
     host: "http://localhost:11434"
-    model: "qwen3vl:8b"
+    model: "qwen3-vl:8b"
+    apiKey: ''
     enabled: true
   summary:
     provider: "ollama"
-    model: "llama3.2:3b"
-    enabled: false
+    host: "http://localhost:11434"
+    model: "qwen3-vl:8b"
+    apiKey: ''
+    enabled: true
+  memory:
+    provider: "ollama"
+    host: "http://localhost:11434"
+    model: "qwen3-vl:8b"
+    apiKey: ''
+    enabled: true
 
 # 向量存储后端配置
 memory:
+  enabled: true
   vector_backend: "milvus_lite"  # milvus_lite, qdrant, weaviate
-  hybrid_search_enabled: false
-  archive_enabled: true
+  hybrid_search_enabled: true     # 启用混合搜索
+  archive_enabled: true           # 启用自动归档
   
   # 记忆衰减模型
   # exponential - 双阶段指数衰减（默认）
@@ -294,26 +437,45 @@ memory:
     t50: 30.0      # 半衰期（天）
     k: 2.0         # 曲线陡峭度
 
+  # Milvus Lite 配置
+  milvus_lite:
+    db_path: data/milvus_lite.db
+    vector_size: 768
+
+  # Qdrant 配置
+  qdrant:
+    host: localhost
+    port: 6333
+    vector_size: 768
+
+  # Weaviate 配置
+  weaviate:
+    host: localhost
+    port: 8080
+    vector_size: 768
+    embedded: false
+    api_key: null
+
 # ACP 协议配置
 acp:
   enabled: true
   discovery_enabled: true
   discovery_port: 9999
+  broadcast_port: 9998
+
+# WebUI 配置
+webui:
+  enabled: true
+  host: "0.0.0.0"
+  port: 7860
+  share: false
+
+# 安全配置
+security:
+  api_key_enabled: false
+  api_key: ''
+  rate_limit_enabled: false
 ```
-
-### 必需服务
-
-1. **Ollama** (本地 LLM)
-   ```bash
-   ollama serve
-   ollama pull qwen3vl:8b    # 主模型
-   ollama pull llama3.2:3b   # 辅助模型
-   ```
-
-2. **向量数据库** (根据配置选择)
-   - **Milvus Lite** (默认): 自动创建本地数据库
-   - **Qdrant**: `docker run -p 6333:6333 qdrant/qdrant`
-   - **Weaviate**: `docker run -p 8080:8080 semitechnologies/weaviate`
 
 ## 📡 API 文档
 
@@ -370,6 +532,7 @@ python -m pytest backend/tests -v
 # 运行特定模块
 python -m pytest backend/tests/test_api -v
 python -m pytest backend/tests/test_core -v
+python -m pytest backend/tests/test_integration -v
 
 # 生成覆盖率报告
 python -m pytest backend/tests --cov=backend --cov-report=html
@@ -389,9 +552,178 @@ python run_tests.py --backend-only
 
 # 带覆盖率报告
 python run_tests.py --coverage
+
+# 运行特定测试
+python run_tests.py --test backend/tests/test_api/test_health.py
 ```
 
+### 测试覆盖范围
+
+**前端测试覆盖:**
+- 工具函数测试 (cn, formatDate, truncateText等)
+- 状态管理测试 (chatStore, themeStore)
+- API 客户端测试
+- 错误处理测试
+
+**后端测试覆盖:**
+- API 端点测试 (健康检查、聊天、记忆、Agent等)
+- 核心模块测试 (记忆管理器、LLM客户端)
+- 集成测试 (端到端聊天流程)
+
 **测试覆盖**: 30+ 测试用例覆盖所有主要功能模块
+
+## 🔧 开发指南
+
+### 项目结构
+
+```
+CXHMS/
+├── backend/                    # Python 后端
+│   ├── api/                    # FastAPI 路由层
+│   │   ├── routers/           # API 端点实现
+│   │   └── app.py             # FastAPI 应用入口
+│   ├── core/                  # 核心业务逻辑
+│   │   ├── acp/              # ACP 协议实现
+│   │   ├── context/          # 上下文管理
+│   │   ├── llm/              # LLM 客户端
+│   │   ├── memory/           # 记忆管理系统
+│   │   ├── tools/            # 工具系统
+│   │   └── websocket/        # WebSocket 支持
+│   ├── models/               # Pydantic 数据模型
+│   └── storage/              # 数据存储层
+├── frontend/                  # React 前端
+│   ├── src/
+│   │   ├── api/             # API 客户端
+│   │   ├── components/       # React 组件
+│   │   ├── pages/           # 页面组件
+│   │   ├── store/           # Zustand 状态管理
+│   │   └── i18n/            # 国际化
+│   └── test/                 # 测试配置
+├── config/                    # 配置文件
+├── docs/                      # 文档
+└── webui/                     # Gradio WebUI
+```
+
+### 添加新功能
+
+#### 1. 添加新的 API 端点
+
+在 `backend/api/routers/` 目录下创建新的路由文件：
+
+```python
+# backend/api/routers/new_feature.py
+from fastapi import APIRouter
+
+router = APIRouter(prefix="/api/new-feature", tags=["New Feature"])
+
+@router.get("/")
+async def get_new_feature():
+    """获取新功能数据"""
+    return {"message": "New feature"}
+
+@router.post("/")
+async def create_new_feature(data: dict):
+    """创建新功能数据"""
+    return {"id": 1, **data}
+```
+
+在 `backend/api/app.py` 中注册路由：
+
+```python
+from backend.api.routers import new_feature
+
+app.include_router(new_feature.router)
+```
+
+#### 2. 添加新工具
+
+```python
+# backend/core/tools/builtin.py
+from .registry import registry
+
+@registry.register(
+    name="my_tool",
+    description="我的自定义工具",
+    category="custom"
+)
+async def my_tool(param: str) -> str:
+    """工具说明
+    
+    Args:
+        param: 参数说明
+    
+    Returns:
+        返回结果
+    """
+    # 工具实现
+    return f"Result: {param}"
+```
+
+#### 3. 添加新 Agent
+
+在 `backend/api/routers/agents.py` 中添加默认配置：
+
+```python
+CUSTOM_AGENT = AgentConfig(
+    id="custom",
+    name="自定义助手",
+    system_prompt="""你是一个自定义助手...""",
+    model="main",
+    temperature=0.7,
+    use_memory=True,
+    use_tools=True,
+    memory_scene="chat"
+)
+```
+
+### 代码规范
+
+**Python:**
+- 遵循 PEP 8 规范
+- 使用类型注解
+- 添加文档字符串
+- 异步代码使用 async/await
+
+**TypeScript:**
+- 遵循 ESLint 规则
+- 使用 TypeScript 严格模式
+- 组件使用函数式组件 + Hooks
+- 样式使用 Tailwind CSS
+
+**Git:**
+- 功能分支命名: `feature/xxx`
+- Bug 修复分支命名: `fix/xxx`
+- 提交信息使用中文描述
+
+## 📈 性能优化
+
+### 后端优化
+
+1. **连接池配置**
+   ```yaml
+   database:
+     pool_size: 10
+     max_overflow: 20
+   ```
+
+2. **内存限制**
+   ```yaml
+   memory:
+     max_memories: 10000
+   ```
+
+3. **上下文限制**
+   ```yaml
+   context:
+     max_context_length: 4000
+     max_memories_in_context: 5
+   ```
+
+### 前端优化
+
+1. 使用 React Query 缓存数据
+2. 实现组件懒加载
+3. 使用 Zustand 进行状态管理减少重渲染
 
 ## 🐳 Docker 部署
 

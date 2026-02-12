@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import json
 import uuid
+import asyncio
+import inspect
 from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
@@ -160,7 +162,6 @@ class ToolRegistry:
         return tools
 
     def call_tool(self, name: str, arguments: Dict = None) -> Dict:
-        # 检查是否是内置工具
         if name in BUILTIN_TOOL_NAMES:
             from backend.core.tools.builtin import call_builtin_tool
             return call_builtin_tool(name, arguments or {})
@@ -189,6 +190,64 @@ class ToolRegistry:
                 result = tool.function(**arguments)
             else:
                 result = tool.function()
+
+            if inspect.iscoroutine(result):
+                try:
+                    loop = asyncio.get_running_loop()
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(asyncio.run, result)
+                        result = future.result(timeout=60)
+                except RuntimeError:
+                    result = asyncio.run(result)
+
+            with self._lock:
+                tool.call_count += 1
+                tool.last_called = datetime.now().isoformat()
+
+            return {
+                "success": True,
+                "result": result
+            }
+        except Exception as e:
+            logger.error(f"工具调用失败: {name}, {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    async def call_tool_async(self, name: str, arguments: Dict = None) -> Dict:
+        if name in BUILTIN_TOOL_NAMES:
+            from backend.core.tools.builtin import call_builtin_tool
+            return call_builtin_tool(name, arguments or {})
+        
+        tool = self.get_tool(name)
+        if tool is None:
+            return {
+                "success": False,
+                "error": f"工具不存在: {name}"
+            }
+
+        if not tool.enabled:
+            return {
+                "success": False,
+                "error": f"工具已禁用: {name}"
+            }
+
+        if tool.function is None:
+            return {
+                "success": False,
+                "error": f"工具未实现: {name}"
+            }
+
+        try:
+            if arguments:
+                result = tool.function(**arguments)
+            else:
+                result = tool.function()
+
+            if inspect.iscoroutine(result):
+                result = await result
 
             with self._lock:
                 tool.call_count += 1

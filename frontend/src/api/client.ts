@@ -594,18 +594,43 @@ class ApiClient {
 
   // ========== Batch Memory Operations APIs ==========
 
-  async batchDeleteMemories(ids: number[]) {
-    const response = await this.client.post('/api/memories/batch/delete', { ids })
+  async batchDeleteMemories(ids: number[], agentId?: string) {
+    const response = await this.client.post('/api/memories/batch/delete', { ids, agent_id: agentId || 'default' })
     return response.data
   }
 
-  async batchUpdateTags(ids: number[], tags: string[], operation: 'add' | 'remove' | 'set' = 'add') {
-    const response = await this.client.post('/api/memories/batch/tags', { ids, tags, operation })
+  async batchUpdateTags(ids: number[], tags: string[], operation: 'add' | 'remove' | 'set' = 'add', agentId?: string) {
+    const response = await this.client.post('/api/memories/batch/tags', { ids, tags, operation, agent_id: agentId || 'default' })
     return response.data
   }
 
-  async batchArchiveMemories(ids: number[]) {
-    const response = await this.client.post('/api/memories/batch/archive', { ids })
+  async batchArchiveMemories(ids: number[], agentId?: string) {
+    const response = await this.client.post('/api/memories/batch/archive', { ids, agent_id: agentId || 'default' })
+    return response.data
+  }
+
+  async batchRestoreMemories(ids: number[], agentId?: string) {
+    const response = await this.client.post('/api/memories/batch/restore', { ids, agent_id: agentId || 'default' })
+    return response.data
+  }
+
+  async batchUpdateMemories(ids: number[], data: { content?: string; tags?: string[]; importance?: number }, agentId?: string) {
+    const response = await this.client.post('/api/memories/batch/update', { ids, data, agent_id: agentId || 'default' })
+    return response.data
+  }
+
+  async batchTagByQuery(query: string, tags: string[], operation: 'add' | 'remove' | 'set' = 'add', agentId?: string) {
+    const response = await this.client.post('/api/memories/batch/tag-by-query', { query, tags, operation, agent_id: agentId || 'default' })
+    return response.data
+  }
+
+  async batchDeleteByQuery(query: string, agentId?: string) {
+    const response = await this.client.post('/api/memories/batch/delete-by-query', { query, agent_id: agentId || 'default' })
+    return response.data
+  }
+
+  async batchArchiveByQuery(query: string, targetLevel: number = 1, agentId?: string) {
+    const response = await this.client.post('/api/memories/batch/archive-by-query', { query, target_level: targetLevel, agent_id: agentId || 'default' })
     return response.data
   }
 

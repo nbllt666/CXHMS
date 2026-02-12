@@ -520,10 +520,11 @@ class MemoryAgentChatRequest(BaseModel):
 @router.post("/memory-agent/chat/stream")
 async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
     """
-    记忆管理模型流式聊天
-    所有Agent共享同一个记忆管理模型
+    记忆管理模型流式聊天 - 支持上下文持久化
+    所有Agent共享同一个记忆管理模型，但上下文持久化保存
     """
     from backend.api.app import get_memory_manager, get_context_manager, get_model_router
+    from backend.core.context.agent_context_manager import AgentContextManager
 
     try:
         # 1. 获取记忆管理Agent配置
@@ -534,6 +535,7 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
         # 2. 获取管理器
         memory_mgr = get_memory_manager()
         context_mgr = get_context_manager()
+        agent_context_mgr = AgentContextManager()
         
         # 3. 获取记忆管理模型客户端
         model_router = get_model_router()
@@ -557,21 +559,36 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
                 title="记忆管理对话"
             )
 
-        # 5. 添加用户消息到上下文
+        # 5. 加载历史上下文（从数据库）
+        agent_id = "memory-agent"
+        history_context = agent_context_mgr.load_context(agent_id, limit=20)
+        
+        # 6. 添加用户消息到上下文（持久化）
         context_mgr.add_message(
             session_id=session_id,
             role="user",
             content=request.message
         )
+        agent_context_mgr.append_message(agent_id, "user", request.message)
 
-        # 6. 构建消息列表
-        messages = build_messages(
-            agent_config=agent_config,
-            context_mgr=context_mgr,
-            session_id=session_id,
-            user_message=request.message,
-            memory_context=None  # 记忆管理模型不需要额外记忆上下文
-        )
+        # 7. 构建消息列表（包含历史上下文）
+        messages = []
+        
+        # 系统提示词
+        system_prompt = agent_config.get("system_prompt", "")
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        
+        # 历史上下文（从数据库加载）
+        for msg in history_context:
+            if msg.get("role") in ["user", "assistant", "system"]:
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg.get("content", "")
+                })
+        
+        # 用户最新消息
+        messages.append({"role": "user", "content": request.message})
 
         # 7. 获取记忆管理工具（16个assistant类别工具）
         from backend.core.tools import tool_registry
