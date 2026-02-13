@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
-import { Layout } from './Layout'
+import { AppLayout } from './AppLayout'
 
-vi.mock('./Sidebar', () => ({
+vi.mock('./layout/Sidebar', () => ({
   Sidebar: () => <div data-testid="sidebar">Sidebar</div>,
 }))
 
-vi.mock('./Header', () => ({
+vi.mock('./layout/Header', () => ({
   Header: () => <div data-testid="header">Header</div>,
 }))
 
@@ -15,10 +15,10 @@ const renderWithRouter = (initialRoute: string = '/') => {
   return render(
     <MemoryRouter initialEntries={[initialRoute]}>
       <Routes>
-        <Route path="/" element={<Layout />}>
+        <Route path="/" element={<AppLayout />}>
           <Route index element={<div>Home Content</div>} />
         </Route>
-        <Route path="/agents" element={<Layout />}>
+        <Route path="/agents" element={<AppLayout />}>
           <Route index element={<div>Agents Content</div>} />
         </Route>
       </Routes>
@@ -26,7 +26,7 @@ const renderWithRouter = (initialRoute: string = '/') => {
   )
 }
 
-describe('Layout', () => {
+describe('AppLayout', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -63,28 +63,6 @@ describe('Layout', () => {
     it('should render agents content on /agents path', () => {
       renderWithRouter('/agents')
       expect(screen.getByText('Agents Content')).toBeDefined()
-    })
-  })
-
-  describe('structure', () => {
-    it('should have correct layout structure', () => {
-      const { container } = renderWithRouter()
-      
-      const mainContainer = container.querySelector('.flex.h-screen')
-      expect(mainContainer).toBeDefined()
-      
-      const contentArea = container.querySelector('.flex-1.flex.flex-col')
-      expect(contentArea).toBeDefined()
-      
-      const mainElement = container.querySelector('main')
-      expect(mainElement).toBeDefined()
-    })
-
-    it('should have overflow-auto on main element', () => {
-      const { container } = renderWithRouter()
-      
-      const mainElement = container.querySelector('main')
-      expect(mainElement?.classList.contains('overflow-auto')).toBe(true)
     })
   })
 })

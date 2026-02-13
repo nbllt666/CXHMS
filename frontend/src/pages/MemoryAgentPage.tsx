@@ -17,19 +17,34 @@ interface Message {
 interface ToolCall {
   id: string
   name: string
-  arguments?: any
-  result?: any
+  arguments?: Record<string, unknown>
+  result?: unknown
   status?: 'pending' | 'executing' | 'completed' | 'failed'
 }
 
-// Markdown 渲染组件
+interface StreamToolCall {
+  id?: string
+  name?: string
+  arguments?: Record<string, unknown>
+  function?: {
+    name?: string
+    arguments?: Record<string, unknown>
+  }
+}
+
+interface CodeProps {
+  inline?: boolean
+  className?: string
+  children?: React.ReactNode
+}
+
 function MarkdownContent({ content }: { content: string }) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       className="prose prose-sm dark:prose-invert max-w-none"
       components={{
-        code({ node, inline, className, children, ...props }: any) {
+        code({ inline, className, children, ...props }: CodeProps) {
           const match = /language-(\w+)/.exec(className || '')
           return !inline && match ? (
             <div className="relative group">
@@ -113,7 +128,7 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
                       参数: {JSON.stringify(toolCall.arguments, null, 2)}
                     </div>
                   )}
-                  {toolCall.result && (
+                  {toolCall.result !== undefined && (
                     <div className="text-muted-foreground font-mono text-[10px]">
                       结果: {JSON.stringify(toolCall.result, null, 2)}
                     </div>
@@ -132,7 +147,6 @@ export function MemoryAgentPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [sessionId, setSessionId] = useState<string | undefined>(undefined)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -171,12 +185,7 @@ export function MemoryAgentPage() {
     try {
       await api.sendMemoryAgentMessageStream(
         userMessage.content,
-        sessionId,
         (chunk) => {
-          if (chunk.session_id && !sessionId) {
-            setSessionId(chunk.session_id)
-          }
-
           if (chunk.type === 'content' && chunk.content) {
             setMessages(prev => {
               const lastMsg = prev[prev.length - 1]
@@ -189,15 +198,16 @@ export function MemoryAgentPage() {
               return prev
             })
           } else if (chunk.type === 'tool_call' && chunk.tool_call) {
+            const tc = chunk.tool_call as StreamToolCall
             setMessages(prev => {
               const lastMsg = prev[prev.length - 1]
               if (lastMsg && lastMsg.id === tempAssistantId) {
                 return [...prev.slice(0, -1), {
                   ...lastMsg,
                   tool_calls: [...(lastMsg.tool_calls || []), {
-                    id: chunk.tool_call.id || Date.now().toString(),
-                    name: chunk.tool_call.name || chunk.tool_call.function?.name || 'unknown',
-                    arguments: chunk.tool_call.arguments || chunk.tool_call.function?.arguments,
+                    id: tc.id || Date.now().toString(),
+                    name: tc.name || tc.function?.name || 'unknown',
+                    arguments: tc.arguments || tc.function?.arguments,
                     status: 'pending'
                   }]
                 }]
@@ -283,7 +293,6 @@ export function MemoryAgentPage() {
 
   const clearChat = () => {
     setMessages([])
-    setSessionId(undefined)
   }
 
   return (

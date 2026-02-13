@@ -1,11 +1,20 @@
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from contextlib import asynccontextmanager
 import asyncio
 
 from config.settings import settings
 from backend.api.routers import chat, memory, context, tools, acp, admin, archive, service, agents, websocket, backup
+from backend.api.response import APIResponse, HealthResponse
+from backend.api.exceptions import (
+    CXHMSError,
+    cxhms_exception_handler,
+    http_exception_handler,
+    validation_exception_handler,
+    generic_exception_handler
+)
 from backend.core.logging_config import setup_logging, get_contextual_logger, LogContext
 
 # 配置结构化日志
@@ -58,21 +67,24 @@ async def lifespan(app: FastAPI):
         model_router = None
 
     try:
-        memory_manager = MemoryManager()
+        db_config = settings.config.database
+        memory_manager = MemoryManager(db_path=db_config.memories_db)
         logger.info("记忆管理器已启动")
     except Exception as e:
         logger.warning(f"记忆管理器启动失败: {e}")
         memory_manager = None
 
     try:
-        context_manager = ContextManager()
+        db_config = settings.config.database
+        context_manager = ContextManager(db_path=db_config.sessions_db)
         logger.info("上下文管理器已启动")
     except Exception as e:
         logger.warning(f"上下文管理器启动失败: {e}")
         context_manager = None
 
     try:
-        acp_manager = ACPManager()
+        db_config = settings.config.database
+        acp_manager = ACPManager(data_dir=db_config.acp_db)
         acp_manager.initialize(
             agent_id=settings.config.acp.agent_id,
             agent_name=settings.config.acp.agent_name
@@ -291,23 +303,26 @@ app.include_router(agents.router, prefix="/api")
 app.include_router(backup.router, prefix="/api")
 app.include_router(websocket.router)
 
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
-    logger.error(f"全局异常: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "内部服务器错误", "error": str(exc)}
-    )
+app.add_exception_handler(CXHMSError, cxhms_exception_handler)
+app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(Exception, generic_exception_handler)
 
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 async def health_check():
-    return {
-        "status": "healthy",
-        "service": "CXHMS",
-        "version": "1.0.0"
+    components = {
+        "memory_manager": memory_manager is not None,
+        "context_manager": context_manager is not None,
+        "acp_manager": acp_manager is not None,
+        "llm_client": llm_client is not None,
+        "model_router": model_router is not None
     }
+    return HealthResponse(
+        status="healthy" if all(components.values()) else "degraded",
+        version="1.0.0",
+        components=components
+    )
 
 
 @app.get("/")

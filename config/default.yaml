@@ -8,6 +8,11 @@ server:
   - '*'
   cors_headers:
   - '*'
+cors:
+  enabled: true
+  origins:
+  - '*'
+  allow_credentials: true
 logging:
   level: INFO
   format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -17,6 +22,9 @@ logging:
 database:
   type: sqlite
   path: data/cxhms.db
+  memories_db: data/memories.db
+  sessions_db: data/sessions.db
+  acp_db: data/acp
   echo: false
 models:
   main:
@@ -61,13 +69,10 @@ memory:
   emotion_enabled: true
   vector_enabled: true
   vector_backend: milvus_lite
-  # 记忆衰减模型配置
-  # 可选值: exponential (默认, 双阶段指数衰减), ebbinghaus (实验性, 艾宾浩斯遗忘曲线)
   decay_model: exponential
-  # 艾宾浩斯衰减参数 (仅当 decay_model 为 ebbinghaus 时生效)
   ebbinghaus_params:
-    t50: 30.0  # 半衰期（天），记忆衰减到50%所需时间
-    k: 2.0     # 曲线陡峭度，值越大遗忘越快
+    t50: 30.0
+    k: 2.0
   milvus_lite:
     db_path: data/milvus_lite.db
     vector_size: 768
@@ -87,6 +92,11 @@ memory:
   archive_enabled: true
   dedup_threshold: 0.85
   archive_compression_enabled: true
+  vector:
+    backend: weaviate_embedded
+    weaviate_host: localhost
+    weaviate_port: 8080
+    vector_size: 768
 context:
   enabled: true
   max_context_length: 4000

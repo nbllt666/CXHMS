@@ -105,6 +105,24 @@ async def delete_session(session_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete("/context/sessions/all")
+async def clear_all_sessions():
+    """删除所有会话和消息"""
+    from backend.api.app import get_context_manager
+
+    try:
+        context_mgr = get_context_manager()
+        count = context_mgr.clear_all_sessions()
+
+        return {
+            "status": "success",
+            "message": f"已删除 {count} 个会话",
+            "deleted_count": count
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/context/messages/{session_id}")
 async def get_messages(
     session_id: str,

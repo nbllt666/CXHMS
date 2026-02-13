@@ -16,7 +16,11 @@ import {
   ToggleLeft,
   ToggleRight,
   Play,
-  AlertCircle
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Check
 } from 'lucide-react'
 import { api } from '../api/client'
 import { cn } from '../lib/utils'
@@ -25,13 +29,16 @@ interface Tool {
   id: string
   name: string
   description: string
-  type: 'mcp' | 'native' | 'custom'
+  type: 'builtin' | 'mcp' | 'custom'
   status: 'active' | 'inactive' | 'error'
   config: Record<string, unknown>
   icon?: string
   created_at: string
   last_used?: string
   use_count: number
+  parameters?: Record<string, unknown>
+  examples?: string[]
+  tags?: string[]
 }
 
 interface ToolStats {
@@ -52,13 +59,75 @@ const toolIcons: Record<string, React.ElementType> = {
   settings: Settings
 }
 
+// 预设的工具模板
+const toolTemplates = {
+  custom: {
+    name: '',
+    description: '',
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: []
+    },
+    examples: []
+  },
+  mcp: {
+    name: '',
+    description: 'MCP 服务器工具',
+    parameters: {
+      type: 'object',
+      properties: {
+        server_name: {
+          type: 'string',
+          description: 'MCP 服务器名称'
+        }
+      },
+      required: ['server_name']
+    },
+    config: {
+      server_name: '',
+      tool_name: ''
+    }
+  },
+  calculator: {
+    name: 'calculator',
+    description: '数学计算工具，支持基本运算、三角函数、对数等',
+    parameters: {
+      type: 'object',
+      properties: {
+        expression: {
+          type: 'string',
+          description: '数学表达式，如 "1 + 2" 或 "sin(30)"'
+        }
+      },
+      required: ['expression']
+    },
+    examples: ['1 + 2', 'sin(30)', 'log(100)']
+  },
+  datetime: {
+    name: 'datetime',
+    description: '获取当前日期和时间',
+    parameters: {
+      type: 'object',
+      properties: {
+        format: {
+          type: 'string',
+          description: '日期格式，如 "YYYY-MM-DD HH:mm:ss"'
+        }
+      },
+      required: []
+    },
+    examples: ['', 'YYYY-MM-DD']
+  }
+}
+
 export function ToolsPage() {
   const queryClient = useQueryClient()
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isTestModalOpen, setIsTestModalOpen] = useState(false)
-  const [filter, setFilter] = useState<'all' | 'mcp' | 'native' | 'custom'>('all')
+  const [filter, setFilter] = useState<'all' | 'builtin' | 'mcp' | 'custom'>('all')
 
   // Fetch tools stats
   const { data: stats, isLoading: statsLoading } = useQuery<ToolStats>({
@@ -176,7 +245,7 @@ export function ToolsPage() {
 
       {/* Filter Tabs */}
       <div className="flex gap-2">
-        {(['all', 'mcp', 'native', 'custom'] as const).map((type) => (
+        {(['all', 'builtin', 'mcp', 'custom'] as const).map((type) => (
           <button
             key={type}
             onClick={() => setFilter(type)}
@@ -187,7 +256,7 @@ export function ToolsPage() {
                 : "bg-muted text-muted-foreground hover:bg-accent"
             )}
           >
-            {type === 'all' ? '全部' : type === 'mcp' ? 'MCP' : type === 'native' ? '原生' : '自定义'}
+            {type === 'all' ? '全部' : type === 'builtin' ? '内置' : type === 'mcp' ? 'MCP' : '自定义'}
           </button>
         ))}
       </div>
@@ -204,49 +273,25 @@ export function ToolsPage() {
             return (
               <div
                 key={tool.id}
-                className={cn(
-                  "bg-card rounded-lg border border-border p-4 hover:border-primary/50 transition-colors",
-                  selectedTool?.id === tool.id && "border-primary"
-                )}
+                className="bg-card rounded-lg border border-border p-4 hover:shadow-md transition-shadow"
               >
                 <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-center gap-3">
                     <div className={cn(
                       "w-10 h-10 rounded-lg flex items-center justify-center",
-                      tool.status === 'active' ? "bg-green-500/10" :
-                      tool.status === 'error' ? "bg-red-500/10" : "bg-gray-500/10"
+                      tool.status === 'active' ? "bg-primary/10" : "bg-muted"
                     )}>
                       <IconComponent className={cn(
                         "w-5 h-5",
-                        tool.status === 'active' ? "text-green-500" :
-                        tool.status === 'error' ? "text-red-500" : "text-gray-500"
+                        tool.status === 'active' ? "text-primary" : "text-muted-foreground"
                       )} />
                     </div>
                     <div>
                       <h3 className="font-medium">{tool.name}</h3>
-                      <p className="text-sm text-muted-foreground line-clamp-2">{tool.description}</p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className={cn(
-                          "text-xs px-2 py-0.5 rounded-full",
-                          tool.type === 'mcp' ? "bg-blue-500/10 text-blue-600" :
-                          tool.type === 'native' ? "bg-purple-500/10 text-purple-600" :
-                          "bg-orange-500/10 text-orange-600"
-                        )}>
-                          {tool.type === 'mcp' ? 'MCP' : tool.type === 'native' ? '原生' : '自定义'}
-                        </span>
-                        <span className={cn(
-                          "text-xs px-2 py-0.5 rounded-full",
-                          tool.status === 'active' ? "bg-green-500/10 text-green-600" :
-                          tool.status === 'error' ? "bg-red-500/10 text-red-600" :
-                          "bg-gray-500/10 text-gray-600"
-                        )}>
-                          {tool.status === 'active' ? '活跃' :
-                           tool.status === 'error' ? '错误' : '停用'}
-                        </span>
-                      </div>
+                      <p className="text-sm text-muted-foreground">{tool.type}</p>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-1">
                     <button
                       onClick={() => toggleToolStatus(tool)}
                       className="p-1.5 hover:bg-accent rounded-lg transition-colors"
@@ -255,11 +300,15 @@ export function ToolsPage() {
                       {tool.status === 'active' ? (
                         <ToggleRight className="w-5 h-5 text-green-500" />
                       ) : (
-                        <ToggleLeft className="w-5 h-5 text-gray-400" />
+                        <ToggleLeft className="w-5 h-5 text-[var(--color-text-muted)]" />
                       )}
                     </button>
                   </div>
                 </div>
+
+                <p className="text-sm text-muted-foreground mt-3 line-clamp-2">
+                  {tool.description || '暂无描述'}
+                </p>
 
                 <div className="mt-4 pt-4 border-t border-border">
                   <div className="flex items-center justify-between text-sm text-muted-foreground">
@@ -356,36 +405,32 @@ export function ToolsPage() {
 }
 
 // Stat Card Component
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  loading,
-  trend
-}: {
+interface StatCardProps {
   title: string
-  value: string | number
+  value: number
   icon: React.ElementType
   loading?: boolean
   trend?: string
-}) {
+}
+
+function StatCard({ title, value, icon: Icon, loading, trend }: StatCardProps) {
   return (
-    <div className="bg-card p-4 rounded-lg border border-border">
-      <div className="flex items-start justify-between">
+    <div className="bg-card rounded-lg border border-border p-4">
+      <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-muted-foreground">{title}</p>
           {loading ? (
-            <Loader2 className="w-6 h-6 animate-spin mt-2" />
+            <div className="h-8 w-16 bg-muted rounded animate-pulse mt-1" />
           ) : (
             <div className="flex items-baseline gap-2">
-              <p className="text-2xl font-bold mt-1">{value}</p>
+              <p className="text-2xl font-bold">{value}</p>
               {trend && (
                 <span className="text-xs text-green-500">{trend}</span>
               )}
             </div>
           )}
         </div>
-        <div className="p-2 bg-primary/10 rounded-lg">
+        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
           <Icon className="w-5 h-5 text-primary" />
         </div>
       </div>
@@ -398,100 +443,262 @@ interface ToolModalProps {
   title: string
   tool?: Tool
   onClose: () => void
-  onSubmit: (data: { name: string; description?: string; type: 'mcp' | 'native' | 'custom'; icon?: string; config?: Record<string, unknown> }) => void
+  onSubmit: (data: { 
+    name: string
+    description?: string
+    type: 'mcp' | 'native' | 'custom'
+    icon?: string
+    config?: Record<string, unknown>
+    parameters?: Record<string, unknown>
+    examples?: string[]
+    tags?: string[]
+  }) => void
   isLoading: boolean
 }
 
 function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps) {
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('custom')
+  const [activeTab, setActiveTab] = useState<'basic' | 'params' | 'advanced'>('basic')
+  const [copied, setCopied] = useState(false)
+  
   const [formData, setFormData] = useState({
     name: tool?.name || '',
     description: tool?.description || '',
     type: (tool?.type as 'mcp' | 'native' | 'custom') || 'custom',
     icon: tool?.icon || 'wrench',
+    parameters: JSON.stringify(tool?.parameters || { type: 'object', properties: {}, required: [] }, null, 2),
+    examples: tool?.examples?.join('\n') || '',
+    tags: tool?.tags?.join(', ') || '',
     config: JSON.stringify(tool?.config || {}, null, 2)
   })
+
+  const handleTemplateSelect = (templateKey: string) => {
+    setSelectedTemplate(templateKey)
+    const template = toolTemplates[templateKey as keyof typeof toolTemplates]
+    if (template) {
+      const templateExamples = 'examples' in template ? template.examples : []
+      setFormData(prev => ({
+        ...prev,
+        name: template.name || prev.name,
+        description: template.description || prev.description,
+        parameters: JSON.stringify(template.parameters, null, 2),
+        examples: templateExamples?.join('\n') || ''
+      }))
+    }
+  }
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     try {
+      const parameters = JSON.parse(formData.parameters)
       const config = JSON.parse(formData.config)
+      const examples = formData.examples.split('\n').filter(e => e.trim())
+      const tags = formData.tags.split(',').map(t => t.trim()).filter(t => t)
+      
       onSubmit({
         name: formData.name,
         description: formData.description,
         type: formData.type,
         icon: formData.icon,
+        parameters,
+        examples,
+        tags,
         config
       })
     } catch {
-      alert('配置 JSON 格式错误')
+      alert('JSON 格式错误，请检查参数或配置')
     }
   }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-card rounded-lg border border-border w-full max-w-lg p-6 max-h-[90vh] overflow-auto">
-        <h2 className="text-xl font-semibold mb-4">{title}</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">名称</label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">描述</label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-              rows={2}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">类型</label>
-              <select
-                value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value as 'mcp' | 'native' | 'custom' })}
-                className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-              >
-                <option value="mcp">MCP</option>
-                <option value="native">原生</option>
-                <option value="custom">自定义</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">图标</label>
-              <select
-                value={formData.icon}
-                onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
-                className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-              >
-                <option value="wrench">工具</option>
-                <option value="terminal">终端</option>
-                <option value="globe">网络</option>
-                <option value="database">数据库</option>
-                <option value="file">文件</option>
-                <option value="code">代码</option>
-                <option value="settings">设置</option>
-              </select>
+      <div className="bg-card rounded-lg border border-border w-full max-w-2xl p-6 max-h-[90vh] overflow-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold">{title}</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            ✕
+          </button>
+        </div>
+
+        {/* Template Selector */}
+        {!tool && (
+          <div className="mb-6">
+            <label className="block text-sm font-medium mb-2">选择模板</label>
+            <div className="grid grid-cols-4 gap-2">
+              {Object.keys(toolTemplates).map((key) => (
+                <button
+                  key={key}
+                  onClick={() => handleTemplateSelect(key)}
+                  className={cn(
+                    "px-3 py-2 text-sm rounded-lg border transition-colors",
+                    selectedTemplate === key
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border hover:border-primary/50"
+                  )}
+                >
+                  {key === 'custom' ? '自定义' : key === 'mcp' ? 'MCP' : key === 'calculator' ? '计算器' : '时间'}
+                </button>
+              ))}
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">配置 (JSON)</label>
-            <textarea
-              value={formData.config}
-              onChange={(e) => setFormData({ ...formData, config: e.target.value })}
-              className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono text-sm"
-              rows={6}
-              placeholder='{"key": "value"}'
-            />
-          </div>
-          <div className="flex justify-end gap-3 pt-4">
+        )}
+
+        {/* Tabs */}
+        <div className="flex gap-1 mb-4 bg-muted rounded-lg p-1">
+          {(['basic', 'params', 'advanced'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                "flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                activeTab === tab
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {tab === 'basic' ? '基本信息' : tab === 'params' ? '参数定义' : '高级配置'}
+            </button>
+          ))}
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          {/* Basic Tab */}
+          {activeTab === 'basic' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  名称 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="例如：calculator"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">描述</label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  rows={2}
+                  placeholder="描述这个工具的用途..."
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">类型</label>
+                  <select
+                    value={formData.type}
+                    onChange={(e) => setFormData({ ...formData, type: e.target.value as 'mcp' | 'native' | 'custom' })}
+                    className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    <option value="custom">自定义</option>
+                    <option value="mcp">MCP</option>
+                    <option value="native">原生</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">图标</label>
+                  <select
+                    value={formData.icon}
+                    onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
+                    className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    <option value="wrench">工具</option>
+                    <option value="terminal">终端</option>
+                    <option value="globe">网络</option>
+                    <option value="database">数据库</option>
+                    <option value="file">文件</option>
+                    <option value="code">代码</option>
+                    <option value="settings">设置</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">标签（用逗号分隔）</label>
+                <input
+                  type="text"
+                  value={formData.tags}
+                  onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
+                  className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="math, calculation, utility"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Params Tab */}
+          {activeTab === 'params' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <label className="block text-sm font-medium">
+                  参数定义 (JSON Schema) <span className="text-red-500">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(formData.parameters)}
+                  className="text-xs flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                >
+                  {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  {copied ? '已复制' : '复制'}
+                </button>
+              </div>
+              <textarea
+                value={formData.parameters}
+                onChange={(e) => setFormData({ ...formData, parameters: e.target.value })}
+                className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono text-sm"
+                rows={12}
+                placeholder={`{
+  "type": "object",
+  "properties": {
+    "expression": {
+      "type": "string",
+      "description": "数学表达式"
+    }
+  },
+  "required": ["expression"]
+}`}
+              />
+              <div>
+                <label className="block text-sm font-medium mb-1">示例（每行一个）</label>
+                <textarea
+                  value={formData.examples}
+                  onChange={(e) => setFormData({ ...formData, examples: e.target.value })}
+                  className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono text-sm"
+                  rows={4}
+                  placeholder="1 + 2&#10;sin(30)&#10;log(100)"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Advanced Tab */}
+          {activeTab === 'advanced' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">配置 (JSON)</label>
+                <textarea
+                  value={formData.config}
+                  onChange={(e) => setFormData({ ...formData, config: e.target.value })}
+                  className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono text-sm"
+                  rows={12}
+                  placeholder='{"key": "value"}'
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-6 mt-6 border-t border-border">
             <button
               type="button"
               onClick={onClose}
@@ -525,6 +732,7 @@ function TestToolModal({ tool, onClose }: TestToolModalProps) {
   const [result, setResult] = useState<string | null>(null)
   const [isTesting, setIsTesting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showParamsHelp, setShowParamsHelp] = useState(false)
 
   const handleTest = async () => {
     setIsTesting(true)
@@ -542,20 +750,104 @@ function TestToolModal({ tool, onClose }: TestToolModalProps) {
     }
   }
 
+  // 生成示例参数
+  const generateExampleParams = () => {
+    if (!tool.parameters || !tool.parameters.properties) return '{}'
+    
+    const example: Record<string, unknown> = {}
+    const properties = tool.parameters.properties as Record<string, { type: string; description?: string; default?: unknown }>
+    
+    Object.entries(properties).forEach(([key, prop]) => {
+      switch (prop.type) {
+        case 'string':
+          example[key] = prop.default || tool.examples?.[0] || ''
+          break
+        case 'number':
+        case 'integer':
+          example[key] = prop.default || 0
+          break
+        case 'boolean':
+          example[key] = prop.default || false
+          break
+        case 'array':
+          example[key] = []
+          break
+        case 'object':
+          example[key] = {}
+          break
+        default:
+          example[key] = null
+      }
+    })
+    
+    return JSON.stringify(example, null, 2)
+  }
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-card rounded-lg border border-border w-full max-w-2xl p-6 max-h-[90vh] overflow-auto">
-        <h2 className="text-xl font-semibold mb-4">测试工具: {tool.name}</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold">测试工具: {tool.name}</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            ✕
+          </button>
+        </div>
         
         <div className="space-y-4">
+          {/* Parameters Help */}
+          <div className="bg-muted rounded-lg p-3">
+            <button
+              onClick={() => setShowParamsHelp(!showParamsHelp)}
+              className="flex items-center justify-between w-full text-sm font-medium"
+            >
+              <span>参数说明</span>
+              {showParamsHelp ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+            {showParamsHelp && (
+              <div className="mt-2 text-sm text-muted-foreground">
+                {tool.parameters && tool.parameters.properties ? (
+                  <ul className="space-y-1">
+                    {Object.entries(tool.parameters.properties as Record<string, { type: string; description?: string }>).map(([key, prop]) => (
+                      <li key={key}>
+                        <code className="bg-background px-1 rounded">{key}</code>
+                        <span className="text-xs ml-2">({prop.type})</span>
+                        {prop.description && <span className="ml-2">- {prop.description}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>暂无参数说明</p>
+                )}
+                {tool.examples && tool.examples.length > 0 && (
+                  <div className="mt-2">
+                    <span className="font-medium">示例值:</span>
+                    <ul className="mt-1 space-y-1">
+                      {tool.examples.map((ex, i) => (
+                        <li key={i} className="font-mono text-xs bg-background px-2 py-1 rounded">{ex}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div>
-            <label className="block text-sm font-medium mb-1">参数 (JSON)</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium">参数 (JSON)</label>
+              <button
+                onClick={() => setParams(generateExampleParams())}
+                className="text-xs text-primary hover:underline"
+              >
+                填入示例
+              </button>
+            </div>
             <textarea
               value={params}
               onChange={(e) => setParams(e.target.value)}
               className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono text-sm"
-              rows={4}
-              placeholder='{"param1": "value1"}'
+              rows={6}
+              placeholder='{"key": "value"}'
             />
           </div>
 
@@ -564,44 +856,25 @@ function TestToolModal({ tool, onClose }: TestToolModalProps) {
             disabled={isTesting}
             className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
-            {isTesting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Play className="w-4 h-4" />
-            )}
-            {isTesting ? '测试中...' : '运行测试'}
+            {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+            {isTesting ? '测试中...' : '执行测试'}
           </button>
 
           {error && (
-            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
-              <div className="flex items-center gap-2 text-red-600">
-                <AlertCircle className="w-5 h-5" />
-                <span className="font-medium">错误</span>
-              </div>
-              <p className="mt-2 text-sm text-red-600/80">{error}</p>
+            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              {error}
             </div>
           )}
 
           {result && (
-            <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
-              <div className="flex items-center gap-2 text-green-600">
-                <CheckCircle2 className="w-5 h-5" />
-                <span className="font-medium">结果</span>
-              </div>
-              <pre className="mt-2 text-sm text-green-600/80 overflow-auto max-h-64 font-mono">
+            <div>
+              <label className="block text-sm font-medium mb-1">执行结果</label>
+              <pre className="w-full px-3 py-2 bg-muted rounded-lg font-mono text-sm overflow-auto max-h-60">
                 {result}
               </pre>
             </div>
           )}
-        </div>
-
-        <div className="flex justify-end gap-3 mt-6">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            关闭
-          </button>
         </div>
       </div>
     </div>

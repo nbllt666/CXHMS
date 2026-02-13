@@ -20,7 +20,6 @@ class ChatRequest(BaseModel):
     """聊天请求 - 前端只发送最新一条消息"""
     message: str              # 用户最新消息
     agent_id: str = "default" # 使用哪个 Agent
-    session_id: Optional[str] = None  # 会话ID，不传则创建新会话
     stream: bool = True       # 是否流式响应
 
 
@@ -110,6 +109,7 @@ async def chat(request: ChatRequest):
     """
     非流式聊天
     前端只发送最新消息，后端根据 Agent 配置构建完整上下文
+    每个 Agent 对应一个固定会话
     """
     from backend.api.app import get_memory_manager, get_context_manager
 
@@ -124,19 +124,17 @@ async def chat(request: ChatRequest):
         context_mgr = get_context_manager()
         llm = get_llm_client_for_agent(agent_config)
 
-        # 3. 获取/创建会话
-        if request.session_id:
-            session_id = request.session_id
-            # 确保会话存在
-            try:
-                context_mgr.get_session(session_id)
-            except:
-                raise HTTPException(status_code=404, detail=f"会话 '{request.session_id}' 不存在")
-        else:
+        # 3. 获取/创建 Agent 专属会话（每个 Agent 只有一个会话）
+        session_id = f"agent-{request.agent_id}"
+        try:
+            context_mgr.get_session(session_id)
+        except:
             session_id = context_mgr.create_session(
-                workspace_id="default",
-                title=f"与 {agent_config['name']} 的对话"
+                workspace_id="agent-chats",
+                title=f"{agent_config['name']} 的对话"
             )
+            # 更新会话 ID 为 agent-{agent_id} 格式
+            context_mgr.update_session(session_id, metadata={"agent_id": request.agent_id})
 
         # 4. 添加用户消息到上下文
         context_mgr.add_message(
@@ -247,6 +245,7 @@ async def chat_stream(request: ChatRequest):
     """
     流式聊天
     前端只发送最新消息，后端根据 Agent 配置构建完整上下文
+    每个 Agent 对应一个固定会话
     """
     from backend.api.app import get_memory_manager, get_context_manager
 
@@ -261,17 +260,14 @@ async def chat_stream(request: ChatRequest):
         context_mgr = get_context_manager()
         llm = get_llm_client_for_agent(agent_config)
 
-        # 3. 获取/创建会话
-        if request.session_id:
-            session_id = request.session_id
-            try:
-                context_mgr.get_session(session_id)
-            except:
-                raise HTTPException(status_code=404, detail=f"会话 '{request.session_id}' 不存在")
-        else:
+        # 3. 获取/创建 Agent 专属会话（每个 Agent 只有一个会话）
+        session_id = f"agent-{request.agent_id}"
+        try:
+            context_mgr.get_session(session_id)
+        except:
             session_id = context_mgr.create_session(
-                workspace_id="default",
-                title=f"与 {agent_config['name']} 的对话"
+                workspace_id="agent-chats",
+                title=f"{agent_config['name']} 的对话"
             )
 
         # 4. 添加用户消息到上下文
@@ -493,7 +489,13 @@ async def get_chat_history(session_id: str, limit: int = 50):
         session = context_mgr.get_session(session_id)
         
         if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
+            logger.warning(f"Session not found: {session_id}, returning empty history")
+            return {
+                "status": "success",
+                "session_id": session_id,
+                "session": None,
+                "messages": []
+            }
         
         messages = context_mgr.get_messages(session_id, limit=limit)
 
@@ -506,6 +508,7 @@ async def get_chat_history(session_id: str, limit: int = 50):
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"获取聊天历史失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -514,14 +517,13 @@ async def get_chat_history(session_id: str, limit: int = 50):
 class MemoryAgentChatRequest(BaseModel):
     """记忆管理模型聊天请求"""
     message: str              # 用户最新消息
-    session_id: Optional[str] = None  # 会话ID，不传则创建新会话
 
 
 @router.post("/memory-agent/chat/stream")
 async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
     """
     记忆管理模型流式聊天 - 支持上下文持久化
-    所有Agent共享同一个记忆管理模型，但上下文持久化保存
+    记忆管理Agent只有一个固定会话
     """
     from backend.api.app import get_memory_manager, get_context_manager, get_model_router
     from backend.core.context.agent_context_manager import AgentContextManager
@@ -543,17 +545,11 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
         if not llm:
             raise HTTPException(status_code=503, detail="记忆管理模型不可用")
 
-        # 4. 获取/创建会话（使用专用的memory-agent会话命名空间）
-        if request.session_id:
-            session_id = f"memory-agent-{request.session_id}"
-            try:
-                context_mgr.get_session(session_id)
-            except:
-                session_id = context_mgr.create_session(
-                    workspace_id="memory-agent",
-                    title="记忆管理对话"
-                )
-        else:
+        # 4. 获取/创建固定会话（记忆管理Agent只有一个会话）
+        session_id = "memory-agent-default"
+        try:
+            context_mgr.get_session(session_id)
+        except:
             session_id = context_mgr.create_session(
                 workspace_id="memory-agent",
                 title="记忆管理对话"

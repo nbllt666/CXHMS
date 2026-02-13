@@ -19,24 +19,22 @@ interface Session {
   id: string
   title: string
   agent_id?: string
-  message_count: number
-  created_at: string
+  message_count?: number
+  created_at?: string
+  updated_at?: string
 }
 
 interface ChatState {
-  // Agent
   agents: Agent[]
   currentAgentId: string | null
   setAgents: (agents: Agent[]) => void
   setCurrentAgentId: (id: string | null) => void
   
-  // Session
   sessions: Session[]
   currentSessionId: string | null
   setSessions: (sessions: Session[]) => void
   setCurrentSessionId: (id: string | null) => void
   
-  // UI State
   isChatExpanded: boolean
   setIsChatExpanded: (expanded: boolean) => void
 }
@@ -44,19 +42,16 @@ interface ChatState {
 export const useChatStore = create<ChatState>()(
   persist(
     (set) => ({
-      // Agent
       agents: [],
       currentAgentId: null,
       setAgents: (agents) => set({ agents }),
       setCurrentAgentId: (id) => set({ currentAgentId: id }),
       
-      // Session
       sessions: [],
       currentSessionId: null,
       setSessions: (sessions) => set({ sessions }),
       setCurrentSessionId: (id) => set({ currentSessionId: id }),
       
-      // UI State
       isChatExpanded: false,
       setIsChatExpanded: (expanded) => set({ isChatExpanded: expanded }),
     }),

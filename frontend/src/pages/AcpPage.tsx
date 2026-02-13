@@ -186,12 +186,12 @@ export function AcpPage() {
                     <div className={cn(
                       "w-10 h-10 rounded-lg flex items-center justify-center",
                       agent.status === 'active' ? "bg-green-500/10" :
-                      agent.status === 'error' ? "bg-red-500/10" : "bg-gray-500/10"
+                      agent.status === 'error' ? "bg-red-500/10" : "bg-[var(--color-bg-tertiary)]"
                     )}>
                       <Bot className={cn(
                         "w-5 h-5",
                         agent.status === 'active' ? "text-green-500" :
-                        agent.status === 'error' ? "text-red-500" : "text-gray-500"
+                        agent.status === 'error' ? "text-red-500" : "text-[var(--color-text-tertiary)]"
                       )} />
                     </div>
                     <div>
@@ -202,7 +202,7 @@ export function AcpPage() {
                           "text-xs px-2 py-0.5 rounded-full",
                           agent.status === 'active' ? "bg-green-500/10 text-green-600" :
                           agent.status === 'error' ? "bg-red-500/10 text-red-600" :
-                          "bg-gray-500/10 text-gray-600"
+                          "bg-[var(--color-bg-tertiary)] text-[var(--color-text-tertiary)]"
                         )}>
                           {agent.status === 'active' ? '活跃' :
                            agent.status === 'error' ? '错误' : '停用'}

@@ -1,113 +1,236 @@
-import { useState, useEffect } from 'react'
-import { Bot, Plus, Edit2, Trash2, Copy, MessageSquare, Settings, X } from 'lucide-react'
-import { api } from '../api/client'
-import { formatRelativeTime } from '../lib/utils'
+import { useState, useEffect } from 'react';
+import { api } from '../api/client';
+import { formatRelativeTime } from '../lib/utils';
+import { PageHeader } from '../components/layout';
+import { Button, Card, CardBody, Modal, Input, Textarea, Badge } from '../components/ui';
+import { useHotkey } from '../hooks';
 
 interface Agent {
-  id: string
-  name: string
-  description: string
-  system_prompt: string
-  model: string
-  temperature: number
-  max_tokens: number
-  use_memory: boolean
-  use_tools: boolean
-  vision_enabled?: boolean  // 多模态支持
-  memory_scene: string
-  decay_model: string  // 记忆衰减模型
-  is_default: boolean
-  created_at: string
-  updated_at: string
+  id: string;
+  name: string;
+  description: string;
+  system_prompt: string;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  use_memory: boolean;
+  use_tools: boolean;
+  vision_enabled?: boolean;
+  memory_scene: string;
+  decay_model: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
-export function AgentsPage() {
-  const [agents, setAgents] = useState<Agent[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingAgent, setEditingAgent] = useState<Agent | null>(null)
+interface AgentTemplate {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  system_prompt: string;
+  model: string;
+  temperature: number;
+  use_memory: boolean;
+  use_tools: boolean;
+  vision_enabled: boolean;
+  memory_scene: string;
+}
 
-  // 表单状态
+const AGENT_TEMPLATES: AgentTemplate[] = [
+  {
+    id: 'general',
+    name: '通用助手',
+    description: '适合日常对话和一般问题解答',
+    icon: '🤖',
+    system_prompt: '你是一个有帮助的AI助手。请用中文回答用户的问题，保持友好和专业。',
+    model: 'main',
+    temperature: 0.7,
+    use_memory: true,
+    use_tools: true,
+    vision_enabled: false,
+    memory_scene: 'chat',
+  },
+  {
+    id: 'coder',
+    name: '编程助手',
+    description: '专注于代码编写、调试和技术问题',
+    icon: '💻',
+    system_prompt: '你是一个专业的编程助手。帮助用户编写、调试和优化代码。提供清晰的代码示例和解释，遵循最佳实践。',
+    model: 'main',
+    temperature: 0.3,
+    use_memory: true,
+    use_tools: true,
+    vision_enabled: false,
+    memory_scene: 'task',
+  },
+  {
+    id: 'writer',
+    name: '写作助手',
+    description: '帮助撰写文章、文案和创意内容',
+    icon: '✍️',
+    system_prompt: '你是一个专业的写作助手。帮助用户撰写各类文章、文案、故事等。注重文字的流畅性、逻辑性和创意表达。',
+    model: 'main',
+    temperature: 0.8,
+    use_memory: true,
+    use_tools: false,
+    vision_enabled: false,
+    memory_scene: 'chat',
+  },
+  {
+    id: 'analyst',
+    name: '数据分析师',
+    description: '数据分析和可视化专家',
+    icon: '📊',
+    system_prompt: '你是一个数据分析专家。帮助用户分析数据、生成报告、提供洞察。使用工具进行数据处理和可视化。',
+    model: 'main',
+    temperature: 0.4,
+    use_memory: true,
+    use_tools: true,
+    vision_enabled: false,
+    memory_scene: 'task',
+  },
+  {
+    id: 'translator',
+    name: '翻译助手',
+    description: '多语言翻译和本地化专家',
+    icon: '🌐',
+    system_prompt: '你是一个专业的翻译助手。准确翻译各种语言，保持原文的风格和语境。支持中文、英文、日文等多种语言。',
+    model: 'main',
+    temperature: 0.5,
+    use_memory: true,
+    use_tools: false,
+    vision_enabled: false,
+    memory_scene: 'chat',
+  },
+  {
+    id: 'vision',
+    name: '视觉助手',
+    description: '支持图像理解和多模态交互',
+    icon: '👁️',
+    system_prompt: '你是一个支持视觉理解的AI助手。可以分析图像内容，回答关于图片的问题，并提供视觉相关的建议。',
+    model: 'main',
+    temperature: 0.7,
+    use_memory: true,
+    use_tools: true,
+    vision_enabled: true,
+    memory_scene: 'chat',
+  },
+];
+
+export function AgentsPage() {
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     system_prompt: '你是一个有帮助的AI助手。请用中文回答用户的问题。',
-    model: 'main',  // 默认为主模型
+    model: 'main',
     temperature: 0.7,
-    max_tokens: 0,  // 0 表示不限制，使用模型默认
+    max_tokens: 0,
     use_memory: true,
     use_tools: true,
-    vision_enabled: false,  // 默认不启用多模态
+    vision_enabled: false,
     memory_scene: 'chat',
-    decay_model: 'exponential'  // 默认使用双阶段指数衰减
-  })
+    decay_model: 'exponential',
+  });
+
+  useHotkey('Escape', () => {
+    if (showCreateModal) setShowCreateModal(false);
+    if (showTemplateModal) setShowTemplateModal(false);
+    if (editingAgent) {
+      setEditingAgent(null);
+      resetForm();
+    }
+  });
 
   useEffect(() => {
-    loadAgents()
-  }, [])
+    loadAgents();
+  }, []);
 
   const loadAgents = async () => {
     try {
-      setLoading(true)
-      const data = await api.getAgents()
-      // 过滤掉 memory-agent，不在列表中显示
-      const filteredAgents = data.filter((agent: Agent) => agent.id !== 'memory-agent')
-      setAgents(filteredAgents)
+      setLoading(true);
+      const data = await api.getAgents();
+      const filteredAgents = data.filter((agent: Agent) => agent.id !== 'memory-agent');
+      setAgents(filteredAgents);
     } catch (error) {
-      console.error('加载 Agent 失败:', error)
+      console.error('加载 Agent 失败:', error);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleCreate = async () => {
     try {
-      await api.createAgent(formData)
-      setShowCreateModal(false)
-      resetForm()
-      loadAgents()
+      await api.createAgent(formData);
+      setShowCreateModal(false);
+      resetForm();
+      loadAgents();
     } catch (error) {
-      console.error('创建 Agent 失败:', error)
-      alert('创建失败，请检查名称是否重复')
+      console.error('创建 Agent 失败:', error);
+      alert('创建失败，请检查名称是否重复');
     }
-  }
+  };
 
   const handleUpdate = async () => {
-    if (!editingAgent) return
+    if (!editingAgent) return;
     try {
-      await api.updateAgent(editingAgent.id, formData)
-      setEditingAgent(null)
-      resetForm()
-      loadAgents()
+      await api.updateAgent(editingAgent.id, formData);
+      setEditingAgent(null);
+      resetForm();
+      loadAgents();
     } catch (error) {
-      console.error('更新 Agent 失败:', error)
-      alert('更新失败')
+      console.error('更新 Agent 失败:', error);
+      alert('更新失败');
     }
-  }
+  };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('确定要删除这个 Agent 吗？')) return
+    if (!confirm('确定要删除这个 Agent 吗？')) return;
     try {
-      await api.deleteAgent(id)
-      loadAgents()
+      await api.deleteAgent(id);
+      loadAgents();
     } catch (error) {
-      console.error('删除 Agent 失败:', error)
-      alert('删除失败')
+      console.error('删除 Agent 失败:', error);
+      alert('删除失败');
     }
-  }
+  };
 
   const handleClone = async (agent: Agent) => {
     try {
-      await api.cloneAgent(agent.id)
-      loadAgents()
+      await api.cloneAgent(agent.id);
+      loadAgents();
     } catch (error) {
-      console.error('克隆 Agent 失败:', error)
-      alert('克隆失败')
+      console.error('克隆 Agent 失败:', error);
+      alert('克隆失败');
     }
-  }
+  };
+
+  const handleSelectTemplate = (template: AgentTemplate) => {
+    setFormData({
+      name: template.name,
+      description: template.description,
+      system_prompt: template.system_prompt,
+      model: template.model,
+      temperature: template.temperature,
+      max_tokens: 0,
+      use_memory: template.use_memory,
+      use_tools: template.use_tools,
+      vision_enabled: template.vision_enabled,
+      memory_scene: template.memory_scene,
+      decay_model: 'exponential',
+    });
+    setShowTemplateModal(false);
+    setShowCreateModal(true);
+  };
 
   const startEdit = (agent: Agent) => {
-    setEditingAgent(agent)
+    setEditingAgent(agent);
     setFormData({
       name: agent.name,
       description: agent.description,
@@ -119,9 +242,9 @@ export function AgentsPage() {
       use_tools: agent.use_tools,
       memory_scene: agent.memory_scene,
       decay_model: agent.decay_model || 'exponential',
-      vision_enabled: agent.vision_enabled || false
-    })
-  }
+      vision_enabled: agent.vision_enabled || false,
+    });
+  };
 
   const resetForm = () => {
     setFormData({
@@ -130,329 +253,300 @@ export function AgentsPage() {
       system_prompt: '你是一个有帮助的AI助手。请用中文回答用户的问题。',
       model: 'main',
       temperature: 0.7,
-      max_tokens: 0,  // 0 表示不限制
+      max_tokens: 0,
       use_memory: true,
       use_tools: true,
+      vision_enabled: false,
       memory_scene: 'chat',
       decay_model: 'exponential',
-      vision_enabled: false
-    })
-  }
+    });
+  };
 
   const closeModal = () => {
-    setShowCreateModal(false)
-    setEditingAgent(null)
-    resetForm()
-  }
+    setShowCreateModal(false);
+    setEditingAgent(null);
+    resetForm();
+  };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-[var(--color-accent)] border-t-transparent" />
       </div>
-    )
+    );
   }
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">AI 助手管理</h1>
-          <p className="text-muted-foreground mt-1">
-            创建和管理不同的 AI 助手，每个助手可以有独立的系统提示词和配置
-          </p>
-        </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          新建助手
-        </button>
-      </div>
+    <div className="max-w-6xl mx-auto">
+      <PageHeader
+        title="AI 助手管理"
+        description="创建和管理不同的 AI 助手，每个助手可以有独立的系统提示词和配置"
+        actions={
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setShowTemplateModal(true)}>
+              <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+              </svg>
+              从模板创建
+            </Button>
+            <Button onClick={() => setShowCreateModal(true)}>
+              <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              新建助手
+            </Button>
+          </div>
+        }
+      />
 
-      {/* Agents Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {agents.map((agent) => (
-          <div
+          <Card
             key={agent.id}
-            className={`p-4 rounded-xl border transition-all hover:shadow-md ${
-              agent.is_default ? 'border-primary/50 bg-primary/5' : 'border-border bg-card'
-            }`}
+            className={`${agent.is_default ? 'ring-2 ring-[var(--color-accent)]' : ''}`}
           >
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Bot className="w-5 h-5 text-primary" />
+            <CardBody>
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-[var(--color-accent-light)] flex items-center justify-center">
+                    <svg className="w-5 h-5 text-[var(--color-accent)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-[var(--color-text-primary)]">{agent.name}</h3>
+                    {agent.is_default && (
+                      <Badge variant="primary" size="sm">默认</Badge>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-semibold">{agent.name}</h3>
+                <div className="flex gap-1">
+                  {!agent.is_default && (
+                    <>
+                      <button
+                        onClick={() => startEdit(agent)}
+                        className="p-1.5 hover:bg-[var(--color-bg-hover)] rounded-[var(--radius-sm)] transition-colors"
+                        title="编辑"
+                      >
+                        <svg className="w-4 h-4 text-[var(--color-text-secondary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => handleClone(agent)}
+                        className="p-1.5 hover:bg-[var(--color-bg-hover)] rounded-[var(--radius-sm)] transition-colors"
+                        title="克隆"
+                      >
+                        <svg className="w-4 h-4 text-[var(--color-text-secondary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => handleDelete(agent.id)}
+                        className="p-1.5 hover:bg-[var(--color-error-light)] rounded-[var(--radius-sm)] transition-colors"
+                        title="删除"
+                      >
+                        <svg className="w-4 h-4 text-[var(--color-error)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </>
+                  )}
                   {agent.is_default && (
-                    <span className="text-xs text-primary">默认助手</span>
+                    <button
+                      onClick={() => startEdit(agent)}
+                      className="p-1.5 hover:bg-[var(--color-bg-hover)] rounded-[var(--radius-sm)] transition-colors"
+                      title="编辑"
+                    >
+                      <svg className="w-4 h-4 text-[var(--color-text-secondary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
                   )}
                 </div>
               </div>
-              <div className="flex gap-1">
-                {!agent.is_default && (
-                  <>
-                    <button
-                      onClick={() => startEdit(agent)}
-                      className="p-1.5 hover:bg-accent rounded-lg transition-colors"
-                      title="编辑"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleClone(agent)}
-                      className="p-1.5 hover:bg-accent rounded-lg transition-colors"
-                      title="克隆"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(agent.id)}
-                      className="p-1.5 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
-                      title="删除"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </>
-                )}
-                {agent.is_default && (
-                  <button
-                    onClick={() => startEdit(agent)}
-                    className="p-1.5 hover:bg-accent rounded-lg transition-colors"
-                    title="编辑"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
 
-            <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-              {agent.description || '暂无描述'}
-            </p>
+              <p className="text-sm text-[var(--color-text-secondary)] mb-4 line-clamp-2">
+                {agent.description || '暂无描述'}
+              </p>
 
-            <div className="space-y-2 text-xs text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <Settings className="w-3.5 h-3.5" />
-                <span>模型: {agent.model}</span>
+              <div className="space-y-2 text-xs text-[var(--color-text-tertiary)]">
+                <div className="flex items-center gap-2">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <span>模型: {agent.model}</span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className={agent.use_memory ? 'text-[var(--color-success)]' : 'text-[var(--color-text-tertiary)]'}>
+                    {agent.use_memory ? '✓ 记忆' : '✗ 记忆'}
+                  </span>
+                  <span className={agent.use_tools ? 'text-[var(--color-success)]' : 'text-[var(--color-text-tertiary)]'}>
+                    {agent.use_tools ? '✓ 工具' : '✗ 工具'}
+                  </span>
+                  {agent.vision_enabled && (
+                    <span className="text-[var(--color-info)]">✓ 视觉</span>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>场景: {agent.memory_scene}</span>
-              </div>
-              <div className="flex items-center gap-4">
-                <span>温度: {agent.temperature}</span>
-                <span>Max Tokens: {agent.max_tokens}</span>
-              </div>
-              <div className="flex items-center gap-4">
-                <span className={agent.use_memory ? 'text-green-600' : 'text-gray-400'}>
-                  {agent.use_memory ? '✓ 记忆' : '✗ 记忆'}
-                </span>
-                <span className={agent.use_tools ? 'text-green-600' : 'text-gray-400'}>
-                  {agent.use_tools ? '✓ 工具' : '✗ 工具'}
-                </span>
-              </div>
-            </div>
 
-            <div className="mt-4 pt-3 border-t border-border text-xs text-muted-foreground">
-              更新于 {formatRelativeTime(agent.updated_at)}
-            </div>
-          </div>
+              <div className="mt-4 pt-3 border-t border-[var(--color-border)] text-xs text-[var(--color-text-tertiary)]">
+                更新于 {formatRelativeTime(agent.updated_at)}
+              </div>
+            </CardBody>
+          </Card>
         ))}
       </div>
 
-      {/* Create/Edit Modal */}
-      {(showCreateModal || editingAgent) && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-background rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
-            <div className="p-6 border-b border-border flex items-center justify-between">
-              <h2 className="text-xl font-semibold">
-                {editingAgent ? '编辑助手' : '新建助手'}
-              </h2>
-              <button onClick={closeModal} className="p-2 hover:bg-accent rounded-lg">
-                <X className="w-5 h-5" />
-              </button>
+      <Modal isOpen={showTemplateModal} onClose={() => setShowTemplateModal(false)} title="选择模板">
+        <div className="grid grid-cols-2 gap-3">
+          {AGENT_TEMPLATES.map((template) => (
+            <button
+              key={template.id}
+              onClick={() => handleSelectTemplate(template)}
+              className="p-4 text-left border border-[var(--color-border)] rounded-[var(--radius-lg)] hover:border-[var(--color-accent)] hover:bg-[var(--color-bg-hover)] transition-all"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <span className="text-2xl">{template.icon}</span>
+                <h3 className="font-medium text-[var(--color-text-primary)]">{template.name}</h3>
+              </div>
+              <p className="text-sm text-[var(--color-text-secondary)]">{template.description}</p>
+              <div className="flex gap-2 mt-2">
+                {template.use_memory && <Badge variant="primary" size="sm">记忆</Badge>}
+                {template.use_tools && <Badge variant="secondary" size="sm">工具</Badge>}
+                {template.vision_enabled && <Badge variant="info" size="sm">视觉</Badge>}
+              </div>
+            </button>
+          ))}
+        </div>
+      </Modal>
+
+      <Modal isOpen={showCreateModal || !!editingAgent} onClose={closeModal} title={editingAgent ? '编辑助手' : '新建助手'}>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1.5">名称 *</label>
+              <Input
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="助手名称"
+              />
             </div>
-
-            <div className="p-6 space-y-4">
-              {/* 基本信息 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">名称 *</label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    placeholder="助手名称"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">模型类型</label>
-                  <select
-                    value={formData.model || 'main'}
-                    onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                    className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    <option value="main">主模型 (Main)</option>
-                    <option value="summary">摘要模型 (Summary)</option>
-                    <option value="memory">记忆管理模型 (Memory)</option>
-                  </select>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    选择模型类型决定 Agent 使用的 LLM 和可用工具
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-1">描述</label>
-                <input
-                  type="text"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  placeholder="助手的简短描述"
-                />
-              </div>
-
-              {/* 系统提示词 */}
-              <div>
-                <label className="block text-sm font-medium mb-1">系统提示词</label>
-                <textarea
-                  value={formData.system_prompt}
-                  onChange={(e) => setFormData({ ...formData, system_prompt: e.target.value })}
-                  className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px] resize-y"
-                  placeholder="定义助手的行为和角色..."
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  系统提示词定义了助手的行为方式，会在每次对话开始时发送给模型
-                </p>
-              </div>
-
-              {/* 参数配置 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    温度: {formData.temperature}
-                  </label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="2"
-                    step="0.1"
-                    value={formData.temperature}
-                    onChange={(e) => setFormData({ ...formData, temperature: parseFloat(e.target.value) })}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>精确</span>
-                    <span>平衡</span>
-                    <span>创意</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">最大 Tokens</label>
-                  <input
-                    type="number"
-                    value={formData.max_tokens}
-                    onChange={(e) => setFormData({ ...formData, max_tokens: parseInt(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    min="0"
-                    placeholder="0 表示使用模型默认"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    0 表示使用模型默认设置
-                  </p>
-                </div>
-              </div>
-
-              {/* 记忆场景 */}
-              <div>
-                <label className="block text-sm font-medium mb-1">记忆场景</label>
-                <select
-                  value={formData.memory_scene}
-                  onChange={(e) => setFormData({ ...formData, memory_scene: e.target.value })}
-                  className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                  <option value="chat">闲聊 (Chat)</option>
-                  <option value="task">任务 (Task)</option>
-                  <option value="first_interaction">首次交互 (First Interaction)</option>
-                </select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  不同场景会影响记忆检索的权重策略
-                </p>
-              </div>
-
-              {/* 记忆衰减模型 */}
-              <div>
-                <label className="block text-sm font-medium mb-1">记忆衰减模型</label>
-                <select
-                  value={formData.decay_model}
-                  onChange={(e) => setFormData({ ...formData, decay_model: e.target.value })}
-                  className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                  <option value="exponential">双阶段指数衰减 (推荐)</option>
-                  <option value="ebbinghaus">艾宾浩斯遗忘曲线 (实验性)</option>
-                </select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  艾宾浩斯模型更符合人类记忆规律，但仍在实验阶段
-                </p>
-              </div>
-
-              {/* 功能开关 */}
-              <div className="flex gap-6 flex-wrap">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.use_memory}
-                    onChange={(e) => setFormData({ ...formData, use_memory: e.target.checked })}
-                    className="w-4 h-4 rounded border-border"
-                  />
-                  <span className="text-sm">启用记忆</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.use_tools}
-                    onChange={(e) => setFormData({ ...formData, use_tools: e.target.checked })}
-                    className="w-4 h-4 rounded border-border"
-                  />
-                  <span className="text-sm">启用工具</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.vision_enabled}
-                    onChange={(e) => setFormData({ ...formData, vision_enabled: e.target.checked })}
-                    className="w-4 h-4 rounded border-border"
-                  />
-                  <span className="text-sm">启用多模态 (Vision)</span>
-                </label>
-              </div>
-            </div>
-
-            <div className="p-6 border-t border-border flex justify-end gap-3">
-              <button
-                onClick={closeModal}
-                className="px-4 py-2 text-muted-foreground hover:bg-accent rounded-lg transition-colors"
+            <div>
+              <label className="block text-sm font-medium mb-1.5">模型类型</label>
+              <select
+                value={formData.model || 'main'}
+                onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
               >
-                取消
-              </button>
-              <button
-                onClick={editingAgent ? handleUpdate : handleCreate}
-                disabled={!formData.name.trim()}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {editingAgent ? '保存' : '创建'}
-              </button>
+                <option value="main">主模型 (Main)</option>
+                <option value="summary">摘要模型 (Summary)</option>
+                <option value="memory">记忆管理模型 (Memory)</option>
+              </select>
             </div>
           </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">描述</label>
+            <Input
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              placeholder="助手的简短描述"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">系统提示词</label>
+            <Textarea
+              value={formData.system_prompt}
+              onChange={(e) => setFormData({ ...formData, system_prompt: e.target.value })}
+              placeholder="定义助手的行为和角色..."
+              className="min-h-[100px]"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1.5">温度: {formData.temperature}</label>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                value={formData.temperature}
+                onChange={(e) => setFormData({ ...formData, temperature: parseFloat(e.target.value) })}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-[var(--color-text-tertiary)]">
+                <span>精确</span>
+                <span>平衡</span>
+                <span>创意</span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5">最大 Tokens</label>
+              <Input
+                type="number"
+                value={formData.max_tokens}
+                onChange={(e) => setFormData({ ...formData, max_tokens: parseInt(e.target.value) || 0 })}
+                min="0"
+                placeholder="0 表示使用模型默认"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">记忆场景</label>
+            <select
+              value={formData.memory_scene}
+              onChange={(e) => setFormData({ ...formData, memory_scene: e.target.value })}
+              className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
+            >
+              <option value="chat">闲聊 (Chat)</option>
+              <option value="task">任务 (Task)</option>
+              <option value="first_interaction">首次交互 (First Interaction)</option>
+            </select>
+          </div>
+
+          <div className="flex gap-6 flex-wrap">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.use_memory}
+                onChange={(e) => setFormData({ ...formData, use_memory: e.target.checked })}
+                className="w-4 h-4 rounded"
+              />
+              <span className="text-sm">启用记忆</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.use_tools}
+                onChange={(e) => setFormData({ ...formData, use_tools: e.target.checked })}
+                className="w-4 h-4 rounded"
+              />
+              <span className="text-sm">启用工具</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.vision_enabled}
+                onChange={(e) => setFormData({ ...formData, vision_enabled: e.target.checked })}
+                className="w-4 h-4 rounded"
+              />
+              <span className="text-sm">启用多模态 (Vision)</span>
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="secondary" onClick={closeModal}>取消</Button>
+            <Button onClick={editingAgent ? handleUpdate : handleCreate} disabled={!formData.name.trim()}>
+              {editingAgent ? '保存' : '创建'}
+            </Button>
+          </div>
         </div>
-      )}
+      </Modal>
     </div>
-  )
+  );
 }

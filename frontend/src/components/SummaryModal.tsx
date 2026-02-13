@@ -17,10 +17,10 @@ interface SummaryModalProps {
   onClose: () => void
   contextText: string
   agentId: string
-  sessionId: string
+  sessionId?: string
 }
 
-export function SummaryModal({ isOpen, onClose, contextText, agentId, sessionId }: SummaryModalProps) {
+export function SummaryModal({ isOpen, onClose, contextText, agentId }: SummaryModalProps) {
   const [messages, setMessages] = useState<SummaryMessage[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -37,7 +37,7 @@ export function SummaryModal({ isOpen, onClose, contextText, agentId, sessionId 
       }
       setMessages([systemMsg])
     }
-  }, [isOpen])
+  }, [isOpen, messages.length])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -87,8 +87,7 @@ ${contextText}
 
       await api.sendMessageStream(
         fullPrompt,
-        sessionId,
-        (chunk: { type: string; content?: string; done?: boolean; error?: string; session_id?: string; tool_call?: any; tool_name?: string; result?: any }) => {
+        (chunk: { type: string; content?: string; done?: boolean; error?: string; session_id?: string; tool_call?: Record<string, unknown>; tool_name?: string; result?: unknown }) => {
           setMessages(prev => {
             const lastMsg = prev[prev.length - 1]
             if (lastMsg.role === 'assistant' && lastMsg.isStreaming) {

@@ -1,9 +1,20 @@
+"""
+配置管理模块
+支持YAML配置文件、环境变量覆盖和配置验证
+"""
 import os
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 from enum import Enum
 import yaml
+import logging
+
+from .env import EnvConfig, get_env_config
+from .validation import validate_config, ValidationResult
+
+
+logger = logging.getLogger(__name__)
 
 
 class LLMProvider(str, Enum):
@@ -39,15 +50,25 @@ class MessageType(str, Enum):
     CONTROL = "control"
 
 
+def deep_merge(base: Dict, override: Dict) -> Dict:
+    """深度合并两个字典，override优先"""
+    result = base.copy()
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
 @dataclass
 class ModelConfig:
-    """单个模型配置"""
     provider: str = "ollama"
     host: str = "http://localhost:11434"
     port: int = 8000
     model: str = "llama3.2:3b"
     temperature: float = 0.7
-    max_tokens: int = 0  # 0 表示不限制，使用模型默认
+    max_tokens: int = 0
     timeout: int = 60
     api_key: Optional[str] = None
 
@@ -59,18 +80,17 @@ class ModelConfig:
             port=data.get("port", 8000),
             model=data.get("model", "llama3.2:3b"),
             temperature=data.get("temperature", 0.7),
-            max_tokens=data.get("max_tokens", 0),  # 默认不限制
+            max_tokens=data.get("max_tokens", 0),
             timeout=data.get("timeout", 60),
-            api_key=data.get("api_key")
+            api_key=data.get("api_key") or data.get("apiKey")
         )
 
 
 @dataclass
 class ModelsConfig:
-    """多模型配置管理"""
     main: ModelConfig = field(default_factory=ModelConfig)
-    summary: ModelConfig = field(default_factory=lambda: ModelConfig(max_tokens=131072))  # 摘要模型 128k
-    memory: ModelConfig = field(default_factory=lambda: ModelConfig(max_tokens=131072))  # 记忆模型 128k
+    summary: ModelConfig = field(default_factory=lambda: ModelConfig(max_tokens=131072))
+    memory: ModelConfig = field(default_factory=lambda: ModelConfig(max_tokens=131072))
     defaults: Dict[str, str] = field(default_factory=lambda: {
         "summary": "main",
         "memory": "main"
@@ -84,7 +104,6 @@ class ModelsConfig:
             "memory": "main"
         })
         
-        # 为 summary 和 memory 设置 128k 默认值
         summary_config = ModelConfig.from_dict(models_data.get("summary", {}))
         if summary_config.max_tokens == 0:
             summary_config.max_tokens = 131072
@@ -101,10 +120,8 @@ class ModelsConfig:
         )
 
     def get_model_config(self, model_type: str) -> ModelConfig:
-        """获取指定类型的模型配置，支持默认跟随机制"""
         model_type = model_type.lower()
         
-        # 检查是否有默认跟随配置
         if model_type in self.defaults:
             target = self.defaults[model_type]
             if target == "main":
@@ -114,7 +131,6 @@ class ModelsConfig:
             elif target == "memory":
                 return self.memory
         
-        # 返回指定类型的配置
         if model_type == "main":
             return self.main
         elif model_type == "summary":
@@ -122,13 +138,11 @@ class ModelsConfig:
         elif model_type == "memory":
             return self.memory
         else:
-            # 未知类型返回主模型配置
             return self.main
 
 
 @dataclass
 class LLMConfig:
-    """向后兼容的旧版LLM配置"""
     provider: str = "ollama"
     host: str = "http://localhost:11434"
     model: str = "llama3.2"
@@ -243,7 +257,10 @@ class ACPConfig:
 
 @dataclass
 class DatabaseConfig:
-    path: str = "data/memories.db"
+    path: str = "data/cxhms.db"
+    memories_db: str = "data/memories.db"
+    sessions_db: str = "data/sessions.db"
+    acp_db: str = "data/acp"
     pool_size: int = 10
     max_overflow: int = 20
 
@@ -254,7 +271,10 @@ class DatabaseConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DatabaseConfig":
         return cls(
-            path=data.get("path", "data/memories.db"),
+            path=data.get("path", "data/cxhms.db"),
+            memories_db=data.get("memories_db", "data/memories.db"),
+            sessions_db=data.get("sessions_db", "data/sessions.db"),
+            acp_db=data.get("acp_db", "data/acp"),
             pool_size=data.get("pool_size", 10),
             max_overflow=data.get("max_overflow", 20)
         )
@@ -323,7 +343,6 @@ class MemoryConfig:
     milvus_lite: MilvusLiteConfig = field(default_factory=MilvusLiteConfig)
     qdrant: QdrantConfig = field(default_factory=QdrantConfig)
     weaviate: WeaviateConfig = field(default_factory=WeaviateConfig)
-    # 高级归档配置
     archive_enabled: bool = True
     dedup_threshold: float = 0.85
     archive_compression_enabled: bool = True
@@ -424,6 +443,7 @@ class CXHMSConfig:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "CXHMSConfig":
+        server_data = data.get("server", data.get("system", {}))
         return cls(
             llm=LLMConfig.from_dict(data.get("llm", {})),
             models=ModelsConfig.from_dict(data),
@@ -434,13 +454,15 @@ class CXHMSConfig:
             context=ContextConfig.from_dict(data.get("context", {})),
             rate_limit=RateLimitConfig.from_dict(data.get("rate_limit", {})),
             cors=CORSConfig.from_dict(data.get("cors", {})),
-            system=SystemConfig.from_dict(data.get("system", {}))
+            system=SystemConfig.from_dict(server_data)
         )
 
 
 class Settings:
     _instance: Optional["Settings"] = None
     _config: Optional[CXHMSConfig] = None
+    _config_path: Optional[str] = None
+    _validation_result: Optional[ValidationResult] = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -450,26 +472,51 @@ class Settings:
     def __init__(self):
         if self._config is None:
             self._config = self.load_config()
+    
+    @classmethod
+    def reset(cls):
+        cls._instance = None
+        cls._config = None
+        cls._config_path = None
+        cls._validation_result = None
 
     @property
     def config(self) -> CXHMSConfig:
         return self._config
 
+    @property
+    def validation_result(self) -> Optional[ValidationResult]:
+        return self._validation_result
+
     def load_config(self, config_path: Optional[str] = None) -> CXHMSConfig:
         if config_path is None:
             config_path = os.getenv("CXHMS_CONFIG_PATH", "config/default.yaml")
-
+        
+        self._config_path = config_path
         config_file = Path(config_path)
-
+        
+        file_config: Dict[str, Any] = {}
         if config_file.exists():
             with open(config_file, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-            return CXHMSConfig.from_dict(data)
-        else:
-            return CXHMSConfig()
+                file_config = yaml.safe_load(f) or {}
+        
+        env_config = get_env_config()
+        
+        merged_config = deep_merge(file_config, env_config)
+        
+        self._validation_result = validate_config(merged_config)
+        if not self._validation_result.is_valid:
+            for error in self._validation_result.errors:
+                logger.error(f"配置验证失败: {error}")
+        
+        for field, message in self._validation_result.warnings:
+            logger.warning(f"配置警告 [{field}]: {message}")
+        
+        return CXHMSConfig.from_dict(merged_config)
 
     def reload_config(self, config_path: Optional[str] = None):
         self._config = self.load_config(config_path)
+        logger.info("配置已重新加载")
 
     def get(self, key: str, default: Any = None) -> Any:
         keys = key.split(".")
@@ -498,10 +545,15 @@ class Settings:
         elif hasattr(target, final_key):
             setattr(target, final_key, value)
 
-    def save_config(self, config_path: str = "config/default.yaml"):
+    def save_config(self, config_path: Optional[str] = None):
+        if config_path is None:
+            config_path = self._config_path or "config/default.yaml"
         config_dict = self._config_to_dict(self._config)
+        
+        masked_config = EnvConfig.mask_secrets(config_dict)
+        
         with open(config_path, "w", encoding="utf-8") as f:
-            yaml.dump(config_dict, f, allow_unicode=True, indent=2)
+            yaml.dump(masked_config, f, allow_unicode=True, indent=2)
 
     def _config_to_dict(self, config: Any) -> Dict[str, Any]:
         if isinstance(config, dict):
@@ -512,6 +564,17 @@ class Settings:
             return [self._config_to_dict(item) for item in config]
         else:
             return config
+
+    def get_debug_info(self) -> Dict[str, Any]:
+        return {
+            "config_path": self._config_path,
+            "validation": {
+                "is_valid": self._validation_result.is_valid if self._validation_result else None,
+                "errors": [str(e) for e in self._validation_result.errors] if self._validation_result else [],
+                "warnings": self._validation_result.warnings if self._validation_result else [],
+            },
+            "env_overrides": list(EnvConfig.ENV_MAPPINGS.keys()),
+        }
 
 
 settings = Settings()

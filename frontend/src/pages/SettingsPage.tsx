@@ -1,942 +1,548 @@
-import { useState, useEffect, useCallback } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import {
-  Database,
-  Server,
-  Brain,
-  Save,
-  CheckCircle2,
-  AlertCircle,
-  Play,
-  RotateCcw,
-  Terminal,
-  Activity,
-  Square,
-  Loader2
-} from 'lucide-react'
-import { api } from '../api/client'
-import { cn } from '../lib/utils'
+import { useState, useEffect, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../api/client';
+import { cn } from '../lib/utils';
+import { useThemeStore } from '../store/themeStore';
+import { PageHeader } from '../components/layout';
+import { Button, Card, CardBody } from '../components/ui';
 
 interface SettingSection {
-  id: string
-  title: string
-  icon: React.ElementType
-  description: string
+  id: string;
+  title: string;
+  icon: React.ReactNode;
+  description: string;
 }
 
 const sections: SettingSection[] = [
   {
+    id: 'appearance',
+    title: '外观设置',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+      </svg>
+    ),
+    description: '主题、颜色和界面设置',
+  },
+  {
     id: 'service',
     title: '服务管理',
-    icon: Server,
-    description: '启动/停止后端服务'
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+      </svg>
+    ),
+    description: '启动/停止后端服务',
   },
   {
     id: 'vector',
     title: '向量存储',
-    icon: Database,
-    description: '配置向量数据库连接'
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+      </svg>
+    ),
+    description: '配置向量数据库连接',
   },
   {
     id: 'llm',
     title: '模型设置',
-    icon: Brain,
-    description: '配置大语言模型参数'
-  }
-]
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+      </svg>
+    ),
+    description: '配置大语言模型参数',
+  },
+];
+
+const themeOptions = [
+  { value: 'light', label: '浅色', icon: '☀️', description: '明亮清爽的界面' },
+  { value: 'dark', label: '深色', icon: '🌙', description: '护眼暗色主题' },
+  { value: 'system', label: '跟随系统', icon: '💻', description: '自动跟随系统设置' },
+];
+
+const accentColors = [
+  { value: '#3b82f6', label: '蓝色', class: 'bg-blue-500' },
+  { value: '#8b5cf6', label: '紫色', class: 'bg-violet-500' },
+  { value: '#10b981', label: '绿色', class: 'bg-emerald-500' },
+  { value: '#f59e0b', label: '橙色', class: 'bg-amber-500' },
+  { value: '#ef4444', label: '红色', class: 'bg-red-500' },
+  { value: '#ec4899', label: '粉色', class: 'bg-pink-500' },
+];
 
 export function SettingsPage() {
-  const [activeSection, setActiveSection] = useState<'service' | 'vector' | 'llm'>('service')
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  const [logs, setLogs] = useState('')
-  const [isBackendRunning, setIsBackendRunning] = useState(false)
-  const [isControlServiceReady, setIsControlServiceReady] = useState(false)
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [backendStatus, setBackendStatus] = useState<{pid?: number, uptime?: number, port?: number}>({})
+  const [activeSection, setActiveSection] = useState<'appearance' | 'service' | 'vector' | 'llm'>('appearance');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [logs, setLogs] = useState('');
+  const [isBackendRunning, setIsBackendRunning] = useState(false);
+  const [isControlServiceReady, setIsControlServiceReady] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<{ pid?: number; uptime?: number; port?: number }>({});
+  const [themeTransition, setThemeTransition] = useState(false);
 
-  // Check control service health
+  const { theme, setTheme } = useThemeStore();
+  const [selectedAccent, setSelectedAccent] = useState('#3b82f6');
+
+  const handleThemeChange = (newTheme: 'light' | 'dark' | 'system') => {
+    setThemeTransition(true);
+    setTheme(newTheme);
+    setTimeout(() => setThemeTransition(false), 300);
+  };
+
   const checkControlService = useCallback(async () => {
     try {
-      const response = await api.getControlServiceHealth()
-      console.log('Control service health:', response)
-      setIsControlServiceReady(true)
-      return true
-    } catch (error) {
-      console.error('Control service health check failed:', error)
-      setIsControlServiceReady(false)
-      return false
+      await api.getControlServiceHealth();
+      setIsControlServiceReady(true);
+      return true;
+    } catch {
+      setIsControlServiceReady(false);
+      return false;
     }
-  }, [])
+  }, []);
 
-  // Check main backend status via control service
   const checkBackendStatus = useCallback(async () => {
     try {
-      const status = await api.getMainBackendStatus()
-      console.log('Backend status:', status)
-      setIsBackendRunning(status.running)
+      const status = await api.getMainBackendStatus();
+      setIsBackendRunning(status.running);
       setBackendStatus({
         pid: status.pid,
         uptime: status.uptime,
-        port: status.port
-      })
-      return status.running
-    } catch (error) {
-      console.error('Failed to check backend status:', error)
-      setIsBackendRunning(false)
-      setBackendStatus({})
-      return false
+        port: status.port,
+      });
+      return status.running;
+    } catch {
+      setIsBackendRunning(false);
+      setBackendStatus({});
+      return false;
     }
-  }, [])
+  }, []);
 
-  // Initial checks
   useEffect(() => {
-    checkControlService()
-    checkBackendStatus()
-
+    checkControlService();
+    checkBackendStatus();
     const interval = setInterval(() => {
-      checkControlService()
-      checkBackendStatus()
-    }, 3000)
+      checkControlService();
+      checkBackendStatus();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [checkControlService, checkBackendStatus]);
 
-    return () => clearInterval(interval)
-  }, [checkControlService, checkBackendStatus])
-
-  // Service config query (only when backend is running)
   const { data: serviceConfig } = useQuery({
     queryKey: ['serviceConfig'],
     queryFn: () => api.getServiceConfig(),
-    enabled: isBackendRunning
-  })
+    enabled: isBackendRunning,
+  });
 
-  // Load config from backend when available
+  const [vectorConfig, setVectorConfig] = useState({
+    backend: 'weaviate_embedded',
+    weaviateHost: 'localhost',
+    weaviatePort: 8080,
+    vectorSize: 768,
+  });
+
+  const [modelsConfig, setModelsConfig] = useState({
+    main: { provider: 'ollama', host: 'http://localhost:11434', model: 'llama3.2:3b', apiKey: '', enabled: true },
+    summary: { provider: 'ollama', host: 'http://localhost:11434', model: 'llama3.2:3b', apiKey: '', enabled: false },
+    memory: { provider: 'ollama', host: 'http://localhost:11434', model: 'llama3.2:3b', apiKey: '', enabled: false },
+  });
+
+  const [modelDefaults, setModelDefaults] = useState({ summary: 'main', memory: 'main' });
+  const [llmParams, setLlmParams] = useState({ temperature: 0.7, maxTokens: 0, topP: 0.9, timeout: 30 });
+
   useEffect(() => {
     if (serviceConfig?.config) {
-      // 加载向量配置 - 只有后端有值时才覆盖
       if (serviceConfig.config.vector) {
         setVectorConfig({
           backend: serviceConfig.config.vector.backend ?? 'weaviate_embedded',
           weaviateHost: serviceConfig.config.vector.weaviate_host ?? 'localhost',
           weaviatePort: serviceConfig.config.vector.weaviate_port ?? 8080,
           vectorSize: serviceConfig.config.vector.vector_size ?? 768,
-        })
+        });
       }
-      
-      // 加载多模型配置
       if (serviceConfig.config.models) {
-        setModelsConfig(prev => ({
+        setModelsConfig((prev) => ({
           main: serviceConfig.config.models?.main ? { ...prev.main, ...serviceConfig.config.models.main } : prev.main,
           summary: serviceConfig.config.models?.summary ? { ...prev.summary, ...serviceConfig.config.models.summary } : prev.summary,
           memory: serviceConfig.config.models?.memory ? { ...prev.memory, ...serviceConfig.config.models.memory } : prev.memory,
-        }))
+        }));
       }
-      
-      // 加载模型默认设置
       if (serviceConfig.config.model_defaults) {
-        setModelDefaults(serviceConfig.config.model_defaults)
+        setModelDefaults(serviceConfig.config.model_defaults);
       }
-      
-      // 加载通用LLM参数
       if (serviceConfig.config.llm_params) {
         setLlmParams({
           temperature: serviceConfig.config.llm_params.temperature ?? 0.7,
           maxTokens: serviceConfig.config.llm_params.maxTokens ?? 2048,
           topP: serviceConfig.config.llm_params.topP ?? 0.9,
           timeout: serviceConfig.config.llm_params.timeout ?? 30,
-        })
+        });
       }
     }
-  }, [serviceConfig])
+  }, [serviceConfig]);
 
-  // Load logs (only when backend is running)
   const loadLogs = useCallback(async () => {
     if (!isBackendRunning) {
-      setLogs('后端服务未运行，启动服务后查看日志')
-      return
+      setLogs('后端服务未运行，启动服务后查看日志');
+      return;
     }
     if (!isControlServiceReady) {
-      setLogs('控制服务未就绪，请稍等...')
-      return
+      setLogs('控制服务未就绪，请稍等...');
+      return;
     }
     try {
-      const data = await api.getServiceLogs(50)
-      setLogs(data.logs || '暂无日志')
+      const data = await api.getServiceLogs(50);
+      setLogs(data.logs || '暂无日志');
     } catch (error) {
-      console.error('Failed to load logs:', error)
-      const errorMessage = error instanceof Error ? error.message : '未知错误'
-      setLogs(`加载日志失败: ${errorMessage}\n请检查后端服务是否正常运行`)
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      setLogs(`加载日志失败: ${errorMessage}\n请检查后端服务是否正常运行`);
     }
-  }, [isBackendRunning, isControlServiceReady])
+  }, [isBackendRunning, isControlServiceReady]);
 
   useEffect(() => {
     if (activeSection === 'service') {
-      loadLogs()
-      const interval = setInterval(loadLogs, 3000)
-      return () => clearInterval(interval)
+      loadLogs();
+      const interval = setInterval(loadLogs, 3000);
+      return () => clearInterval(interval);
     }
-  }, [activeSection, loadLogs])
+  }, [activeSection, loadLogs]);
 
-  // Start main backend service
   const handleStartBackend = async () => {
     if (!isControlServiceReady) {
-      alert('控制服务未就绪，请稍后再试')
-      return
+      alert('控制服务未就绪，请稍后再试');
+      return;
     }
-    setIsProcessing(true)
+    setIsProcessing(true);
     try {
-      await api.startMainBackend()
-      // Wait a moment for the service to start
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      await checkBackendStatus()
-    } catch (error) {
-      console.error('Failed to start backend:', error)
-      alert('启动后端服务失败，请检查控制台日志')
+      await api.startMainBackend();
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await checkBackendStatus();
+    } catch {
+      alert('启动后端服务失败，请检查控制台日志');
     } finally {
-      setIsProcessing(false)
+      setIsProcessing(false);
     }
-  }
+  };
 
-  // Stop main backend service
   const handleStopBackend = async () => {
     if (!isControlServiceReady) {
-      alert('控制服务未就绪')
-      return
+      alert('控制服务未就绪');
+      return;
     }
-    setIsProcessing(true)
+    setIsProcessing(true);
     try {
-      await api.stopMainBackend()
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      await checkBackendStatus()
-    } catch (error) {
-      console.error('Failed to stop backend:', error)
-      alert('停止后端服务失败')
+      await api.stopMainBackend();
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await checkBackendStatus();
+    } catch {
+      alert('停止后端服务失败');
     } finally {
-      setIsProcessing(false)
+      setIsProcessing(false);
     }
-  }
+  };
 
-  // Restart main backend service
   const handleRestartBackend = async () => {
     if (!isControlServiceReady) {
-      alert('控制服务未就绪')
-      return
+      alert('控制服务未就绪');
+      return;
     }
-    setIsProcessing(true)
+    setIsProcessing(true);
     try {
-      await api.restartMainBackend()
-      await new Promise(resolve => setTimeout(resolve, 3000))
-      await checkBackendStatus()
-    } catch (error) {
-      console.error('Failed to restart backend:', error)
-      alert('重启后端服务失败')
+      await api.restartMainBackend();
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await checkBackendStatus();
+    } catch {
+      alert('重启后端服务失败');
     } finally {
-      setIsProcessing(false)
+      setIsProcessing(false);
     }
-  }
-
-  const [vectorConfig, setVectorConfig] = useState({
-    backend: 'weaviate_embedded',
-    weaviateHost: 'localhost',
-    weaviatePort: 8080,
-    vectorSize: 768
-  })
-
-  // 多模型配置
-  const [modelsConfig, setModelsConfig] = useState({
-    main: {
-      provider: 'ollama',
-      host: 'http://localhost:11434',
-      model: 'llama3.2:3b',
-      apiKey: '',
-      enabled: true
-    },
-    summary: {
-      provider: 'ollama',
-      host: 'http://localhost:11434',
-      model: 'llama3.2:3b',
-      apiKey: '',
-      enabled: false
-    },
-    memory: {
-      provider: 'ollama',
-      host: 'http://localhost:11434',
-      model: 'llama3.2:3b',
-      apiKey: '',
-      enabled: false
-    }
-  })
-
-  // 模型默认设置
-  const [modelDefaults, setModelDefaults] = useState({
-    summary: 'main',
-    memory: 'main'
-  })
-
-  // 通用LLM参数
-  const [llmParams, setLlmParams] = useState({
-    temperature: 0.7,
-    maxTokens: 0,  // 0 表示不限制，使用模型默认
-    topP: 0.9,
-    timeout: 30
-  })
+  };
 
   const handleSave = async () => {
     if (!isBackendRunning) {
-      alert('后端服务未运行，无法保存配置')
-      return
+      alert('后端服务未运行，无法保存配置');
+      return;
     }
-    setSaveStatus('saving')
+    setSaveStatus('saving');
     try {
-      // 保存向量配置
       if (activeSection === 'vector') {
         await api.updateServiceConfig({
           vector: {
             backend: vectorConfig.backend,
             weaviate_host: vectorConfig.weaviateHost,
             weaviate_port: vectorConfig.weaviatePort,
-            vector_size: vectorConfig.vectorSize
-          }
-        })
-      }
-      // 保存LLM配置（多模型）
-      else if (activeSection === 'llm') {
+            vector_size: vectorConfig.vectorSize,
+          },
+        });
+      } else if (activeSection === 'llm') {
         await api.updateServiceConfig({
           models: modelsConfig,
           model_defaults: modelDefaults,
-          llm_params: llmParams
-        })
-        // 保存当前主模型到 localStorage，供聊天页面使用
-        localStorage.setItem('cxhms-current-model', modelsConfig.main.model)
+          llm_params: llmParams,
+        });
+        localStorage.setItem('cxhms-current-model', modelsConfig.main.model);
       }
-      setSaveStatus('saved')
+      setSaveStatus('saved');
     } catch {
-      setSaveStatus('error')
+      setSaveStatus('error');
     }
-    setTimeout(() => setSaveStatus('idle'), 2000)
-  }
+    setTimeout(() => setSaveStatus('idle'), 2000);
+  };
 
   return (
-    <div className="h-full flex">
-      {/* Sidebar */}
-      <div className="w-64 border-r border-border pr-6">
-        <h3 className="font-semibold mb-4">设置</h3>
-        <nav className="space-y-1">
+    <div className={`max-w-6xl mx-auto ${themeTransition ? 'transition-colors duration-300' : ''}`}>
+      <PageHeader title="系统设置" description="配置系统外观、服务和行为" />
+
+      <div className="flex gap-6">
+        <nav className="w-56 flex-shrink-0 space-y-1">
           {sections.map((section) => (
             <button
               key={section.id}
-              onClick={() => setActiveSection(section.id as 'service' | 'vector' | 'llm')}
+              onClick={() => setActiveSection(section.id as typeof activeSection)}
               className={cn(
-                'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left',
+                'w-full flex items-center gap-3 px-3 py-2.5 rounded-[var(--radius-lg)] text-sm font-medium transition-colors text-left',
                 activeSection === section.id
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                  ? 'bg-[var(--color-accent-light)] text-[var(--color-accent)]'
+                  : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'
               )}
             >
-              <section.icon className="w-5 h-5" />
+              {section.icon}
               <div>
                 <div>{section.title}</div>
-                <div className="text-xs text-muted-foreground font-normal">
-                  {section.description}
-                </div>
+                <div className="text-xs text-[var(--color-text-tertiary)] font-normal">{section.description}</div>
               </div>
             </button>
           ))}
         </nav>
-      </div>
 
-      {/* Content */}
-      <div className="flex-1 pl-6 overflow-auto">
-        {/* Service Management */}
-        {activeSection === 'service' && (
-          <div className="max-w-3xl space-y-6">
-            <div>
-              <h3 className="text-lg font-semibold mb-1">服务管理</h3>
-              <p className="text-sm text-muted-foreground">
-                通过控制服务管理 CXHMS 后端服务的启动、停止和重启
-              </p>
-            </div>
-
-            {/* Control Service Status */}
-            <div className="bg-card border border-border rounded-xl p-4">
-              <div className="flex items-center gap-3">
-                <div className={cn(
-                  "w-3 h-3 rounded-full",
-                  isControlServiceReady ? "bg-green-500" : "bg-red-500"
-                )} />
-                <span className="text-sm">
-                  控制服务状态:
-                  <span className={cn(
-                    "font-medium ml-1",
-                    isControlServiceReady ? "text-green-500" : "text-red-500"
-                  )}>
-                    {isControlServiceReady ? '运行中 (端口 8765)' : '未就绪'}
-                  </span>
-                </span>
-              </div>
-              {!isControlServiceReady && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  控制服务随前端自动启动，请等待几秒钟...
-                </p>
-              )}
-            </div>
-
-            {/* Main Backend Status Card */}
-            <div className="bg-card border border-border rounded-xl p-6">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-4">
-                  <div className={cn(
-                    "w-12 h-12 rounded-xl flex items-center justify-center",
-                    isBackendRunning ? "bg-green-500/10" : "bg-red-500/10"
-                  )}>
-                    <Activity className={cn(
-                      "w-6 h-6",
-                      isBackendRunning ? "text-green-500" : "text-red-500"
-                    )} />
-                  </div>
-                  <div>
-                    <h4 className="font-semibold">
-                      {isBackendRunning ? '主后端服务运行中' : '主后端服务已停止'}
-                    </h4>
-                    <p className="text-sm text-muted-foreground">
-                      {isBackendRunning
-                        ? `后端服务正在运行，访问 http://localhost:8000`
-                        : '后端服务未运行，点击启动按钮开启服务'
-                      }
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {isBackendRunning ? (
-                    <>
+        <div className="flex-1 min-w-0">
+          {activeSection === 'appearance' && (
+            <div className="space-y-6">
+              <Card>
+                <CardBody>
+                  <h3 className="text-lg font-semibold mb-4">主题设置</h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    {themeOptions.map((option) => (
                       <button
-                        onClick={handleRestartBackend}
-                        disabled={isProcessing || !isControlServiceReady}
-                        className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isProcessing ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <RotateCcw className="w-4 h-4" />
+                        key={option.value}
+                        onClick={() => handleThemeChange(option.value as typeof theme)}
+                        className={cn(
+                          'p-4 rounded-[var(--radius-lg)] border-2 transition-all text-left',
+                          theme === option.value
+                            ? 'border-[var(--color-accent)] bg-[var(--color-accent-light)]'
+                            : 'border-[var(--color-border)] hover:border-[var(--color-accent)]/50'
                         )}
-                        重启
+                      >
+                        <div className="text-2xl mb-2">{option.icon}</div>
+                        <div className="font-medium">{option.label}</div>
+                        <div className="text-xs text-[var(--color-text-tertiary)]">{option.description}</div>
                       </button>
+                    ))}
+                  </div>
+                </CardBody>
+              </Card>
+
+              <Card>
+                <CardBody>
+                  <h3 className="text-lg font-semibold mb-4">强调色</h3>
+                  <div className="flex gap-3">
+                    {accentColors.map((color) => (
                       <button
-                        onClick={handleStopBackend}
-                        disabled={isProcessing || !isControlServiceReady}
-                        className="flex items-center gap-2 px-4 py-2 bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isProcessing ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Square className="w-4 h-4" />
+                        key={color.value}
+                        onClick={() => setSelectedAccent(color.value)}
+                        className={cn(
+                          'w-10 h-10 rounded-full transition-all',
+                          color.class,
+                          selectedAccent === color.value ? 'ring-2 ring-offset-2 ring-[var(--color-accent)] scale-110' : 'hover:scale-105'
                         )}
-                        停止
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={handleStartBackend}
-                      disabled={isProcessing || !isControlServiceReady}
-                      className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isProcessing ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        title={color.label}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-xs text-[var(--color-text-tertiary)] mt-3">
+                    强调色用于按钮、链接和高亮元素
+                  </p>
+                </CardBody>
+              </Card>
+
+              <Card>
+                <CardBody>
+                  <h3 className="text-lg font-semibold mb-4">界面预览</h3>
+                  <div className="p-4 bg-[var(--color-bg-tertiary)] rounded-[var(--radius-lg)]">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-full bg-[var(--color-accent)] flex items-center justify-center text-[var(--color-bg-primary)]">
+                        AI
+                      </div>
+                      <div>
+                        <div className="font-medium">示例标题</div>
+                        <div className="text-sm text-[var(--color-text-secondary)]">这是一个预览文本</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm">主要按钮</Button>
+                      <Button variant="secondary" size="sm">次要按钮</Button>
+                      <Button variant="ghost" size="sm">幽灵按钮</Button>
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
+            </div>
+          )}
+
+          {activeSection === 'service' && (
+            <div className="space-y-6">
+              <Card>
+                <CardBody>
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="text-lg font-semibold">服务管理</h3>
+                      <p className="text-sm text-[var(--color-text-secondary)]">管理 CXHMS 后端服务</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isBackendRunning ? (
+                        <>
+                          <Button variant="secondary" onClick={handleRestartBackend} loading={isProcessing}>
+                            重启
+                          </Button>
+                          <Button variant="danger" onClick={handleStopBackend} loading={isProcessing}>
+                            停止
+                          </Button>
+                        </>
                       ) : (
-                        <Play className="w-4 h-4" />
+                        <Button onClick={handleStartBackend} loading={isProcessing} disabled={!isControlServiceReady}>
+                          启动服务
+                        </Button>
                       )}
-                      启动后端服务
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Service Config */}
-              {isBackendRunning ? (
-                <div className="grid grid-cols-3 gap-4 p-4 bg-muted rounded-lg">
-                  <div>
-                    <span className="text-xs text-muted-foreground">主机</span>
-                    <p className="font-medium">{serviceConfig?.config?.host || '0.0.0.0'}</p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground">端口</span>
-                    <p className="font-medium">{backendStatus.port || serviceConfig?.config?.port || 8000}</p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground">进程 ID</span>
-                    <p className="font-medium">{backendStatus.pid || '-'}</p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground">日志级别</span>
-                    <p className="font-medium">{serviceConfig?.config?.log_level || 'info'}</p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground">调试模式</span>
-                    <p className="font-medium">{serviceConfig?.config?.debug ? '开启' : '关闭'}</p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground">运行时长</span>
-                    <p className="font-medium">
-                      {backendStatus.uptime 
-                        ? `${Math.floor(backendStatus.uptime / 60)}分${Math.floor(backendStatus.uptime % 60)}秒`
-                        : '-'
-                      }
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-3 gap-4 p-4 bg-muted rounded-lg opacity-60">
-                  <div>
-                    <span className="text-xs text-muted-foreground">主机</span>
-                    <p className="font-medium">0.0.0.0</p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground">端口</span>
-                    <p className="font-medium">8000</p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground">进程 ID</span>
-                    <p className="font-medium">-</p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground">日志级别</span>
-                    <p className="font-medium">info</p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground">调试模式</span>
-                    <p className="font-medium">关闭</p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground">运行时长</span>
-                    <p className="font-medium">-</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Logs */}
-            <div className="bg-card border border-border rounded-xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Terminal className="w-5 h-5" />
-                  <h4 className="font-semibold">服务日志</h4>
-                </div>
-                <button
-                  onClick={loadLogs}
-                  disabled={!isBackendRunning}
-                  className="flex items-center gap-1 px-3 py-1.5 text-sm bg-muted hover:bg-muted/80 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  刷新
-                </button>
-              </div>
-              <div className="bg-black rounded-lg p-4 font-mono text-sm text-green-400 h-64 overflow-auto whitespace-pre-wrap">
-                {logs}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Vector Settings */}
-        {activeSection === 'vector' && (
-          <div className="max-w-2xl space-y-6">
-            <div>
-              <h3 className="text-lg font-semibold mb-1">向量存储配置</h3>
-              <p className="text-sm text-muted-foreground">
-                选择并配置向量数据库后端，支持 Weaviate Embedded 和普通 Weaviate
-              </p>
-            </div>
-
-            {!isBackendRunning && (
-              <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-                <p className="text-sm text-yellow-600">
-                  后端服务未运行，配置保存后将在服务启动时生效
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium mb-2 block">向量存储后端</label>
-                <select
-                  value={vectorConfig.backend}
-                  onChange={(e) => setVectorConfig({ ...vectorConfig, backend: e.target.value })}
-                  className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                  <option value="weaviate_embedded">Weaviate Embedded (推荐)</option>
-                  <option value="weaviate">Weaviate (独立服务)</option>
-                  <option value="milvus_lite">Milvus Lite</option>
-                  <option value="qdrant">Qdrant</option>
-                </select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Weaviate Embedded 无需额外配置，零部署即可使用
-                </p>
-              </div>
-
-              {vectorConfig.backend === 'weaviate' && (
-                <>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">主机地址</label>
-                      <input
-                        type="text"
-                        value={vectorConfig.weaviateHost}
-                        onChange={(e) => setVectorConfig({ ...vectorConfig, weaviateHost: e.target.value })}
-                        className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">端口</label>
-                      <input
-                        type="number"
-                        value={vectorConfig.weaviatePort}
-                        onChange={(e) => setVectorConfig({ ...vectorConfig, weaviatePort: parseInt(e.target.value) })}
-                        className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      />
                     </div>
                   </div>
-                </>
-              )}
 
-              <div>
-                <label className="text-sm font-medium mb-2 block">向量维度</label>
-                <select
-                  value={vectorConfig.vectorSize}
-                  onChange={(e) => setVectorConfig({ ...vectorConfig, vectorSize: parseInt(e.target.value) })}
-                  className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                  <option value={384}>384 (小型模型)</option>
-                  <option value={768}>768 (中型模型)</option>
-                  <option value={1024}>1024 (大型模型)</option>
-                  <option value={1536}>1536 (OpenAI)</option>
-                </select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  向量维度应与嵌入模型输出维度匹配
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* LLM Settings */}
-        {activeSection === 'llm' && (
-          <div className="max-w-3xl space-y-6">
-            <div>
-              <h3 className="text-lg font-semibold mb-1">多模型配置</h3>
-              <p className="text-sm text-muted-foreground">
-                配置多个专用模型，支持主模型、审核模型、摘要模型和记忆管理模型
-              </p>
-            </div>
-
-            {!isBackendRunning && (
-              <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-                <p className="text-sm text-yellow-600">
-                  后端服务未运行，配置保存后将在服务启动时生效
-                </p>
-              </div>
-            )}
-
-            {/* 模型标签页 */}
-            <div className="border border-border rounded-lg overflow-hidden">
-              <div className="flex border-b border-border bg-muted">
-                {[
-                  { id: 'main', label: '主模型', desc: '对话生成、永久记忆管理' },
-                  { id: 'summary', label: '摘要模型', desc: '对话摘要' },
-                  { id: 'memory', label: '记忆模型', desc: '记忆归档分析' }
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => {
-                      const element = document.querySelector(`[data-model="${tab.id}"]`)
-                      element?.scrollIntoView({ behavior: 'smooth' })
-                    }}
-                    className="flex-1 px-4 py-3 text-left hover:bg-accent transition-colors"
-                  >
-                    <div className="font-medium text-sm">{tab.label}</div>
-                    <div className="text-xs text-muted-foreground">{tab.desc}</div>
-                  </button>
-                ))}
-              </div>
-
-              <div className="p-6 space-y-8">
-                {/* 主模型配置 */}
-                <div data-model="main" className="space-y-4">
-                  <div className="flex items-center gap-2 pb-2 border-b border-border">
-                    <div className="w-2 h-2 rounded-full bg-green-500" />
-                    <h4 className="font-semibold">主模型配置</h4>
-                    <span className="text-xs text-muted-foreground">（对话生成、永久记忆管理）</span>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4 p-4 bg-[var(--color-bg-tertiary)] rounded-[var(--radius-lg)]">
                     <div>
-                      <label className="text-sm font-medium mb-2 block">模型提供商</label>
+                      <span className="text-xs text-[var(--color-text-tertiary)]">状态</span>
+                      <p className="font-medium flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${isBackendRunning ? 'bg-green-500' : 'bg-red-500'}`} />
+                        {isBackendRunning ? '运行中' : '已停止'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-[var(--color-text-tertiary)]">端口</span>
+                      <p className="font-medium">{backendStatus.port || 8000}</p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-[var(--color-text-tertiary)]">进程 ID</span>
+                      <p className="font-medium">{backendStatus.pid || '-'}</p>
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
+
+              <Card>
+                <CardBody>
+                  <h4 className="font-semibold mb-4">服务日志</h4>
+                  <div className="bg-[var(--color-bg-tertiary)] rounded-[var(--radius-lg)] p-4 font-mono text-sm text-[var(--color-success)] h-64 overflow-auto whitespace-pre-wrap">
+                    {logs}
+                  </div>
+                </CardBody>
+              </Card>
+            </div>
+          )}
+
+          {activeSection === 'vector' && (
+            <div className="space-y-6">
+              <Card>
+                <CardBody>
+                  <h3 className="text-lg font-semibold mb-4">向量存储配置</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">向量存储后端</label>
                       <select
-                        value={modelsConfig.main.provider}
-                        onChange={(e) => setModelsConfig(prev => ({
-                          ...prev,
-                          main: { ...prev.main, provider: e.target.value }
-                        }))}
-                        className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        value={vectorConfig.backend}
+                        onChange={(e) => setVectorConfig({ ...vectorConfig, backend: e.target.value })}
+                        className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
                       >
-                        <option value="ollama">Ollama (本地)</option>
-                        <option value="vllm">vLLM</option>
+                        <option value="weaviate_embedded">Weaviate Embedded (推荐)</option>
+                        <option value="weaviate">Weaviate (独立服务)</option>
+                        <option value="milvus_lite">Milvus Lite</option>
+                        <option value="qdrant">Qdrant</option>
                       </select>
                     </div>
                     <div>
-                      <label className="text-sm font-medium mb-2 block">模型名称</label>
-                      <input
-                        type="text"
-                        value={modelsConfig.main.model}
-                        onChange={(e) => setModelsConfig(prev => ({
-                          ...prev,
-                          main: { ...prev.main, model: e.target.value }
-                        }))}
-                        className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      />
+                      <label className="text-sm font-medium mb-2 block">向量维度</label>
+                      <select
+                        value={vectorConfig.vectorSize}
+                        onChange={(e) => setVectorConfig({ ...vectorConfig, vectorSize: parseInt(e.target.value) })}
+                        className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
+                      >
+                        <option value={384}>384 (小型模型)</option>
+                        <option value={768}>768 (中型模型)</option>
+                        <option value={1024}>1024 (大型模型)</option>
+                        <option value={1536}>1536 (OpenAI)</option>
+                      </select>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">服务地址</label>
-                      <input
-                        type="text"
-                        value={modelsConfig.main.host}
-                        onChange={(e) => setModelsConfig(prev => ({
-                          ...prev,
-                          main: { ...prev.main, host: e.target.value }
-                        }))}
-                        className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">
-                        API Key
-                        <span className="text-xs text-muted-foreground ml-1">(可选，用于 Ollama Cloud)</span>
-                      </label>
-                      <input
-                        type="password"
-                        value={modelsConfig.main.apiKey}
-                        onChange={(e) => setModelsConfig(prev => ({
-                          ...prev,
-                          main: { ...prev.main, apiKey: e.target.value }
-                        }))}
-                        placeholder="本地 Ollama 可留空"
-                        className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      />
-                    </div>
+                  <div className="flex justify-end mt-6">
+                    <Button onClick={handleSave} loading={saveStatus === 'saving'} disabled={!isBackendRunning}>
+                      {saveStatus === 'saved' ? '已保存' : '保存配置'}
+                    </Button>
                   </div>
-                </div>
+                </CardBody>
+              </Card>
+            </div>
+          )}
 
-                {/* 其他模型配置 */}
-                {(['summary', 'memory'] as const).map((modelType) => (
-                  <div key={modelType} data-model={modelType} className="space-y-4">
-                    <div className="flex items-center justify-between pb-2 border-b border-border">
-                      <div className="flex items-center gap-2">
-                        <div className={cn(
-                          "w-2 h-2 rounded-full",
-                          modelsConfig[modelType].enabled ? "bg-green-500" : "bg-gray-400"
-                        )} />
-                        <h4 className="font-semibold">
-                          {modelType === 'summary' && '摘要模型配置'}
-                          {modelType === 'memory' && '记忆管理模型配置'}
-                        </h4>
-                      </div>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={modelsConfig[modelType].enabled}
-                          onChange={(e) => setModelsConfig(prev => ({
-                            ...prev,
-                            [modelType]: { ...prev[modelType], enabled: e.target.checked }
-                          }))}
-                          className="rounded"
-                        />
-                        启用独立配置
-                      </label>
-                    </div>
-
-                    {!modelsConfig[modelType].enabled ? (
-                      <div className="p-4 bg-muted rounded-lg">
-                        <label className="text-sm font-medium mb-2 block">使用默认模型</label>
+          {activeSection === 'llm' && (
+            <div className="space-y-6">
+              <Card>
+                <CardBody>
+                  <h3 className="text-lg font-semibold mb-4">模型配置</h3>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium mb-2 block">模型提供商</label>
                         <select
-                          value={modelDefaults[modelType]}
-                          onChange={(e) => setModelDefaults(prev => ({
-                            ...prev,
-                            [modelType]: e.target.value
-                          }))}
-                          className="w-full px-3 py-2 bg-background rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          value={modelsConfig.main.provider}
+                          onChange={(e) => setModelsConfig((prev) => ({ ...prev, main: { ...prev.main, provider: e.target.value } }))}
+                          className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
                         >
-                          <option value="main">主模型</option>
-                          {modelType !== 'summary' && <option value="summary">摘要模型</option>}
-                          {modelType !== 'memory' && <option value="memory">记忆模型</option>}
+                          <option value="ollama">Ollama (本地)</option>
+                          <option value="vllm">vLLM</option>
+                          <option value="openai">OpenAI</option>
                         </select>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          未启用独立配置时，将使用选定的默认模型
-                        </p>
                       </div>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="text-sm font-medium mb-2 block">模型提供商</label>
-                          <select
-                            value={modelsConfig[modelType].provider}
-                            onChange={(e) => setModelsConfig(prev => ({
-                              ...prev,
-                              [modelType]: { ...prev[modelType], provider: e.target.value }
-                            }))}
-                            className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                          >
-                            <option value="ollama">Ollama (本地)</option>
-                            <option value="vllm">vLLM</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-sm font-medium mb-2 block">模型名称</label>
-                          <input
-                            type="text"
-                            value={modelsConfig[modelType].model}
-                            onChange={(e) => setModelsConfig(prev => ({
-                              ...prev,
-                              [modelType]: { ...prev[modelType], model: e.target.value }
-                            }))}
-                            className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-sm font-medium mb-2 block">服务地址</label>
-                          <input
-                            type="text"
-                            value={modelsConfig[modelType].host}
-                            onChange={(e) => setModelsConfig(prev => ({
-                              ...prev,
-                              [modelType]: { ...prev[modelType], host: e.target.value }
-                            }))}
-                            className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-sm font-medium mb-2 block">
-                            API Key
-                            <span className="text-xs text-muted-foreground ml-1">(可选，用于 Ollama Cloud)</span>
-                          </label>
-                          <input
-                            type="password"
-                            value={modelsConfig[modelType].apiKey}
-                            onChange={(e) => setModelsConfig(prev => ({
-                              ...prev,
-                              [modelType]: { ...prev[modelType], apiKey: e.target.value }
-                            }))}
-                            placeholder="本地 Ollama 可留空"
-                            className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                          />
-                        </div>
+                      <div>
+                        <label className="text-sm font-medium mb-2 block">模型名称</label>
+                        <input
+                          type="text"
+                          value={modelsConfig.main.model}
+                          onChange={(e) => setModelsConfig((prev) => ({ ...prev, main: { ...prev.main, model: e.target.value } }))}
+                          className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
+                        />
                       </div>
-                    )}
-                  </div>
-                ))}
-
-                {/* 通用参数 */}
-                <div className="pt-6 border-t border-border">
-                  <h4 className="font-semibold mb-4">通用参数</h4>
-                  <div className="grid grid-cols-2 gap-4">
+                    </div>
                     <div>
-                      <label className="text-sm font-medium mb-2 block">温度 (Temperature)</label>
+                      <label className="text-sm font-medium mb-2 block">温度: {llmParams.temperature}</label>
                       <input
                         type="range"
                         min="0"
                         max="2"
                         step="0.1"
                         value={llmParams.temperature}
-                        onChange={(e) => setLlmParams(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
+                        onChange={(e) => setLlmParams({ ...llmParams, temperature: parseFloat(e.target.value) })}
                         className="w-full"
-                      />
-                      <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                        <span>0</span>
-                        <span>{llmParams.temperature}</span>
-                        <span>2</span>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">Top P</label>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        value={llmParams.topP}
-                        onChange={(e) => setLlmParams(prev => ({ ...prev, topP: parseFloat(e.target.value) }))}
-                        className="w-full"
-                      />
-                      <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                        <span>0</span>
-                        <span>{llmParams.topP}</span>
-                        <span>1</span>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">最大 Token</label>
-                      <input
-                        type="number"
-                        value={llmParams.maxTokens}
-                        onChange={(e) => setLlmParams(prev => ({ ...prev, maxTokens: parseInt(e.target.value) || 0 }))}
-                        className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                        min="0"
-                        placeholder="0 表示使用模型默认"
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">0 表示使用模型默认设置</p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">超时时间 (秒)</label>
-                      <input
-                        type="number"
-                        value={llmParams.timeout}
-                        onChange={(e) => setLlmParams(prev => ({ ...prev, timeout: parseInt(e.target.value) }))}
-                        className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                       />
                     </div>
                   </div>
-                </div>
-              </div>
+                  <div className="flex justify-end mt-6">
+                    <Button onClick={handleSave} loading={saveStatus === 'saving'} disabled={!isBackendRunning}>
+                      {saveStatus === 'saved' ? '已保存' : '保存配置'}
+                    </Button>
+                  </div>
+                </CardBody>
+              </Card>
             </div>
-          </div>
-        )}
-
-        {/* Save Button */}
-        <div className="mt-8 pt-6 border-t border-border">
-          <button
-            onClick={handleSave}
-            disabled={saveStatus === 'saving'}
-            className={cn(
-              'flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium transition-colors',
-              saveStatus === 'saved'
-                ? 'bg-green-500 text-white'
-                : saveStatus === 'error'
-                ? 'bg-destructive text-destructive-foreground'
-                : 'bg-primary text-primary-foreground hover:bg-primary/90'
-            )}
-          >
-            {saveStatus === 'saving' ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                保存中...
-              </>
-            ) : saveStatus === 'saved' ? (
-              <>
-                <CheckCircle2 className="w-4 h-4" />
-                已保存
-              </>
-            ) : saveStatus === 'error' ? (
-              <>
-                <AlertCircle className="w-4 h-4" />
-                保存失败
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4" />
-                保存设置
-              </>
-            )}
-          </button>
+          )}
         </div>
       </div>
     </div>
-  )
+  );
 }

@@ -1,3 +1,7 @@
+"""
+工具注册表 - 管理所有可用的工具
+"""
+import threading
 from typing import Dict, List, Optional, Any, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -9,12 +13,27 @@ from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
 
-# 内置工具名称集合
-BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
+# 内置工具名称集合 - 这些工具不会显示在工具管理界面
+BUILTIN_TOOL_NAMES = {
+    # 基础工具
+    "calculator", "datetime", "random", "json_format",
+    # 主模型工具
+    "write_long_term_memory", "search_all_memories", "call_assistant", "set_alarm", "mono",
+    # 摘要模型工具
+    "summarize_content", "save_summary_memory",
+    # 助手工具
+    "update_memory_node", "search_memories", "delete_memory", "merge_memories",
+    "clean_expired", "export_memories", "get_memory_stats", "search_by_time",
+    "search_by_tag", "bulk_delete", "restore_memory", "search_similar_memories",
+    "get_chat_history", "get_similar_memories", "get_memory_logs", "get_available_commands",
+    # 记忆工具
+    "save_memory"
+}
 
 
 @dataclass
 class Tool:
+    """工具数据类"""
     name: str
     description: str
     parameters: Dict
@@ -30,6 +49,7 @@ class Tool:
     last_called: Optional[str] = None
 
     def to_dict(self) -> Dict:
+        """转换为字典"""
         return {
             "name": self.name,
             "description": self.description,
@@ -46,6 +66,7 @@ class Tool:
         }
 
     def to_openai_function(self) -> Dict:
+        """转换为 OpenAI 函数格式"""
         return {
             "type": "function",
             "function": {
@@ -56,14 +77,8 @@ class Tool:
         }
 
 
-import threading
-from typing import Dict, List, Optional, Callable
-from datetime import datetime
-import logging
-
-logger = logging.getLogger(__name__)
-
 class ToolRegistry:
+    """工具注册表 - 单例模式"""
     _instance = None
     _tools: Dict[str, Tool] = {}
     _lock = None
@@ -87,6 +102,7 @@ class ToolRegistry:
         tags: List[str] = None,
         examples: List[str] = None
     ) -> Tool:
+        """注册工具"""
         with self._lock:
             if name in self._tools:
                 tool = self._tools[name]
@@ -111,209 +127,135 @@ class ToolRegistry:
                     examples=examples or []
                 )
                 self._tools[name] = tool
-
-            logger.info(f"工具已注册: {name}")
+            
+            logger.info(f"工具已注册: {name} (类别: {category})")
             return tool
 
     def get_tool(self, name: str) -> Optional[Tool]:
-        with self._lock:
-            return self._tools.get(name)
+        """获取工具"""
+        return self._tools.get(name)
 
-    def list_tools(self, enabled_only: bool = True) -> List[Tool]:
-        with self._lock:
-            tools = list(self._tools.values())
-            if enabled_only:
-                return [t for t in tools if t.enabled]
-            return tools
-
-    def list_tools_dict(self, enabled_only: bool = True) -> List[Dict]:
-        return [t.to_dict() for t in self.list_tools(enabled_only)]
-
-    def list_openai_functions(self, enabled_only: bool = True, include_builtin: bool = True, category: str = None) -> List[Dict]:
-        """
-        获取所有工具的 OpenAI 函数定义
-        
-        Args:
-            enabled_only: 是否只返回启用的工具
-            include_builtin: 是否包含内置工具（默认True，强制开启）
-            category: 按类别过滤工具（main/summary/memory/general）
-        """
-        # 获取工具列表
-        all_tools = self.list_tools(enabled_only)
-        
-        # 按类别过滤
-        if category:
-            filtered_tools = [t for t in all_tools if t.category == category]
-        else:
-            filtered_tools = all_tools
-        
-        tools = [t.to_openai_function() for t in filtered_tools if t.enabled]
-        
-        # 强制包含内置工具
-        if include_builtin:
-            from backend.core.tools.builtin import get_builtin_tools
-            builtin_tools = get_builtin_tools()
-            # 避免重复添加
-            existing_names = {t["function"]["name"] for t in tools}
-            for builtin in builtin_tools:
-                if builtin["function"]["name"] not in existing_names:
-                    tools.append(builtin)
-        
+    def list_tools(self, enabled_only: bool = True, include_builtin: bool = False) -> List[Tool]:
+        """列出工具"""
+        tools = []
+        for name, tool in self._tools.items():
+            if enabled_only and not tool.enabled:
+                continue
+            if not include_builtin and name in BUILTIN_TOOL_NAMES:
+                continue
+            tools.append(tool)
         return tools
 
+    def list_tools_dict(self, enabled_only: bool = True, include_builtin: bool = False) -> Dict[str, Dict]:
+        """列出工具（字典格式）"""
+        return {
+            tool.name: tool.to_dict() 
+            for tool in self.list_tools(enabled_only, include_builtin)
+        }
+
+    def list_openai_functions(self, enabled_only: bool = True) -> List[Dict]:
+        """列出 OpenAI 格式的函数"""
+        return [
+            tool.to_openai_function() 
+            for tool in self.list_tools(enabled_only)
+        ]
+
     def call_tool(self, name: str, arguments: Dict = None) -> Dict:
-        if name in BUILTIN_TOOL_NAMES:
-            from backend.core.tools.builtin import call_builtin_tool
-            return call_builtin_tool(name, arguments or {})
-        
-        tool = self.get_tool(name)
-        if tool is None:
+        """调用工具"""
+        tool = self._tools.get(name)
+        if not tool:
             return {
                 "success": False,
-                "error": f"工具不存在: {name}"
+                "error": f"工具 {name} 不存在"
             }
-
+        
         if not tool.enabled:
             return {
                 "success": False,
-                "error": f"工具已禁用: {name}"
+                "error": f"工具 {name} 已禁用"
             }
-
-        if tool.function is None:
-            return {
-                "success": False,
-                "error": f"工具未实现: {name}"
-            }
-
-        try:
-            if arguments:
-                result = tool.function(**arguments)
-            else:
-                result = tool.function()
-
-            if inspect.iscoroutine(result):
-                try:
-                    loop = asyncio.get_running_loop()
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(asyncio.run, result)
-                        result = future.result(timeout=60)
-                except RuntimeError:
-                    result = asyncio.run(result)
-
-            with self._lock:
-                tool.call_count += 1
-                tool.last_called = datetime.now().isoformat()
-
-            return {
-                "success": True,
-                "result": result
-            }
-        except Exception as e:
-            logger.error(f"工具调用失败: {name}, {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
-
-    async def call_tool_async(self, name: str, arguments: Dict = None) -> Dict:
-        if name in BUILTIN_TOOL_NAMES:
-            from backend.core.tools.builtin import call_builtin_tool
-            return call_builtin_tool(name, arguments or {})
         
-        tool = self.get_tool(name)
-        if tool is None:
-            return {
-                "success": False,
-                "error": f"工具不存在: {name}"
-            }
-
-        if not tool.enabled:
-            return {
-                "success": False,
-                "error": f"工具已禁用: {name}"
-            }
-
-        if tool.function is None:
-            return {
-                "success": False,
-                "error": f"工具未实现: {name}"
-            }
-
         try:
-            if arguments:
-                result = tool.function(**arguments)
+            # 更新调用统计
+            tool.call_count += 1
+            tool.last_called = datetime.now().isoformat()
+            
+            if tool.function:
+                # 执行工具函数
+                if asyncio.iscoroutinefunction(tool.function):
+                    result = asyncio.run(tool.function(**(arguments or {})))
+                else:
+                    result = tool.function(**(arguments or {}))
+                
+                return {
+                    "success": True,
+                    "result": result,
+                    "tool_name": name
+                }
             else:
-                result = tool.function()
-
-            if inspect.iscoroutine(result):
-                result = await result
-
-            with self._lock:
-                tool.call_count += 1
-                tool.last_called = datetime.now().isoformat()
-
-            return {
-                "success": True,
-                "result": result
-            }
+                return {
+                    "success": False,
+                    "error": f"工具 {name} 没有实现函数"
+                }
         except Exception as e:
-            logger.error(f"工具调用失败: {name}, {e}")
+            logger.error(f"调用工具 {name} 失败: {e}")
             return {
                 "success": False,
-                "error": str(e)
+                "error": str(e),
+                "tool_name": name
             }
-
-    def delete_tool(self, name: str) -> bool:
-        with self._lock:
-            if name in self._tools:
-                del self._tools[name]
-                logger.info(f"工具已删除: {name}")
-                return True
-            return False
 
     def enable_tool(self, name: str) -> bool:
-        with self._lock:
-            if name in self._tools:
-                self._tools[name].enabled = True
-                return True
-            return False
+        """启用工具"""
+        if name in self._tools:
+            self._tools[name].enabled = True
+            return True
+        return False
 
     def disable_tool(self, name: str) -> bool:
-        with self._lock:
-            if name in self._tools:
-                self._tools[name].enabled = False
-                return True
-            return False
+        """禁用工具"""
+        if name in self._tools:
+            self._tools[name].enabled = False
+            return True
+        return False
+
+    def delete_tool(self, name: str) -> bool:
+        """删除工具"""
+        if name in self._tools:
+            del self._tools[name]
+            return True
+        return False
 
     def get_tool_stats(self) -> Dict:
-        with self._lock:
-            tools = list(self._tools.values())
-            total_calls = sum(t.call_count for t in tools)
-            enabled_count = sum(1 for t in tools if t.enabled)
-            by_category = {}
-            for t in tools:
-                if t.category not in by_category:
-                    by_category[t.category] = []
-                by_category[t.category].append(t.name)
+        """获取工具统计"""
+        tools = list(self._tools.values())
+        total_calls = sum(t.call_count for t in tools)
+        enabled_count = sum(1 for t in tools if t.enabled)
+        by_category = {}
+        for t in tools:
+            if t.category not in by_category:
+                by_category[t.category] = []
+            by_category[t.category].append(t.name)
 
-            return {
-                "total_tools": len(tools),
-                "enabled_tools": enabled_count,
-                "disabled_tools": len(tools) - enabled_count,
-                "total_calls": total_calls,
-                "by_category": by_category,
-                "top_tools": sorted(
-                    [(t.name, t.call_count) for t in tools],
-                    key=lambda x: x[1],
-                    reverse=True
-                )[:5]
-            }
+        return {
+            "total_tools": len(tools),
+            "enabled_tools": enabled_count,
+            "disabled_tools": len(tools) - enabled_count,
+            "total_calls": total_calls,
+            "by_category": by_category,
+            "top_tools": sorted(
+                [(t.name, t.call_count) for t in tools],
+                key=lambda x: x[1],
+                reverse=True
+            )[:5]
+        }
 
     def export_tools(self) -> List[Dict]:
+        """导出工具"""
         return [t.to_dict() for t in self._tools.values()]
 
     def import_tools(self, tools_data: List[Dict]) -> int:
+        """导入工具"""
         imported = 0
         for tool_data in tools_data:
             try:
@@ -329,42 +271,9 @@ class ToolRegistry:
                 )
                 imported += 1
             except Exception as e:
-                logger.warning(f"导入工具失败: {tool_data.get('name')}, {e}")
-
+                logger.error(f"导入工具失败: {e}")
         return imported
 
-    def clear(self):
-        with self._lock:
-            self._tools.clear()
-            logger.info("工具注册表已清空")
 
-
+# 全局工具注册表实例
 tool_registry = ToolRegistry()
-
-
-def tool(
-    name: str = None,
-    description: str = "",
-    parameters: Dict = None,
-    enabled: bool = True,
-    version: str = "1.0.0",
-    category: str = "general",
-    tags: List[str] = None,
-    examples: List[str] = None
-):
-    def decorator(func):
-        tool_name = name or func.__name__
-        tool_registry.register(
-            name=tool_name,
-            description=description or func.__doc__ or "",
-            parameters=parameters or {"type": "object", "properties": {}},
-            function=func,
-            enabled=enabled,
-            version=version,
-            category=category,
-            tags=tags,
-            examples=examples
-        )
-        return func
-
-    return decorator

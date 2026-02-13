@@ -43,13 +43,57 @@ class MemorySearchRequest(BaseModel):
     agent_id: str = "default"
 
 
+@router.get("/memories/agents")
+async def list_agent_memory_tables():
+    """获取所有Agent的记忆表列表"""
+    from backend.api.app import get_memory_manager
+    
+    try:
+        memory_mgr = get_memory_manager()
+        conn = memory_mgr._get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT agent_id, table_name, created_at 
+            FROM agent_memory_tables 
+            ORDER BY created_at DESC
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        agents = []
+        for row in rows:
+            agents.append({
+                "agent_id": row[0],
+                "table_name": row[1],
+                "created_at": row[2]
+            })
+        
+        # 添加默认Agent
+        agents.insert(0, {
+            "agent_id": "default",
+            "table_name": "memories",
+            "created_at": None
+        })
+        
+        return {
+            "status": "success",
+            "agents": agents,
+            "total": len(agents)
+        }
+    except Exception as e:
+        logger.error(f"获取Agent记忆表列表失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/memories")
 async def list_memories(
     workspace_id: str = "default",
     type: Optional[str] = None,
     memory_type: Optional[str] = None,
     limit: int = 20,
-    offset: int = 0
+    offset: int = 0,
+    agent_id: str = "default"
 ):
     """列出记忆"""
     from backend.api.app import get_memory_manager
@@ -62,7 +106,8 @@ async def list_memories(
             memory_type=actual_type,
             limit=limit,
             offset=offset,
-            workspace_id=workspace_id
+            workspace_id=workspace_id,
+            agent_id=agent_id
         )
         return {
             "status": "success",
@@ -161,7 +206,8 @@ async def update_memory(memory_id: int, request: MemoryUpdateRequest):
 
 
 @router.delete("/memories/{memory_id}")
-async def delete_memory(memory_id: int, soft_delete: bool = True):
+async def delete_memory(memory_id: int, soft_delete: bool = False):
+    """删除记忆（默认硬删除）"""
     from backend.api.app import get_memory_manager
 
     try:
@@ -522,10 +568,10 @@ class BatchTagsRequest(BaseModel):
 @router.post("/memories/batch/delete")
 async def batch_delete_memories(
     request: BatchIdsRequest,
-    soft_delete: bool = True,
+    soft_delete: bool = False,
     raise_on_error: bool = False
 ):
-    """批量删除记忆"""
+    """批量删除记忆（默认硬删除）"""
     from backend.api.app import get_memory_manager
 
     try:

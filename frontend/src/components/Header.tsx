@@ -1,10 +1,11 @@
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Bell, Database } from 'lucide-react'
+import { Heart, Database } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { LanguageSwitcher } from './LanguageSwitcher'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 
-const getPageTitles = (t: Function): Record<string, string> => ({
+const getPageTitles = (t: TFunction): Record<string, string> => ({
   '/': t('nav.chat'),
   '/agents': t('agent.title'),
   '/memories': t('memory.title'),
@@ -55,7 +56,7 @@ export function Header() {
           className="p-2 rounded-lg hover:bg-accent transition-colors relative group"
           title="支持开发者"
         >
-          <Bell className="w-5 h-5 text-muted-foreground group-hover:text-foreground" />
+          <Heart className="w-5 h-5 text-red-500 group-hover:text-red-600" />
           <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-popover text-popover-foreground text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
             支持开发者
           </span>

@@ -29,7 +29,7 @@ class ApiClient {
   private controlClient: AxiosInstance
   private maxRetries: number = 3
   private retryDelay: number = 1000
-  private cache: Map<string, { data: any; timestamp: number; ttl: number }>
+  private cache: Map<string, { data: unknown; timestamp: number; ttl: number }>
 
   constructor() {
     this.client = axios.create({
@@ -53,11 +53,11 @@ class ApiClient {
     this._setupInterceptors(this.controlClient)
   }
 
-  private _getCacheKey(url: string, params?: any): string {
+  private _getCacheKey(url: string, params?: Record<string, unknown>): string {
     return `${url}?${JSON.stringify(params || {})}`
   }
 
-  private _getFromCache(key: string): any | null {
+  private _getFromCache(key: string): unknown | null {
     const cached = this.cache.get(key)
     if (!cached) return null
     
@@ -69,7 +69,7 @@ class ApiClient {
     return cached.data
   }
 
-  private _setCache(key: string, data: any, ttl: number = 60000): void {
+  private _setCache(key: string, data: unknown, ttl: number = 60000): void {
     this.cache.set(key, {
       data,
       timestamp: Date.now(),
@@ -217,12 +217,19 @@ class ApiClient {
     return response.data
   }
 
+  // Agent Memory Tables
+  async getAgentMemoryTables() {
+    const response = await this.client.get('/api/memories/agents')
+    return response.data
+  }
+
   // Memories
   async getMemories(params?: {
     type?: string
     limit?: number
     offset?: number
     query?: string
+    agent_id?: string
   }) {
     const response = await this.client.get('/api/memories', { params })
     return response.data
@@ -233,6 +240,7 @@ class ApiClient {
     type?: string
     importance?: number
     tags?: string[]
+    agent_id?: string
   }) {
     const response = await this.client.post('/api/memories', data)
     return response.data
@@ -243,15 +251,46 @@ class ApiClient {
     type: string
     importance: number
     tags: string[]
-  }>) {
-    const response = await this.client.put(`/api/memories/${id}`, data)
+  }>, agentId?: string) {
+    const response = await this.client.put(`/api/memories/${id}`, { ...data, agent_id: agentId || 'default' })
     return response.data
   }
 
-  async deleteMemory(id: number, soft_delete: boolean = true) {
+  async deleteMemory(id: number, soft_delete: boolean = false) {
     const response = await this.client.delete(`/api/memories/${id}`, {
       params: { soft_delete }
     })
+    return response.data
+  }
+
+  // Permanent Memories
+  async getPermanentMemories(params?: { limit?: number; offset?: number; workspace_id?: string }) {
+    const response = await this.client.get('/api/memories/permanent', { params })
+    return response.data
+  }
+
+  async createPermanentMemory(data: {
+    content: string
+    importance?: number
+    tags?: string[]
+    metadata?: Record<string, unknown>
+  }) {
+    const response = await this.client.post('/api/memories/permanent', data)
+    return response.data
+  }
+
+  async updatePermanentMemory(id: number, data: Partial<{
+    content: string
+    importance: number
+    tags: string[]
+    metadata: Record<string, unknown>
+  }>) {
+    const response = await this.client.put(`/api/memories/permanent/${id}`, data)
+    return response.data
+  }
+
+  async deletePermanentMemory(id: number) {
+    const response = await this.client.delete(`/api/memories/permanent/${id}`)
     return response.data
   }
 
@@ -280,6 +319,19 @@ class ApiClient {
   // Archive
   async getArchiveStats() {
     const response = await this.client.get('/api/archive/stats')
+    return response.data
+  }
+
+  async getArchivedMemories(params?: { limit?: number; offset?: number; agent_id?: string }) {
+    const response = await this.client.get('/api/archive/list', { params })
+    return response.data
+  }
+
+  async restoreMemory(memoryId: number, agentId?: string) {
+    const response = await this.client.post('/api/memories/batch/restore', {
+      ids: [memoryId],
+      agent_id: agentId || 'default'
+    })
     return response.data
   }
 
@@ -354,6 +406,12 @@ class ApiClient {
     return response.data
   }
 
+  async clearAllSessions() {
+    this._clearCache('/api/context/sessions')
+    const response = await this.client.delete('/api/context/sessions/all')
+    return response.data
+  }
+
   // Admin
   async getHealth() {
     const response = await this.client.get('/health')
@@ -365,8 +423,8 @@ class ApiClient {
     return response.data
   }
 
-  async getChatHistory(sessionId: string) {
-    const response = await this.client.get(`/api/chat/history/${sessionId}`)
+  async getChatHistory(agentId: string) {
+    const response = await this.client.get(`/api/chat/history/agent-${agentId}`)
     return response.data
   }
 
@@ -482,7 +540,14 @@ class ApiClient {
   }
 
   async getTools(type?: string) {
-    const params = type ? { type } : {}
+    const params: Record<string, string> = {}
+    // type 参数映射到 category
+    if (type && type !== 'all' && type !== 'builtin') {
+      params['category'] = type
+    }
+    if (type === 'builtin') {
+      params['include_builtin'] = 'true'
+    }
     const response = await this.client.get('/api/tools', { params })
     return response.data
   }
@@ -524,16 +589,15 @@ class ApiClient {
 
   async sendMessageStream(
     message: string,
-    sessionId: string,
     onChunk: (chunk: { 
       type: string; 
       content?: string; 
       done?: boolean; 
       error?: string; 
       session_id?: string;
-      tool_call?: any;
+      tool_call?: Record<string, unknown>;
       tool_name?: string;
-      result?: any;
+      result?: unknown;
     }) => void,
     agentId?: string
   ) {
@@ -544,7 +608,7 @@ class ApiClient {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('cxhms-token') || ''}`
         },
-        body: JSON.stringify({ message, session_id: sessionId, agent_id: agentId || 'default' })
+        body: JSON.stringify({ message, agent_id: agentId || 'default' })
       })
 
       if (!response.ok) {
@@ -565,12 +629,14 @@ class ApiClient {
       try {
         while (true) {
           const { done, value } = await reader.read()
-          if (done) break
-
-          buffer += decoder.decode(value, { stream: true })
+          
+          if (value) {
+            buffer += decoder.decode(value, { stream: true })
+          }
+          
           const lines = buffer.split('\n')
           buffer = lines.pop() || ''
-
+          
           for (const line of lines) {
             if (line.trim().startsWith('data: ')) {
               try {
@@ -580,6 +646,19 @@ class ApiClient {
                 console.error('Failed to parse SSE data:', e)
               }
             }
+          }
+          
+          if (done) {
+            // 处理buffer中剩余的数据
+            if (buffer.trim().startsWith('data: ')) {
+              try {
+                const data = JSON.parse(buffer.trim().slice(6))
+                onChunk(data)
+              } catch (e) {
+                console.error('Failed to parse remaining buffer:', e)
+              }
+            }
+            break
           }
         }
       } catch (streamError) {
@@ -650,16 +729,15 @@ class ApiClient {
 
   async sendMemoryAgentMessageStream(
     message: string,
-    sessionId: string | undefined,
     onChunk: (chunk: { 
       type: string; 
       content?: string; 
       done?: boolean; 
       error?: string; 
       session_id?: string;
-      tool_call?: any;
+      tool_call?: Record<string, unknown>;
       tool_name?: string;
-      result?: any;
+      result?: unknown;
       thinking?: string;
     }) => void
   ) {
@@ -670,7 +748,7 @@ class ApiClient {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('cxhms-token') || ''}`
         },
-        body: JSON.stringify({ message, session_id: sessionId })
+        body: JSON.stringify({ message })
       })
 
       if (!response.ok) {

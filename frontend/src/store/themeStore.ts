@@ -30,15 +30,21 @@ export const useThemeStore = create<ThemeState>()(
 
 function applyTheme(theme: 'light' | 'dark' | 'system') {
   const root = window.document.documentElement
-  root.classList.remove('light', 'dark')
 
+  let effectiveTheme: 'light' | 'dark'
   if (theme === 'system') {
-    const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches
-      ? 'dark'
-      : 'light'
-    root.classList.add(systemTheme)
+    effectiveTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   } else {
-    root.classList.add(theme)
+    effectiveTheme = theme
+  }
+
+  root.setAttribute('data-theme', effectiveTheme)
+  
+  // 同时添加/移除 dark 类以支持 Tailwind 的 dark 模式
+  if (effectiveTheme === 'dark') {
+    root.classList.add('dark')
+  } else {
+    root.classList.remove('dark')
   }
 }
 

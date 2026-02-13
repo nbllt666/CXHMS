@@ -21,6 +21,7 @@ vi.mock('axios', () => ({
 }))
 
 describe('API Client', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let api: any
 
   beforeEach(async () => {
@@ -539,7 +540,7 @@ describe('API Client', () => {
       const mockResult = { success: true, tagged: 10 }
       mockPost.mockResolvedValueOnce({ data: mockResult })
 
-      const result = await api.batchTagByQuery('python', ['programming'])
+      const result = await api.batchTagByQuery('python', ['programming'], 'add')
       expect(result.tagged).toBe(10)
     })
 
@@ -588,7 +589,7 @@ describe('API Client', () => {
     })
 
     it('should handle 404 error', async () => {
-      const error = new Error('Not Found') as any
+      const error = new Error('Not Found') as Error & { response: { status: number } }
       error.response = { status: 404 }
       mockGet.mockRejectedValueOnce(error)
 
@@ -596,7 +597,7 @@ describe('API Client', () => {
     })
 
     it('should handle 500 error', async () => {
-      const error = new Error('Internal Server Error') as any
+      const error = new Error('Internal Server Error') as Error & { response: { status: number } }
       error.response = { status: 500 }
       mockGet.mockRejectedValueOnce(error)
 

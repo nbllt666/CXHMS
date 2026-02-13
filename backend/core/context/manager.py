@@ -19,7 +19,7 @@ class ContextManager:
         db_path: 数据库文件路径
     """
     
-    def __init__(self, db_path: str = "data/memories.db") -> None:
+    def __init__(self, db_path: str = "data/sessions.db") -> None:
         """初始化上下文管理器
         
         Args:
@@ -224,6 +224,27 @@ class ContextManager:
         conn.commit()
 
         return success
+
+    def clear_all_sessions(self) -> int:
+        """删除所有会话和消息
+        
+        Returns:
+            删除的会话数量
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # 获取会话数量
+        cursor.execute("SELECT COUNT(*) FROM sessions")
+        count = cursor.fetchone()[0]
+
+        # 删除所有消息
+        cursor.execute("DELETE FROM messages")
+        # 删除所有会话
+        cursor.execute("DELETE FROM sessions")
+
+        conn.commit()
+        return count
 
     def add_message(
         self,

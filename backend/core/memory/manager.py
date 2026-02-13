@@ -1,3 +1,4 @@
+import re
 from typing import List, Dict, Optional, Any, Tuple
 from datetime import datetime
 from pathlib import Path
@@ -78,6 +79,7 @@ class MemoryManager:
         self.deduplication_engine = None
 
         self._init_db()
+        self._init_advanced_components()
 
         self._stop_event = threading.Event()
         self._cleanup_thread = None
@@ -97,8 +99,9 @@ class MemoryManager:
         """
         if agent_id == "default" or not agent_id:
             return "memories"
-        # 将agent_id中的特殊字符替换为下划线
-        safe_agent_id = agent_id.replace("-", "_").replace(" ", "_")
+        safe_agent_id = re.sub(r'[^a-zA-Z0-9_]', '_', agent_id)
+        if not re.match(r'^[a-zA-Z_]', safe_agent_id):
+            safe_agent_id = 'agent_' + safe_agent_id
         return f"memories_{safe_agent_id}"
 
     def _ensure_agent_table(self, agent_id: str):
@@ -178,6 +181,24 @@ class MemoryManager:
             raise
         finally:
             conn.close()
+
+    def _init_advanced_components(self):
+        """初始化高级组件（归档器、去重引擎）"""
+        try:
+            from backend.core.memory.archiver import AdvancedArchiver
+            self.archiver = AdvancedArchiver(self)
+            logger.info("归档器已初始化")
+        except Exception as e:
+            logger.warning(f"归档器初始化失败: {e}")
+            self.archiver = None
+
+        try:
+            from backend.core.memory.deduplication import DeduplicationEngine
+            self.deduplication_engine = DeduplicationEngine(self)
+            logger.info("去重引擎已初始化")
+        except Exception as e:
+            logger.warning(f"去重引擎初始化失败: {e}")
+            self.deduplication_engine = None
 
     def _start_cleanup_task(self):
         def cleanup_task():
@@ -283,8 +304,10 @@ class MemoryManager:
                 updated_at TIMESTAMP,
                 archived_at TIMESTAMP,
                 is_deleted BOOLEAN DEFAULT FALSE,
+                deleted_at TIMESTAMP,
                 source VARCHAR(50) DEFAULT 'user',
-                workspace_id VARCHAR(100) DEFAULT 'default'
+                workspace_id VARCHAR(100) DEFAULT 'default',
+                agent_id VARCHAR(100) DEFAULT 'default'
             )
         ''')
 
@@ -344,6 +367,7 @@ class MemoryManager:
             ("updated_at", "TIMESTAMP"),
             ("archived_at", "TIMESTAMP"),
             ("is_deleted", "BOOLEAN DEFAULT FALSE"),
+            ("deleted_at", "TIMESTAMP"),
             ("agent_id", "VARCHAR(100) DEFAULT 'default'")
         ]
 
