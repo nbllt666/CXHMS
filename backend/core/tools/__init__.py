@@ -1,4 +1,4 @@
-from .registry import tool_registry, tool, Tool, ToolRegistry
+from .registry import tool_registry, Tool, ToolRegistry
 from .mcp import MCPManager, MCPServer
 from .builtin import register_builtin_tools
 from .master_tools import (
@@ -38,7 +38,6 @@ from .assistant_tools import (
 
 __all__ = [
     "tool_registry",
-    "tool",
     "Tool",
     "ToolRegistry",
     "MCPManager",
