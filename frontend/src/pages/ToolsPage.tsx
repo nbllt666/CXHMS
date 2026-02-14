@@ -140,11 +140,13 @@ export function ToolsPage() {
   })
 
   // Fetch tools list
-  const { data: tools, isLoading: toolsLoading } = useQuery<Tool[]>({
+  const { data: toolsData, isLoading: toolsLoading } = useQuery({
     queryKey: ['tools', filter],
     queryFn: async () => {
       const response = await api.getTools(filter === 'all' ? undefined : filter)
-      return response.tools || []
+      // 将工具对象转换为数组
+      const toolsObj = response.tools || {}
+      return Object.values(toolsObj) as Tool[]
     }
   })
 
@@ -188,7 +190,7 @@ export function ToolsPage() {
   }
 
   // Filter tools
-  const filteredTools = tools?.filter(tool => 
+  const filteredTools = toolsData?.filter(tool =>
     filter === 'all' || tool.type === filter
   )
 

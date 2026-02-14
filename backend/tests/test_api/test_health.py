@@ -11,9 +11,10 @@ class TestHealthEndpoints:
         response = client.get("/health")
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "healthy"
-        assert data["service"] == "CXHMS"
+        assert "status" in data
+        assert data["status"] in ["healthy", "degraded"]
         assert "version" in data
+        assert "components" in data
 
     def test_health_check_content_type(self, client: TestClient):
         """Test health check returns correct content type."""

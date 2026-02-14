@@ -25,7 +25,7 @@ class ACPError(CXHMSException):
     pass
 
 
-class MemoryError(CXHMSException):
+class MemoryOperationError(CXHMSException):
     """记忆管理异常"""
     pass
 

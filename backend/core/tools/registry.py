@@ -153,15 +153,29 @@ class ToolRegistry:
             for tool in self.list_tools(enabled_only, include_builtin)
         }
 
-    def list_openai_functions(self, enabled_only: bool = True) -> List[Dict]:
-        """列出 OpenAI 格式的函数"""
+    def list_openai_functions(self, enabled_only: bool = True, include_builtin: bool = False, category: str = None) -> List[Dict]:
+        """列出 OpenAI 格式的函数
+        
+        Args:
+            enabled_only: 是否只返回启用的工具
+            include_builtin: 是否包含内置工具
+            category: 按类别过滤（可选）
+        """
+        tools = self.list_tools(enabled_only, include_builtin)
+        
+        if category:
+            tools = [t for t in tools if t.category == category]
+        
         return [
             tool.to_openai_function() 
-            for tool in self.list_tools(enabled_only)
+            for tool in tools
         ]
 
     def call_tool(self, name: str, arguments: Dict = None) -> Dict:
-        """调用工具"""
+        """调用工具（同步版本）
+        
+        注意：如果在异步上下文中调用，建议使用 call_tool_async 方法
+        """
         tool = self._tools.get(name)
         if not tool:
             return {
@@ -176,14 +190,68 @@ class ToolRegistry:
             }
         
         try:
-            # 更新调用统计
             tool.call_count += 1
             tool.last_called = datetime.now().isoformat()
             
             if tool.function:
-                # 执行工具函数
                 if asyncio.iscoroutinefunction(tool.function):
-                    result = asyncio.run(tool.function(**(arguments or {})))
+                    try:
+                        loop = asyncio.get_running_loop()
+                        import concurrent.futures
+                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                            future = executor.submit(
+                                asyncio.run, 
+                                tool.function(**(arguments or {}))
+                            )
+                            result = future.result(timeout=120)
+                    except RuntimeError:
+                        result = asyncio.run(tool.function(**(arguments or {})))
+                else:
+                    result = tool.function(**(arguments or {}))
+                
+                return {
+                    "success": True,
+                    "result": result,
+                    "tool_name": name
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"工具 {name} 没有实现函数"
+                }
+        except Exception as e:
+            logger.error(f"调用工具 {name} 失败: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "tool_name": name
+            }
+
+    async def call_tool_async(self, name: str, arguments: Dict = None) -> Dict:
+        """调用工具（异步版本）
+        
+        推荐在异步上下文（如 FastAPI 路由）中使用此方法
+        """
+        tool = self._tools.get(name)
+        if not tool:
+            return {
+                "success": False,
+                "error": f"工具 {name} 不存在"
+            }
+        
+        if not tool.enabled:
+            return {
+                "success": False,
+                "error": f"工具 {name} 已禁用"
+            }
+        
+        try:
+            tool.call_count += 1
+            tool.last_called = datetime.now().isoformat()
+            
+            if tool.function:
+                if asyncio.iscoroutinefunction(tool.function):
+                    result = await tool.function(**(arguments or {}))
                 else:
                     result = tool.function(**(arguments or {}))
                 

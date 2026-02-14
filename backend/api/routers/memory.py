@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel
 from datetime import datetime
-from backend.core.exceptions import MemoryError
+from backend.core.exceptions import MemoryOperationError
 from backend.core.memory.secondary_router import SecondaryInstruction
 from backend.core.logging_config import get_contextual_logger
 
@@ -114,7 +114,7 @@ async def list_memories(
             "memories": memories,
             "total": len(memories)
         }
-    except MemoryError as e:
+    except MemoryOperationError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"列出记忆失败: {e}", exc_info=True)
@@ -146,7 +146,7 @@ async def create_memory(request: MemoryCreateRequest):
             "memory_id": memory_id,
             "message": "记忆创建成功"
         }
-    except MemoryError as e:
+    except MemoryOperationError as e:
         logger.error(f"创建记忆失败: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except ValueError as e:

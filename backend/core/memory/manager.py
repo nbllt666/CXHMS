@@ -6,7 +6,7 @@ import json
 import threading
 import time
 import sqlite3
-from backend.core.exceptions import DatabaseError, MemoryError, VectorStoreError
+from backend.core.exceptions import DatabaseError, MemoryOperationError, VectorStoreError
 from backend.core.logging_config import get_contextual_logger
 
 try:
@@ -255,11 +255,32 @@ class MemoryManager:
         if self._vector_store and hasattr(self._vector_store, 'is_available'):
             try:
                 if not self._vector_store.is_available():
-                    logger.warning("向量存储不可用，重置连接")
+                    logger.warning("向量存储不可用，尝试重新初始化...")
                     self._vector_store = None
+                    self._try_reinit_vector_store()
             except Exception as e:
                 logger.warning(f"向量存储健康检查失败: {e}")
                 self._vector_store = None
+
+    def _try_reinit_vector_store(self):
+        """尝试重新初始化向量存储"""
+        try:
+            if hasattr(self, '_vector_store_config') and self._vector_store_config:
+                config = self._vector_store_config
+                from backend.core.memory.vector_store import create_vector_store
+                vector_store = create_vector_store(
+                    backend=config.get('backend', 'milvus_lite'),
+                    db_path=config.get('milvus_db_path', 'data/milvus_lite.db'),
+                    vector_size=config.get('vector_size', 768),
+                    embedding_model=self._embedding_model
+                )
+                if vector_store and vector_store.is_available():
+                    self._vector_store = vector_store
+                    logger.info("向量存储重新初始化成功")
+                else:
+                    logger.warning("向量存储重新初始化失败")
+        except Exception as e:
+            logger.warning(f"重新初始化向量存储失败: {e}")
 
     def shutdown(self):
         logger.info("正在关闭记忆管理器...")
@@ -869,10 +890,20 @@ class MemoryManager:
         qdrant_port: int = 6333,
         milvus_db_path: str = "data/milvus_lite.db"
     ):
+        dimension = embedding_model.dimension if embedding_model else 768
+
+        self._vector_store_config = {
+            'backend': vector_backend,
+            'milvus_db_path': milvus_db_path,
+            'qdrant_host': qdrant_host,
+            'qdrant_port': qdrant_port,
+            'vector_size': dimension,
+            'embedding_model': embedding_model
+        }
+
         if vector_store is None:
             try:
                 from backend.core.memory.vector_store import create_vector_store
-                dimension = embedding_model.dimension if embedding_model else 768
 
                 if vector_backend == "milvus_lite":
                     vector_store = create_vector_store(

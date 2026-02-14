@@ -310,7 +310,7 @@ describe('API Client', () => {
       mockGet.mockResolvedValueOnce({ data: mockTools })
 
       await api.getTools('mcp')
-      expect(mockGet).toHaveBeenCalledWith('/api/tools', { params: { type: 'mcp' } })
+      expect(mockGet).toHaveBeenCalledWith('/api/tools', { params: { category: 'mcp' } })
     })
 
     it('should create tool', async () => {

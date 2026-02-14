@@ -95,7 +95,7 @@ class TestToolCalling:
         )
         register_master_tools()
 
-        tools = tool_registry.list_openai_functions()
+        tools = tool_registry.list_openai_functions(include_builtin=True)
         assert isinstance(tools, list), "工具列表应该是列表"
         assert len(tools) > 0, "应该有工具"
 
