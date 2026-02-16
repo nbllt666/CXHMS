@@ -124,12 +124,84 @@ class Memory:
 **支持的提供商**:
 - Ollama（本地）
 - VLLM（高性能）
+- OpenAI 兼容接口
+- Anthropic Claude
 
 **特性**:
 - 同步/流式对话
 - 错误分类处理
 - 请求验证
 - 超时控制
+- 多模态支持（图片输入）
+
+### 6. 模型路由器 (Model Router)
+
+**位置**: `backend/core/model_router.py`
+
+**职责**:
+- 管理多个LLM模型客户端
+- 按用途路由请求（main/summary/memory）
+- 模型配置热加载
+- 健康检查和故障转移
+
+**预配置模型用途**:
+- `main`: 主对话模型（128k上下文）
+- `summary`: 摘要生成模型
+- `memory`: 记忆处理模型
+
+### 7. API 路由系统
+
+FastAPI 应用包含多个路由模块：
+- `chat.py`: 处理聊天对话请求（支持Agent和多模态）
+- `memory.py`: 处理记忆 CRUD 操作
+- `context.py`: 处理会话和消息管理
+- `tools.py`: 处理工具注册和调用
+- `acp.py`: 处理 ACP 协议
+- `agents.py`: 处理 Agent 配置和上下文管理
+- `archive.py`: 处理归档管理
+- `backup.py`: 处理备份恢复
+- `websocket.py`: 处理 WebSocket 连接
+
+**聊天流程**:
+1. 用户发送消息后，系统获取 Agent 配置
+2. 管理 Agent 专属会话（每个 Agent 一个固定会话）
+3. 检索相关记忆（如果启用）
+4. 构建消息列表（系统提示词 + 记忆上下文 + 历史消息 + 当前消息）
+5. 获取工具列表（根据 Agent 配置过滤）
+6. 调用 LLM 生成响应（支持流式）
+7. 处理工具调用（如有）
+8. 保存助手响应到上下文
+
+### 8. Agent 系统
+
+**位置**: `backend/api/routers/agents.py`
+
+**职责**:
+- Agent 配置管理（CRUD）
+- Agent 上下文持久化
+- Agent 克隆和统计
+
+**默认 Agent**:
+- `default`: 默认助手，128k上下文，支持记忆和工具
+- `memory-agent`: 记忆管理助手，128k上下文，16个记忆管理工具
+
+**Agent 配置字段**:
+```python
+class AgentConfig:
+    id: str
+    name: str
+    description: str
+    system_prompt: str
+    model: str  # main/summary/memory 或具体模型名
+    temperature: float
+    max_tokens: int
+    use_memory: bool
+    use_tools: bool
+    memory_scene: str  # chat/task/first_interaction
+    decay_model: str  # exponential/ebbinghaus
+    vision_enabled: bool
+    is_default: bool
+```
 
 ## 数据流
 

@@ -127,16 +127,45 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 ### 7. 三维搜索
 
-**端点**: `POST /api/memories/search-3d`
+**端点**: `POST /api/memories/3d`
 
 **请求体**:
 ```json
 {
   "query": "编程",
-  "importance_min": 3,
-  "time_min": 0.5,
-  "relevance_min": 0.6,
-  "limit": 10
+  "memory_type": "long_term",
+  "tags": [],
+  "limit": 10,
+  "weights": [0.35, 0.25, 0.4],
+  "workspace_id": "default"
+}
+```
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "memories": [...],
+  "total": 5,
+  "applied_weights": {
+    "importance": 0.35,
+    "time": 0.25,
+    "relevance": 0.4
+  }
+}
+```
+
+### 8. 语义搜索（向量搜索）
+
+**端点**: `POST /api/memories/semantic-search`
+
+**请求体**:
+```json
+{
+  "query": "用户的爱好是什么？",
+  "limit": 10,
+  "threshold": 0.7,
+  "workspace_id": "default"
 }
 ```
 
@@ -175,11 +204,76 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 ### 11. 批量操作
 
-**批量添加**: `POST /api/memories/batch/add`
+**批量写入**: `POST /api/memories/batch/write`
+
+**请求体**:
+```json
+{
+  "memories": [
+    {"content": "记忆1", "type": "long_term", "importance": 3},
+    {"content": "记忆2", "type": "long_term", "importance": 4}
+  ]
+}
+```
 
 **批量更新**: `POST /api/memories/batch/update`
 
+**请求体**:
+```json
+{
+  "ids": [1, 2, 3],
+  "data": {"tags": ["新标签"], "importance": 4},
+  "agent_id": "default"
+}
+```
+
 **批量删除**: `POST /api/memories/batch/delete`
+
+**请求体**:
+```json
+{
+  "ids": [1, 2, 3],
+  "agent_id": "default"
+}
+```
+
+**批量标签更新**: `POST /api/memories/batch/tags`
+
+**请求体**:
+```json
+{
+  "ids": [1, 2, 3],
+  "tags": ["标签1", "标签2"],
+  "operation": "add",
+  "agent_id": "default"
+}
+```
+
+**批量归档**: `POST /api/memories/batch/archive`
+
+**批量恢复**: `POST /api/memories/batch/restore`
+
+### 12. Agent记忆表管理
+
+**获取Agent记忆表列表**: `GET /api/memories/agents`
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "agents": [
+    {"agent_id": "default", "table_name": "memories", "created_at": null},
+    {"agent_id": "agent-001", "table_name": "memories_agent_001", "created_at": "2026-02-16T10:00:00"}
+  ],
+  "total": 2
+}
+```
+
+### 13. 记忆统计
+
+**获取记忆统计**: `GET /api/memories/stats`
+
+**获取衰减统计**: `GET /api/memories/decay-stats`
 
 ---
 
@@ -641,21 +735,25 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 ```json
 {
   "message": "你好",
-  "session_id": "uuid-string",
-  "workspace_id": "default",
-  "use_memory": true,
-  "use_tools": true
+  "agent_id": "default",
+  "stream": false,
+  "images": null
 }
 ```
+
+**参数说明**:
+- `message` (string, 必需): 用户消息
+- `agent_id` (string, 可选): Agent ID，默认为 "default"
+- `stream` (boolean, 可选): 是否流式响应，默认为 true
+- `images` (array, 可选): base64编码的图片列表（多模态支持）
 
 **响应示例**:
 ```json
 {
   "status": "success",
   "response": "你好！有什么我可以帮助你的吗？",
-  "session_id": "uuid-string",
-  "memories_used": [],
-  "tools_used": []
+  "session_id": "agent-default",
+  "tokens_used": 150
 }
 ```
 
@@ -666,6 +764,150 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 **请求体**: 同`POST /api/chat`
 
 **响应**: Server-Sent Events (SSE) 流
+
+**事件类型**:
+- `session`: 会话信息
+- `thinking`: 思考过程（如模型支持）
+- `content`: 内容片段
+- `tool_call`: 工具调用
+- `tool_start`: 工具开始执行
+- `tool_result`: 工具执行结果
+- `done`: 完成
+- `error`: 错误
+
+### 3. 获取聊天历史
+
+**端点**: `GET /api/chat/history/{session_id}`
+
+**参数**:
+- `limit` (integer, 可选): 返回消息数量限制，默认50
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "session_id": "agent-default",
+  "session": {
+    "id": "agent-default",
+    "title": "默认助手的对话",
+    "message_count": 10
+  },
+  "messages": [
+    {"role": "user", "content": "你好"},
+    {"role": "assistant", "content": "你好！有什么我可以帮助你的吗？"}
+  ]
+}
+```
+
+### 4. 记忆管理模型聊天
+
+**端点**: `POST /api/memory-agent/chat/stream`
+
+**请求体**:
+```json
+{
+  "message": "帮我搜索关于编程的记忆"
+}
+```
+
+**说明**: 专门用于记忆管理的流式聊天接口，使用 memory-agent 配置，支持16个记忆管理工具。
+
+---
+
+## Agent 管理 API
+
+### 1. 获取Agent列表
+
+**端点**: `GET /api/agents`
+
+**响应示例**:
+```json
+[
+  {
+    "id": "default",
+    "name": "默认助手",
+    "description": "通用AI助手",
+    "system_prompt": "你是一个有帮助的AI助手...",
+    "model": "main",
+    "temperature": 0.7,
+    "max_tokens": 131072,
+    "use_memory": true,
+    "use_tools": true,
+    "memory_scene": "chat",
+    "is_default": true
+  },
+  {
+    "id": "memory-agent",
+    "name": "记忆管理助手",
+    "description": "专业的记忆管理助手",
+    "model": "memory",
+    "temperature": 0.3,
+    "max_tokens": 131072,
+    "use_memory": false,
+    "use_tools": true
+  }
+]
+```
+
+### 2. 创建Agent
+
+**端点**: `POST /api/agents`
+
+**请求体**:
+```json
+{
+  "name": "自定义助手",
+  "description": "我的自定义助手",
+  "system_prompt": "你是一个专业的编程助手...",
+  "model": "main",
+  "temperature": 0.7,
+  "max_tokens": 4096,
+  "use_memory": true,
+  "use_tools": true,
+  "memory_scene": "chat",
+  "vision_enabled": false
+}
+```
+
+### 3. 获取Agent详情
+
+**端点**: `GET /api/agents/{agent_id}`
+
+### 4. 更新Agent
+
+**端点**: `PUT /api/agents/{agent_id}`
+
+### 5. 删除Agent
+
+**端点**: `DELETE /api/agents/{agent_id}`
+
+### 6. 克隆Agent
+
+**端点**: `POST /api/agents/{agent_id}/clone`
+
+### 7. 获取Agent统计
+
+**端点**: `GET /api/agents/{agent_id}/stats`
+
+**响应示例**:
+```json
+{
+  "agent_id": "default",
+  "session_count": 5,
+  "total_messages": 120
+}
+```
+
+### 8. 获取Agent上下文
+
+**端点**: `GET /api/agents/{agent_id}/context`
+
+**参数**:
+- `limit` (integer, 可选): 返回消息数量限制，默认20
+
+### 9. 清空Agent上下文
+
+**端点**: `DELETE /api/agents/{agent_id}/context`
 
 ---
 

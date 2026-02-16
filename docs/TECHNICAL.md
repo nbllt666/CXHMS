@@ -14,7 +14,7 @@ CXHMS (CX-O History & Memory Service) 是一个基于 FastAPI 的智能记忆管
 
 **后端技术栈** 包含 Python 3.10+、FastAPI 0.104.1+ 作为 Web 框架、Pydantic 2.5.0+ 用于数据验证、SQLAlchemy 作为 ORM 层、Milvus Lite 2.3.3+ 作为默认向量存储，以及支持 Qdrant 和 Weaviate 作为可选向量存储后端。LLM 集成方面支持 Ollama、OpenAI 和 Anthropic 兼容接口，工具协议采用 MCP (Model Context Protocol)。
 
-**前端技术栈** 使用 React 18.3.1 构建 UI 框架、TypeScript 5.7.2 确保类型安全、Vite 6.0.6 作为构建工具、Tailwind CSS 3.4.17 处理样式、Zustand 5.0.2 进行状态管理、React Query 5.62.11 负责数据获取、Framer Motion 11.15.0 实现动画效果。
+**前端技术栈** 使用 React 18.3.1 构建 UI 框架、TypeScript 5.7.2 确保类型安全、Vite 6.0.6 作为构建工具、Tailwind CSS 3.4.17 处理样式、Zustand 5.0.2 进行状态管理、React Query 5.62.11 负责数据获取、Framer Motion 11.15.0 实现动画效果、Recharts 2.15.0 绘制图表、Lucide React 0.469.0 提供图标、Vitest 2.1.8 作为测试框架。
 
 ## 核心模块详解
 
@@ -52,7 +52,44 @@ ContextManager 负责管理会话和消息历史，采用 SQLite 存储会话和
 
 工具系统采用注册表模式设计，ToolRegistry 类负责工具的注册、发现和调用执行。
 
-**内置工具** 包括 calculator（数学计算）、datetime（日期时间获取）、search_memory（记忆搜索）、weather（天气查询）等。工具使用装饰器模式注册，通过 @registry.register() 装饰器将函数注册为工具。
+**内置工具** 包括 calculator（数学计算）、datetime（日期时间获取）、random（生成随机数）、json_format（格式化JSON字符串）等。工具使用装饰器模式注册，通过 @registry.register() 装饰器将函数注册为工具。
+
+**工具分类**:
+- `builtin`: 内置工具（calculator, datetime, random, json_format）
+- `master`: 主模型专属工具（write_long_term_memory, search_all_memories, call_assistant, set_alarm, mono, write_permanent_memory, ACP相关工具）
+- `summary`: 摘要模型工具
+- `assistant`: 记忆管理模型工具（16个记忆管理工具）
+- `mcp`: MCP协议工具
+
+**主模型专属工具**:
+- write_long_term_memory: 写入长期记忆
+- search_all_memories: 搜索所有记忆
+- call_assistant: 调用记忆管理模型
+- set_alarm: 设置定时提醒
+- mono: 保持信息在上下文中
+- write_permanent_memory: 写入永久记忆
+- acp_list_agents: 列出ACP Agent
+- acp_connect/acp_disconnect: ACP连接管理
+- acp_send_message: ACP消息发送
+- acp_create_group/acp_join_group/acp_leave_group: ACP群组管理
+
+**记忆管理模型工具** (16个):
+1. update_memory_node - 更新记忆节点内容
+2. search_memories - 搜索记忆（关键词搜索）
+3. delete_memory - 删除记忆（软删除）
+4. merge_memories - 合并多个相似记忆
+5. clean_expired - 清理已软删除的记忆
+6. export_memories - 导出记忆数据
+7. get_memory_stats - 获取记忆库统计信息
+8. search_by_time - 按时间范围搜索记忆
+9. search_by_tag - 按标签搜索记忆
+10. bulk_delete - 批量删除记忆
+11. restore_memory - 恢复软删除的记忆
+12. search_similar_memories - 搜索相似记忆
+13. get_chat_history - 获取聊天历史
+14. get_similar_memories - 获取相似记忆
+15. get_memory_logs - 获取操作日志
+16. get_available_commands - 获取可用命令列表
 
 **MCP 协议支持** MCPManager 类实现了 Model Context Protocol 协议，支持启动/停止 MCP 服务器、同步工具列表、调用远程工具。MCP 工具通过 JSON-RPC 与服务器通信。
 
@@ -70,23 +107,65 @@ ACP 协议用于多 Agent 通信，支持局域网发现、点对点通信、群
 
 ### 6. LLM 客户端系统
 
-**模型路由器** ModelRouter 类管理多个 LLM 模型客户端，支持按需切换不同模型。系统预配置三种模型用途：main（主对话模型）、summary（摘要生成）、memory（记忆处理）。
+**模型路由器** ModelRouter 类管理多个 LLM 模型客户端，支持按需切换不同模型。系统预配置三种模型用途：main（主对话模型，128k上下文）、summary（摘要生成）、memory（记忆处理）。
 
 **客户端实现** 支持 Ollama（本地）、VLLM/OpenAI 兼容接口、Anthropic Claude 三种客户端。所有客户端继承自 LLMClient 抽象基类，实现统一的 chat()、stream_chat()、get_embedding() 和 is_available() 接口。
 
-**流式响应** 使用 Server-Sent Events (SSE) 实现流式输出，客户端通过异步迭代器接收增量响应。
+**多模态支持** 支持图片输入，通过 base64 编码传递图片数据。Agent 配置中的 vision_enabled 字段控制是否启用多模态功能。
 
-### 7. API 路由系统
+**流式响应** 使用 Server-Sent Events (SSE) 实现流式输出，客户端通过异步迭代器接收增量响应。支持多种事件类型：session、thinking、content、tool_call、tool_start、tool_result、done、error。
 
-FastAPI 应用包含多个路由模块：chat.py 处理聊天对话请求、memory.py 处理记忆 CRUD 操作、context.py 处理会话和消息管理、tools.py 处理工具注册和调用、acp.py 处理 ACP 协议、agents.py 处理 Agent 配置、archive.py 处理归档管理。
+### 7. Agent 系统
 
-**聊天流程** 用户发送消息后，系统获取 Agent 配置、管理会话（创建或复用）、检索相关记忆（如果启用）、构建消息列表（系统提示词+记忆上下文+历史消息+当前消息）、调用 LLM 生成响应、保存助手响应到上下文、可选地保存重要内容到记忆。
+**Agent 配置管理** 位于 backend/api/routers/agents.py，提供 Agent 的 CRUD 操作、克隆、统计和上下文管理功能。
+
+**默认 Agent**:
+- `default`: 默认助手，使用 main 模型，128k 上下文，支持记忆和工具
+- `memory-agent`: 记忆管理助手，使用 memory 模型，128k 上下文，16个记忆管理工具
+
+**Agent 上下文持久化** AgentContextManager 类负责管理 Agent 的持久化上下文，支持跨会话保存消息历史。
+
+**聊天架构** 每个 Agent 对应一个固定会话（session_id = agent-{agent_id}），前端只发送最新消息，后端根据 Agent 配置构建完整上下文。
+
+### 8. API 路由系统
+
+FastAPI 应用包含多个路由模块：
+- `chat.py`: 处理聊天对话请求（支持Agent和多模态）
+- `memory.py`: 处理记忆 CRUD 操作、批量操作、语义搜索
+- `context.py`: 处理会话和消息管理
+- `tools.py`: 处理工具注册和调用、MCP服务器管理
+- `acp.py`: 处理 ACP 协议
+- `agents.py`: 处理 Agent 配置和上下文管理
+- `archive.py`: 处理归档管理
+- `backup.py`: 处理备份恢复
+- `websocket.py`: 处理 WebSocket 连接
+- `service.py`: 处理服务状态
+- `admin.py`: 处理管理员功能
+
+**聊天流程**:
+1. 用户发送消息后，系统获取 Agent 配置
+2. 管理 Agent 专属会话（每个 Agent 一个固定会话）
+3. 检索相关记忆（如果启用）
+4. 构建消息列表（系统提示词 + 记忆上下文 + 历史消息 + 当前消息）
+5. 获取工具列表（根据 Agent 配置过滤）
+6. 调用 LLM 生成响应（支持流式）
+7. 处理工具调用（如有）
+8. 保存助手响应到上下文
 
 ## 前端实现
 
 ### 应用结构
 
-前端采用 React + TypeScript 构建，使用 React Router 进行路由管理。主要页面包括：ChatPage（聊天页面）、MemoriesPage（记忆管理）、ArchivePage（归档管理）、SettingsPage（设置）、AcpPage（ACP 控制）、ToolsPage（工具管理）、AgentsPage（Agent 配置）、MemoryAgentPage（记忆 Agent 专用页面）。
+前端采用 React + TypeScript 构建，使用 React Router 进行路由管理。主要页面包括：
+- `DashboardPage`: 仪表盘页面
+- `ChatPage`: 聊天页面（支持Agent选择、流式响应、工具调用展示）
+- `MemoriesPage`: 记忆管理页面
+- `ArchivePage`: 归档管理页面
+- `SettingsPage`: 设置页面
+- `AcpPage`: ACP 控制页面
+- `ToolsPage`: 工具管理页面
+- `AgentsPage`: Agent 配置页面
+- `MemoryAgentPage`: 记忆管理 Agent 专用页面
 
 ### 状态管理
 
@@ -147,4 +226,4 @@ run_tests.py 提供统一的测试入口，支持选择性运行前后端测试�
 ---
 
 *文档版本: v1.0.0*  
-*最后更新: 2026-02-12*
+*最后更新: 2026-02-16*
