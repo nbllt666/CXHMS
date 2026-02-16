@@ -8,6 +8,14 @@ from .master_tools import (
     call_assistant,
     set_alarm,
     mono,
+    write_permanent_memory,
+    acp_list_agents,
+    acp_connect,
+    acp_disconnect,
+    acp_send_message,
+    acp_create_group,
+    acp_join_group,
+    acp_leave_group,
     set_dependencies as set_master_dependencies
 )
 from .summary_tools import (
@@ -50,6 +58,14 @@ __all__ = [
     "call_assistant",
     "set_alarm",
     "mono",
+    "write_permanent_memory",
+    "acp_list_agents",
+    "acp_connect",
+    "acp_disconnect",
+    "acp_send_message",
+    "acp_create_group",
+    "acp_join_group",
+    "acp_leave_group",
     "set_master_dependencies",
     # Summary tools
     "register_summary_tools",

@@ -66,7 +66,7 @@ export const DashboardPage: React.FC = () => {
       return {
         memoryCount: memories.total || 0,
         sessionCount: sessions.length || 0,
-        agentCount: agents.length || 0,
+        agentCount: agents.filter((a: { id: string }) => a.id !== 'memory-agent').length || 0,
         todayMessages: 0,
       };
     },

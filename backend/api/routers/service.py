@@ -512,3 +512,66 @@ async def get_startup_command(use_conda: bool = True):
         ]
 
     return startup_info
+
+
+@router.get("/service/models")
+async def get_available_models():
+    """获取可用的模型列表"""
+    import httpx
+    from config.settings import settings
+    
+    models = []
+    providers = []
+    
+    # 从配置获取模型信息
+    models_config = settings.config.models
+    
+    # main 模型
+    providers.append({
+        "id": "main",
+        "name": models_config.main.model,
+        "provider": models_config.main.provider,
+        "host": models_config.main.host,
+        "enabled": True
+    })
+    
+    # summary 模型
+    providers.append({
+        "id": "summary",
+        "name": models_config.summary.model,
+        "provider": models_config.summary.provider,
+        "host": models_config.summary.host,
+        "enabled": True
+    })
+    
+    # memory 模型
+    providers.append({
+        "id": "memory",
+        "name": models_config.memory.model,
+        "provider": models_config.memory.provider,
+        "host": models_config.memory.host,
+        "enabled": True
+    })
+    
+    # 尝试从 Ollama 获取可用模型列表
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            main_host = models_config.main.host
+            response = await client.get(f"{main_host}/api/tags")
+            if response.status_code == 200:
+                data = response.json()
+                for model in data.get('models', []):
+                    models.append({
+                        "name": model.get('name', ''),
+                        "size": model.get('size', 0),
+                        "modified_at": model.get('modified_at', ''),
+                        "details": model.get('details', {})
+                    })
+    except Exception as e:
+        logger.warning(f"无法获取 Ollama 模型列表: {e}")
+    
+    return {
+        "status": "success",
+        "providers": providers,
+        "ollama_models": models
+    }

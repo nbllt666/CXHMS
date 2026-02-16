@@ -1,0 +1,845 @@
+INFO:     Started server process [23292]
+INFO:     Waiting for application startup.
+2026-02-15 16:26:25 - backend.api.app - INFO - 正在启动CXHMS服务...
+2026-02-15 16:26:25 - backend.core.model_router - INFO - 初始化模型路由器...
+2026-02-15 16:26:25 - backend.core.model_router - INFO - 模型客户端已创建: main
+2026-02-15 16:26:25 - backend.core.model_router - INFO - 模型客户端已创建: summary
+2026-02-15 16:26:25 - backend.core.model_router - INFO - 模型客户端已创建: memory
+2026-02-15 16:26:26 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-02-15 16:26:26 - backend.core.model_router - INFO - 模型 main 可用 (延迟: 976.26ms)
+2026-02-15 16:26:27 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-02-15 16:26:27 - backend.core.model_router - INFO - 模型 summary 可用 (延迟: 815.44ms)
+2026-02-15 16:26:28 - httpx - INFO - HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+2026-02-15 16:26:28 - backend.core.model_router - INFO - 模型 memory 可用 (延迟: 825.68ms)
+2026-02-15 16:26:28 - backend.core.model_router - INFO - 模型路由器初始化完成
+2026-02-15 16:26:28 - backend.api.app - INFO - 模型路由器已启动
+2026-02-15 16:26:28 - backend.core.memory.archiver - INFO - 归档数据库表初始化完成
+2026-02-15 16:26:28 - backend.core.memory.manager - INFO - 归档器已初始化
+2026-02-15 16:26:28 - backend.core.memory.manager - INFO - 去重引擎已初始化
+2026-02-15 16:26:28 - backend.core.memory.manager - INFO - 记忆管理器初始化完成: db=data/memories.db
+2026-02-15 16:26:28 - backend.api.app - INFO - 记忆管理器已启动
+2026-02-15 16:26:28 - backend.api.app - INFO - 上下文管理器已启动
+2026-02-15 16:26:28 - backend.core.acp.manager - INFO - ACP数据加载完成: agents=0, connections=0, groups=0
+2026-02-15 16:26:28 - backend.core.acp.manager - INFO - ACP管理器初始化: agent_id=cxhms-agent-001, agent_name=CXHMS Agent
+2026-02-15 16:26:28 - backend.core.acp.manager - INFO - ACP数据加载完成: agents=0, connections=0, groups=0
+2026-02-15 16:26:28 - backend.core.acp.discover - INFO - 局域网发现服务已启动: discovery_port=9999, broadcast_port=9998
+2026-02-15 16:26:28 - backend.core.acp.manager - INFO - ACP Discovery服务已启动
+2026-02-15 16:26:28 - backend.core.acp.manager - INFO - ACP管理器已启动
+2026-02-15 16:26:28 - backend.api.app - INFO - ACP管理器已启动
+2026-02-15 16:26:28 - backend.api.app - INFO - LLM客户端已启动: ollama/qwen3-vl:8b
+2026-02-15 16:26:28 - backend.api.app - INFO - 副模型路由器已启动
+2026-02-15 16:26:28 - backend.core.tools.mcp - INFO - MCP管理器已连接到工具注册表
+2026-02-15 16:26:28 - backend.api.app - INFO - MCP管理器已启动
+2026-02-15 16:26:28 - backend.api.app - INFO - 内置工具已注册
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: write_long_term_memory (类别: memory)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: search_all_memories (类别: memory)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: call_assistant (类别: system)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: set_alarm (类别: reminder)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: mono (类别: context)
+2026-02-15 16:26:28 - backend.api.app - INFO - 主模型工具已注册
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: summarize_content (类别: summary)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: save_summary_memory (类别: summary)
+2026-02-15 16:26:28 - backend.api.app - INFO - 摘要模型工具已注册
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: update_memory_node (类别: assistant)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: search_memories (类别: assistant)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: delete_memory (类别: assistant)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: merge_memories (类别: assistant)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: clean_expired (类别: assistant)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: export_memories (类别: assistant)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: get_memory_stats (类别: assistant)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: search_by_time (类别: assistant)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: search_by_tag (类别: assistant)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: bulk_delete (类别: assistant)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: restore_memory (类别: assistant)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: search_similar_memories (类别: assistant)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: get_chat_history (类别: assistant)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: get_similar_memories (类别: assistant)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: get_memory_logs (类别: assistant)
+2026-02-15 16:26:28 - backend.core.tools.registry - INFO - 工具已注册: get_available_commands (类别: assistant)
+2026-02-15 16:26:28 - backend.api.app - INFO - 记忆管理模型工具已注册
+2026-02-15 16:26:28 - backend.api.app - INFO - 工具注册统计: 总计23个, 启用23个, 禁用0个
+2026-02-15 16:26:28 - numexpr.utils - INFO - Note: NumExpr detected 16 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 8.
+2026-02-15 16:26:28 - numexpr.utils - INFO - NumExpr defaulting to 8 threads.
+2026-02-15 16:26:29 - backend.core.memory.milvus_lite_store - ERROR - Milvus Lite初始化失败: <ConnectionConfigException: (code=1, message=milvus-lite is required for local database connections. Please install it with: pip install pymilvus[milvus_lite])>
+2026-02-15 16:26:29 - backend.core.memory.manager - INFO - 向量搜索功能已启用 (后端: milvus_lite)
+2026-02-15 16:26:29 - backend.api.app - INFO - 向量搜索已启用: milvus_lite
+2026-02-15 16:26:29 - backend.core.memory.decay_batch - INFO - 批量衰减处理器已启动，间隔: 24小时
+2026-02-15 16:26:29 - backend.api.app - INFO - 批量衰减处理器已启动
+2026-02-15 16:26:29 - backend.core.memory.decay_batch - INFO - 批量衰减处理完成
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:55740 - "GET /api/service/models HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 93, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 144, in simple_response
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\CXHMS\backend\api\routers\service.py", line 528, in get_available_models
+    for model_key, model_config in settings.config.models.items():
+AttributeError: 'ModelsConfig' object has no attribute 'items'
+INFO:     127.0.0.1:52479 - "GET /api/service/models HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 93, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 144, in simple_response
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\CXHMS\backend\api\routers\service.py", line 528, in get_available_models
+    for model_key, model_config in settings.config.models.items():
+AttributeError: 'ModelsConfig' object has no attribute 'items'
+INFO:     127.0.0.1:50142 - "GET /api/agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50142 - "GET /api/service/models HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 93, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 144, in simple_response
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\CXHMS\backend\api\routers\service.py", line 528, in get_available_models
+    for model_key, model_config in settings.config.models.items():
+AttributeError: 'ModelsConfig' object has no attribute 'items'
+INFO:     127.0.0.1:52367 - "GET /api/agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60679 - "GET /api/service/models HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 93, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 144, in simple_response
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\CXHMS\backend\api\routers\service.py", line 528, in get_available_models
+    for model_key, model_config in settings.config.models.items():
+AttributeError: 'ModelsConfig' object has no attribute 'items'
+INFO:     127.0.0.1:52367 - "GET /api/service/models HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 93, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 144, in simple_response
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\CXHMS\backend\api\routers\service.py", line 528, in get_available_models
+    for model_key, model_config in settings.config.models.items():
+AttributeError: 'ModelsConfig' object has no attribute 'items'
+INFO:     127.0.0.1:56196 - "GET /api/agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56196 - "GET /api/service/models HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 93, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 144, in simple_response
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\CXHMS\backend\api\routers\service.py", line 528, in get_available_models
+    for model_key, model_config in settings.config.models.items():
+AttributeError: 'ModelsConfig' object has no attribute 'items'
+INFO:     127.0.0.1:64573 - "GET /api/service/models HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 93, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 144, in simple_response
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\CXHMS\backend\api\routers\service.py", line 528, in get_available_models
+    for model_key, model_config in settings.config.models.items():
+AttributeError: 'ModelsConfig' object has no attribute 'items'
+INFO:     127.0.0.1:49888 - "GET /api/service/logs?lines=50 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49888 - "GET /api/service/models HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 93, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 144, in simple_response
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\CXHMS\backend\api\routers\service.py", line 528, in get_available_models
+    for model_key, model_config in settings.config.models.items():
+AttributeError: 'ModelsConfig' object has no attribute 'items'
+INFO:     127.0.0.1:62361 - "GET /api/service/models HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 93, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 144, in simple_response
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\CXHMS\backend\api\routers\service.py", line 528, in get_available_models
+    for model_key, model_config in settings.config.models.items():
+AttributeError: 'ModelsConfig' object has no attribute 'items'
+2026-02-15 16:26:31 - backend.api.routers.service - INFO - Found Conda Python: D:\CXHMS\Miniconda3\python.exe
+INFO:     127.0.0.1:64597 - "GET /api/service/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64597 - "GET /api/service/models HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 93, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 144, in simple_response
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\CXHMS\backend\api\routers\service.py", line 528, in get_available_models
+    for model_key, model_config in settings.config.models.items():
+AttributeError: 'ModelsConfig' object has no attribute 'items'
+INFO:     127.0.0.1:61180 - "GET /api/agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61180 - "GET /api/service/models HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 93, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 144, in simple_response
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\CXHMS\backend\api\routers\service.py", line 528, in get_available_models
+    for model_key, model_config in settings.config.models.items():
+AttributeError: 'ModelsConfig' object has no attribute 'items'
+INFO:     127.0.0.1:51400 - "GET /api/service/models HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 93, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 144, in simple_response
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\CXHMS\backend\api\routers\service.py", line 528, in get_available_models
+    for model_key, model_config in settings.config.models.items():
+AttributeError: 'ModelsConfig' object has no attribute 'items'
+INFO:     127.0.0.1:65489 - "GET /api/service/models HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 93, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 144, in simple_response
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\CXHMS\backend\api\routers\service.py", line 528, in get_available_models
+    for model_key, model_config in settings.config.models.items():
+AttributeError: 'ModelsConfig' object has no attribute 'items'
+INFO:     127.0.0.1:63693 - "GET /api/service/models HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 93, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 144, in simple_response
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\CXHMS\backend\api\routers\service.py", line 528, in get_available_models
+    for model_key, model_config in settings.config.models.items():
+AttributeError: 'ModelsConfig' object has no attribute 'items'
+INFO:     127.0.0.1:59002 - "GET /api/service/models HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 93, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 144, in simple_response
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\CXHMS\backend\api\routers\service.py", line 528, in get_available_models
+    for model_key, model_config in settings.config.models.items():
+AttributeError: 'ModelsConfig' object has no attribute 'items'
+INFO:     127.0.0.1:56823 - "GET /api/service/models HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "D:\CXHMS\Miniconda3\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\applications.py", line 1135, in __call__
+    await super().__call__(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 93, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\cors.py", line 144, in simple_response
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 115, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "D:\CXHMS\Miniconda3\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 101, in app
+    response = await f(request)
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 355, in app
+    raw_response = await run_endpoint_function(
+  File "D:\CXHMS\Miniconda3\lib\site-packages\fastapi\routing.py", line 243, in run_endpoint_function
+    return await dependant.call(**values)
+  File "D:\CXHMS\backend\api\routers\service.py", line 528, in get_available_models
+    for model_key, model_config in settings.config.models.items():
+AttributeError: 'ModelsConfig' object has no attribute 'items'

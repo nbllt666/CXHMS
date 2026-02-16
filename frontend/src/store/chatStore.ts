@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { api } from '../api/client'
 
 interface Agent {
   id: string
@@ -12,6 +13,7 @@ interface Agent {
   use_memory: boolean
   use_tools: boolean
   memory_scene: string
+  vision_enabled?: boolean
   is_default?: boolean
 }
 
@@ -29,29 +31,48 @@ interface ChatState {
   currentAgentId: string | null
   setAgents: (agents: Agent[]) => void
   setCurrentAgentId: (id: string | null) => void
-  
+  fetchAgents: () => Promise<void>
+
   sessions: Session[]
   currentSessionId: string | null
   setSessions: (sessions: Session[]) => void
   setCurrentSessionId: (id: string | null) => void
-  
+
   isChatExpanded: boolean
   setIsChatExpanded: (expanded: boolean) => void
 }
 
 export const useChatStore = create<ChatState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       agents: [],
       currentAgentId: null,
+
       setAgents: (agents) => set({ agents }),
+
       setCurrentAgentId: (id) => set({ currentAgentId: id }),
-      
+
+      fetchAgents: async () => {
+        try {
+          const data = await api.getAgents()
+          const filteredAgents = data.filter((agent: Agent) => agent.id !== 'memory-agent')
+          set({ agents: filteredAgents })
+
+          const { currentAgentId } = get()
+          if (!currentAgentId && filteredAgents.length > 0) {
+            const defaultAgent = filteredAgents.find((a: Agent) => a.is_default) || filteredAgents[0]
+            set({ currentAgentId: defaultAgent.id })
+          }
+        } catch (error) {
+          console.error('Failed to fetch agents:', error)
+        }
+      },
+
       sessions: [],
       currentSessionId: null,
       setSessions: (sessions) => set({ sessions }),
       setCurrentSessionId: (id) => set({ currentSessionId: id }),
-      
+
       isChatExpanded: false,
       setIsChatExpanded: (expanded) => set({ isChatExpanded: expanded }),
     }),

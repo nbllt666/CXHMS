@@ -21,6 +21,7 @@ class ChatRequest(BaseModel):
     message: str              # 用户最新消息
     agent_id: str = "default" # 使用哪个 Agent
     stream: bool = True       # 是否流式响应
+    images: Optional[List[str]] = None  # base64 encoded images
 
 
 class ChatResponse(BaseModel):
@@ -75,7 +76,8 @@ def build_messages(
     context_mgr,
     session_id: str,
     user_message: str,
-    memory_context: Optional[str] = None
+    memory_context: Optional[str] = None,
+    images: Optional[List[str]] = None
 ) -> List[Dict[str, str]]:
     """构建消息列表"""
     messages = []
@@ -98,8 +100,28 @@ def build_messages(
                 "content": msg.get("content", "")
             })
 
-    # 4. 用户最新消息
-    messages.append({"role": "user", "content": user_message})
+    # 4. 用户最新消息（支持多模态）
+    if images and agent_config.get("vision_enabled", False):
+        # 构建多模态消息
+        content = [{"type": "text", "text": user_message}]
+        for img_base64 in images:
+            # 提取 base64 数据部分（去掉 data:image/xxx;base64, 前缀）
+            if img_base64.startswith("data:"):
+                img_data = img_base64.split(",", 1)[1] if "," in img_base64 else img_base64
+                mime_type = img_base64.split(";")[0].split(":")[1] if ":" in img_base64 else "image/jpeg"
+            else:
+                img_data = img_base64
+                mime_type = "image/jpeg"
+            
+            content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{mime_type};base64,{img_data}"
+                }
+            })
+        messages.append({"role": "user", "content": content})
+    else:
+        messages.append({"role": "user", "content": user_message})
 
     return messages
 
@@ -126,15 +148,14 @@ async def chat(request: ChatRequest):
 
         # 3. 获取/创建 Agent 专属会话（每个 Agent 只有一个会话）
         session_id = f"agent-{request.agent_id}"
-        try:
-            context_mgr.get_session(session_id)
-        except:
-            session_id = context_mgr.create_session(
+        existing_session = context_mgr.get_session(session_id)
+        if not existing_session:
+            context_mgr.create_session(
                 workspace_id="agent-chats",
-                title=f"{agent_config['name']} 的对话"
+                title=f"{agent_config['name']} 的对话",
+                session_id=session_id,
+                metadata={"agent_id": request.agent_id}
             )
-            # 更新会话 ID 为 agent-{agent_id} 格式
-            context_mgr.update_session(session_id, metadata={"agent_id": request.agent_id})
 
         # 4. 添加用户消息到上下文
         context_mgr.add_message(
@@ -165,18 +186,22 @@ async def chat(request: ChatRequest):
             context_mgr=context_mgr,
             session_id=session_id,
             user_message=request.message,
-            memory_context=memory_context
+            memory_context=memory_context,
+            images=request.images
         )
 
-        # 7. 获取工具（如果 Agent 配置了工具）
-        tools = None
-        if agent_config.get("tools"):
-            from backend.core.tools import tool_registry
-            tools = []
-            for tool_name in agent_config.get("tools", []):
-                tool = tool_registry.get_tool(tool_name)
-                if tool and tool.enabled:
-                    tools.append(tool.to_openai_function())
+        # 7. 获取工具（只过滤 summary 类别）
+        from backend.core.tools import tool_registry
+        all_tools = tool_registry.list_openai_functions(include_builtin=True)
+        # 只过滤 summary 类别的工具
+        EXCLUDED_CATEGORIES = {"summary"}
+        tools = [
+            t for t in all_tools 
+            if tool_registry.get_tool(t.get("function", {}).get("name", "")) 
+            and tool_registry.get_tool(t.get("function", {}).get("name", "")).category not in EXCLUDED_CATEGORIES
+        ]
+        if not tools:
+            tools = None
 
         # 8. 调用 LLM
         response = await llm.chat(
@@ -189,16 +214,33 @@ async def chat(request: ChatRequest):
         final_response = response.content
         if hasattr(response, 'tool_calls') and response.tool_calls:
             # 处理工具调用
+            from backend.core.tools import tool_registry
+            from backend.core.tools.builtin import call_builtin_tool
+            
+            BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
+            
             for tool_call in response.tool_calls:
                 tool_name = tool_call.get('name') or tool_call.get('function', {}).get('name')
                 tool_args = tool_call.get('arguments') or tool_call.get('function', {}).get('arguments', '{}')
                 
                 if isinstance(tool_args, str):
-                    tool_args = json.loads(tool_args)
+                    try:
+                        tool_args = json.loads(tool_args)
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"工具参数 JSON 解析失败: {e}, 原始参数: {tool_args}")
+                        try:
+                            import ast
+                            tool_args = ast.literal_eval(tool_args)
+                            if not isinstance(tool_args, dict):
+                                tool_args = {}
+                        except Exception:
+                            tool_args = {}
                 
-                # 执行工具
-                from backend.core.tools import tool_registry
-                tool_result = tool_registry.call_tool(tool_name, tool_args)
+                # 执行工具（区分内置工具和注册工具）
+                if tool_name in BUILTIN_TOOL_NAMES:
+                    tool_result = call_builtin_tool(tool_name, tool_args or {})
+                else:
+                    tool_result = tool_registry.call_tool(tool_name, tool_args)
                 
                 # 添加工具调用结果到消息
                 messages.append({
@@ -262,12 +304,13 @@ async def chat_stream(request: ChatRequest):
 
         # 3. 获取/创建 Agent 专属会话（每个 Agent 只有一个会话）
         session_id = f"agent-{request.agent_id}"
-        try:
-            context_mgr.get_session(session_id)
-        except:
-            session_id = context_mgr.create_session(
+        existing_session = context_mgr.get_session(session_id)
+        if not existing_session:
+            context_mgr.create_session(
                 workspace_id="agent-chats",
-                title=f"{agent_config['name']} 的对话"
+                title=f"{agent_config['name']} 的对话",
+                session_id=session_id,
+                metadata={"agent_id": request.agent_id}
             )
 
         # 4. 添加用户消息到上下文
@@ -302,54 +345,39 @@ async def chat_stream(request: ChatRequest):
             memory_context=memory_context
         )
 
-        # 7. 获取工具（根据Agent模型类型过滤）
+        # 7. 获取工具（只过滤 summary 类别）
         from backend.core.tools import tool_registry
         from backend.core.tools.builtin import get_builtin_tools
         
-        # 获取Agent模型类型 (main/summary/memory)
-        agent_model = agent_config.get("model", "main").lower()
+        # 获取内置工具
+        builtin_tools = get_builtin_tools()
         
-        # 根据模型类型获取对应的工具
-        if agent_model == "main":
-            # 主模型：内置工具 + 5个主模型专属工具
-            builtin_tools = get_builtin_tools()
-            main_tool_names = {
-                "write_long_term_memory",
-                "search_all_memories", 
-                "call_assistant",
-                "set_alarm",
-                "mono"
-            }
-            # 获取主模型专属工具
-            main_tools = []
-            for tool_name in main_tool_names:
-                tool = tool_registry.get_tool(tool_name)
-                if tool and tool.enabled:
-                    main_tools.append(tool.to_openai_function())
-            tools = builtin_tools + main_tools
-        elif agent_model == "summary":
-            # 摘要模型：只使用 summary 类别的工具
-            tools = tool_registry.list_openai_functions(include_builtin=False, category="summary")
-        elif agent_model == "memory":
-            # 记忆管理模型：只使用 assistant 类别的工具
-            tools = tool_registry.list_openai_functions(include_builtin=False, category="assistant")
-        else:
-            # 其他模型：只返回内置工具
-            tools = tool_registry.list_openai_functions(include_builtin=True)
+        # 主模型专属工具列表
+        EXCLUDED_CATEGORIES = {"summary"}
+        main_tool_names = {
+            "write_long_term_memory",
+            "search_all_memories", 
+            "call_assistant",
+            "set_alarm",
+            "mono",
+            "write_permanent_memory",
+            "acp_list_agents",
+            "acp_connect",
+            "acp_disconnect",
+            "acp_send_message",
+            "acp_create_group",
+            "acp_join_group",
+            "acp_leave_group"
+        }
+        main_tools = []
+        for tool_name in main_tool_names:
+            tool = tool_registry.get_tool(tool_name)
+            if tool and tool.enabled and tool.category not in EXCLUDED_CATEGORIES:
+                main_tools.append(tool.to_openai_function())
         
-        # 如果 Agent 配置了特定工具，确保它们被包含
-        if agent_config.get("tools"):
-            for tool_name in agent_config.get("tools", []):
-                tool = tool_registry.get_tool(tool_name)
-                if tool and tool.enabled:
-                    tool_def = tool.to_openai_function()
-                    # 避免重复添加
-                    if tool_def not in tools:
-                        tools.append(tool_def)
-                else:
-                    logger.warning(f"工具 '{tool_name}' 未找到或已禁用")
+        tools = builtin_tools + main_tools
         
-        logger.info(f"为 Agent '{agent_config.get('name')}' (模型: {agent_model}) 配置了 {len(tools)} 个工具: {[t['function']['name'] for t in tools]}")
+        logger.info(f"为 Agent '{agent_config.get('name')}' 配置了 {len(tools)} 个工具: {[t['function']['name'] for t in tools]}")
             
         async def generate_stream():
             """生成流式响应"""
@@ -383,10 +411,11 @@ async def chat_stream(request: ChatRequest):
                                 full_response += content
                                 yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
                             elif chunk_type == 'tool_calls':
-                                tool_calls_buffer = chunk.get('tool_calls', [])
-                                logger.info(f"检测到工具调用: {tool_calls_buffer}")
+                                new_tool_calls = chunk.get('tool_calls', [])
+                                logger.info(f"检测到工具调用: {new_tool_calls}")
+                                tool_calls_buffer.extend(new_tool_calls)  # 累积工具调用
                                 # 发送工具调用事件
-                                for tool_call in tool_calls_buffer:
+                                for tool_call in new_tool_calls:
                                     yield f"data: {json.dumps({'type': 'tool_call', 'tool_call': tool_call})}\n\n"
                         # 兼容旧格式：字符串类型
                         elif isinstance(chunk, str):
@@ -396,21 +425,41 @@ async def chat_stream(request: ChatRequest):
                 # 处理工具调用
                 if tool_calls_buffer:
                     from backend.core.tools import tool_registry
+                    from backend.core.tools.builtin import call_builtin_tool
+                    
+                    # 定义内置工具名称集合
+                    BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
                     
                     for tool_call in tool_calls_buffer:
                         tool_name = tool_call.get('name') or tool_call.get('function', {}).get('name')
                         tool_args = tool_call.get('arguments') or tool_call.get('function', {}).get('arguments', '{}')
                         
                         if isinstance(tool_args, str):
-                            tool_args = json.loads(tool_args)
+                            try:
+                                tool_args = json.loads(tool_args)
+                            except json.JSONDecodeError as e:
+                                logger.warning(f"工具参数 JSON 解析失败: {e}, 原始参数: {tool_args}")
+                                try:
+                                    import ast
+                                    tool_args = ast.literal_eval(tool_args)
+                                    if not isinstance(tool_args, dict):
+                                        tool_args = {}
+                                except Exception:
+                                    tool_args = {}
                         
                         # 发送工具执行开始事件
                         yield f"data: {json.dumps({'type': 'tool_start', 'tool_name': tool_name})}\n\n"
                         
-                        # 执行工具
-                        tool_result = tool_registry.call_tool(tool_name, tool_args)
+                        # 执行工具（区分内置工具和注册工具）
+                        if tool_name in BUILTIN_TOOL_NAMES:
+                            tool_result = call_builtin_tool(tool_name, tool_args or {})
+                            logger.info(f"内置工具 {tool_name} 执行结果: {tool_result}")
+                        else:
+                            tool_result = tool_registry.call_tool(tool_name, tool_args)
+                            logger.info(f"注册工具 {tool_name} 执行结果: {tool_result}")
                         
                         # 发送工具执行结果事件
+                        logger.info(f"发送工具结果事件: tool_name={tool_name}, result type={type(tool_result)}")
                         yield f"data: {json.dumps({'type': 'tool_result', 'tool_name': tool_name, 'result': tool_result})}\n\n"
                         
                         # 添加工具调用结果到消息
@@ -489,13 +538,28 @@ async def get_chat_history(session_id: str, limit: int = 50):
         session = context_mgr.get_session(session_id)
         
         if not session:
-            logger.warning(f"Session not found: {session_id}, returning empty history")
-            return {
-                "status": "success",
-                "session_id": session_id,
-                "session": None,
-                "messages": []
-            }
+            # 如果会话不存在，检查是否为 Agent 会话
+            if session_id.startswith("agent-"):
+                agent_id = session_id.replace("agent-", "")
+                agent_config = get_agent_config(agent_id)
+                
+                if agent_config:
+                    # 使用传入的 session_id 创建会话，而不是生成新的 UUID
+                    context_mgr.create_session(
+                        session_id=session_id,
+                        workspace_id="agent-chats",
+                        title=f"{agent_config.get('name', 'Agent')} 的对话"
+                    )
+                    context_mgr.update_session(session_id, metadata={"agent_id": agent_id})
+                    session = context_mgr.get_session(session_id)
+            
+            if not session:
+                return {
+                    "status": "success",
+                    "session_id": session_id,
+                    "session": None,
+                    "messages": []
+                }
         
         messages = context_mgr.get_messages(session_id, limit=limit)
 
@@ -623,10 +687,11 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
                                 full_response += content
                                 yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
                             elif chunk_type == 'tool_calls':
-                                tool_calls_buffer = chunk.get('tool_calls', [])
-                                logger.info(f"检测到工具调用: {tool_calls_buffer}")
+                                new_tool_calls = chunk.get('tool_calls', [])
+                                logger.info(f"检测到工具调用: {new_tool_calls}")
+                                tool_calls_buffer.extend(new_tool_calls)  # 累积工具调用
                                 # 发送工具调用事件
-                                for tool_call in tool_calls_buffer:
+                                for tool_call in new_tool_calls:
                                     yield f"data: {json.dumps({'type': 'tool_call', 'tool_call': tool_call})}\n\n"
                         # 兼容旧格式：字符串类型
                         elif isinstance(chunk, str):
@@ -635,18 +700,34 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
 
                 # 处理工具调用
                 if tool_calls_buffer:
+                    from backend.core.tools.builtin import call_builtin_tool
+                    BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
+                    
                     for tool_call in tool_calls_buffer:
                         tool_name = tool_call.get('name') or tool_call.get('function', {}).get('name')
                         tool_args = tool_call.get('arguments') or tool_call.get('function', {}).get('arguments', '{}')
                         
                         if isinstance(tool_args, str):
-                            tool_args = json.loads(tool_args)
+                            try:
+                                tool_args = json.loads(tool_args)
+                            except json.JSONDecodeError as e:
+                                logger.warning(f"工具参数 JSON 解析失败: {e}, 原始参数: {tool_args}")
+                                try:
+                                    import ast
+                                    tool_args = ast.literal_eval(tool_args)
+                                    if not isinstance(tool_args, dict):
+                                        tool_args = {}
+                                except Exception:
+                                    tool_args = {}
                         
                         # 发送工具执行开始事件
                         yield f"data: {json.dumps({'type': 'tool_start', 'tool_name': tool_name})}\n\n"
                         
-                        # 执行工具
-                        tool_result = tool_registry.call_tool(tool_name, tool_args)
+                        # 执行工具（区分内置工具和注册工具）
+                        if tool_name in BUILTIN_TOOL_NAMES:
+                            tool_result = call_builtin_tool(tool_name, tool_args or {})
+                        else:
+                            tool_result = tool_registry.call_tool(tool_name, tool_args)
                         
                         # 发送工具执行结果事件
                         yield f"data: {json.dumps({'type': 'tool_result', 'tool_name': tool_name, 'result': tool_result})}\n\n"

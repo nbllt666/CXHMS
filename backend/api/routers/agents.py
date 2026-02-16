@@ -28,6 +28,7 @@ class AgentConfig(BaseModel):
     use_tools: bool = True
     memory_scene: str = "chat"  # chat/task/first_interaction
     decay_model: str = "exponential"  # exponential/ebbinghaus
+    vision_enabled: bool = False
     is_default: bool = False
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -45,6 +46,7 @@ class AgentCreateRequest(BaseModel):
     use_tools: bool = True
     memory_scene: str = "chat"
     decay_model: str = "exponential"
+    vision_enabled: bool = False
 
 
 class AgentUpdateRequest(BaseModel):
@@ -59,6 +61,7 @@ class AgentUpdateRequest(BaseModel):
     use_tools: Optional[bool] = None
     memory_scene: Optional[str] = None
     decay_model: Optional[str] = None
+    vision_enabled: Optional[bool] = None
 
 
 def _ensure_data_dir():
@@ -86,6 +89,7 @@ def _load_agents() -> List[dict]:
             "use_tools": True,
             "memory_scene": "chat",
             "decay_model": "exponential",
+            "vision_enabled": False,
             "is_default": True,
             "created_at": now,
             "updated_at": now
@@ -104,6 +108,7 @@ def _load_agents() -> List[dict]:
             "use_tools": True,
             "memory_scene": "task",
             "decay_model": "exponential",
+            "vision_enabled": False,
             "is_default": False,
             "created_at": now,
             "updated_at": now

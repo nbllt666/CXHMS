@@ -29,11 +29,7 @@ interface AgentTemplate {
   description: string;
   icon: string;
   system_prompt: string;
-  model: string;
   temperature: number;
-  use_memory: boolean;
-  use_tools: boolean;
-  vision_enabled: boolean;
   memory_scene: string;
 }
 
@@ -44,11 +40,7 @@ const AGENT_TEMPLATES: AgentTemplate[] = [
     description: '适合日常对话和一般问题解答',
     icon: '🤖',
     system_prompt: '你是一个有帮助的AI助手。请用中文回答用户的问题，保持友好和专业。',
-    model: 'main',
     temperature: 0.7,
-    use_memory: true,
-    use_tools: true,
-    vision_enabled: false,
     memory_scene: 'chat',
   },
   {
@@ -57,11 +49,7 @@ const AGENT_TEMPLATES: AgentTemplate[] = [
     description: '专注于代码编写、调试和技术问题',
     icon: '💻',
     system_prompt: '你是一个专业的编程助手。帮助用户编写、调试和优化代码。提供清晰的代码示例和解释，遵循最佳实践。',
-    model: 'main',
     temperature: 0.3,
-    use_memory: true,
-    use_tools: true,
-    vision_enabled: false,
     memory_scene: 'task',
   },
   {
@@ -70,11 +58,7 @@ const AGENT_TEMPLATES: AgentTemplate[] = [
     description: '帮助撰写文章、文案和创意内容',
     icon: '✍️',
     system_prompt: '你是一个专业的写作助手。帮助用户撰写各类文章、文案、故事等。注重文字的流畅性、逻辑性和创意表达。',
-    model: 'main',
     temperature: 0.8,
-    use_memory: true,
-    use_tools: false,
-    vision_enabled: false,
     memory_scene: 'chat',
   },
   {
@@ -83,11 +67,7 @@ const AGENT_TEMPLATES: AgentTemplate[] = [
     description: '数据分析和可视化专家',
     icon: '📊',
     system_prompt: '你是一个数据分析专家。帮助用户分析数据、生成报告、提供洞察。使用工具进行数据处理和可视化。',
-    model: 'main',
     temperature: 0.4,
-    use_memory: true,
-    use_tools: true,
-    vision_enabled: false,
     memory_scene: 'task',
   },
   {
@@ -96,11 +76,7 @@ const AGENT_TEMPLATES: AgentTemplate[] = [
     description: '多语言翻译和本地化专家',
     icon: '🌐',
     system_prompt: '你是一个专业的翻译助手。准确翻译各种语言，保持原文的风格和语境。支持中文、英文、日文等多种语言。',
-    model: 'main',
     temperature: 0.5,
-    use_memory: true,
-    use_tools: false,
-    vision_enabled: false,
     memory_scene: 'chat',
   },
   {
@@ -109,11 +85,7 @@ const AGENT_TEMPLATES: AgentTemplate[] = [
     description: '支持图像理解和多模态交互',
     icon: '👁️',
     system_prompt: '你是一个支持视觉理解的AI助手。可以分析图像内容，回答关于图片的问题，并提供视觉相关的建议。',
-    model: 'main',
     temperature: 0.7,
-    use_memory: true,
-    use_tools: true,
-    vision_enabled: true,
     memory_scene: 'chat',
   },
 ];
@@ -124,17 +96,16 @@ export function AgentsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+  const [availableModels, setAvailableModels] = useState<{name: string}[]>([]);
+  const [providers, setProviders] = useState<{id: string; name: string; provider: string}[]>([]);
 
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     system_prompt: '你是一个有帮助的AI助手。请用中文回答用户的问题。',
-    model: 'main',
+    model: '',
     temperature: 0.7,
     max_tokens: 0,
-    use_memory: true,
-    use_tools: true,
-    vision_enabled: false,
     memory_scene: 'chat',
     decay_model: 'exponential',
   });
@@ -150,7 +121,22 @@ export function AgentsPage() {
 
   useEffect(() => {
     loadAgents();
+    loadModels();
   }, []);
+
+  const loadModels = async () => {
+    try {
+      const data = await api.getAvailableModels();
+      if (data.providers) {
+        setProviders(data.providers);
+      }
+      if (data.ollama_models) {
+        setAvailableModels(data.ollama_models);
+      }
+    } catch (error) {
+      console.error('加载模型列表失败:', error);
+    }
+  };
 
   const loadAgents = async () => {
     try {
@@ -167,7 +153,13 @@ export function AgentsPage() {
 
   const handleCreate = async () => {
     try {
-      await api.createAgent(formData);
+      await api.createAgent({
+        ...formData,
+        model: 'main',
+        use_memory: true,
+        use_tools: true,
+        vision_enabled: true,
+      });
       setShowCreateModal(false);
       resetForm();
       loadAgents();
@@ -180,7 +172,13 @@ export function AgentsPage() {
   const handleUpdate = async () => {
     if (!editingAgent) return;
     try {
-      await api.updateAgent(editingAgent.id, formData);
+      await api.updateAgent(editingAgent.id, {
+        ...formData,
+        model: 'main',
+        use_memory: true,
+        use_tools: true,
+        vision_enabled: true,
+      });
       setEditingAgent(null);
       resetForm();
       loadAgents();
@@ -216,12 +214,9 @@ export function AgentsPage() {
       name: template.name,
       description: template.description,
       system_prompt: template.system_prompt,
-      model: template.model,
+      model: availableModels.length > 0 ? availableModels[0].name : '',
       temperature: template.temperature,
       max_tokens: 0,
-      use_memory: template.use_memory,
-      use_tools: template.use_tools,
-      vision_enabled: template.vision_enabled,
       memory_scene: template.memory_scene,
       decay_model: 'exponential',
     });
@@ -235,14 +230,11 @@ export function AgentsPage() {
       name: agent.name,
       description: agent.description,
       system_prompt: agent.system_prompt,
-      model: agent.model,
+      model: agent.model || '',
       temperature: agent.temperature,
       max_tokens: agent.max_tokens,
-      use_memory: agent.use_memory,
-      use_tools: agent.use_tools,
       memory_scene: agent.memory_scene,
       decay_model: agent.decay_model || 'exponential',
-      vision_enabled: agent.vision_enabled || false,
     });
   };
 
@@ -251,12 +243,9 @@ export function AgentsPage() {
       name: '',
       description: '',
       system_prompt: '你是一个有帮助的AI助手。请用中文回答用户的问题。',
-      model: 'main',
+      model: availableModels.length > 0 ? availableModels[0].name : '',
       temperature: 0.7,
       max_tokens: 0,
-      use_memory: true,
-      use_tools: true,
-      vision_enabled: false,
       memory_scene: 'chat',
       decay_model: 'exponential',
     });
@@ -373,21 +362,16 @@ export function AgentsPage() {
               <div className="space-y-2 text-xs text-[var(--color-text-tertiary)]">
                 <div className="flex items-center gap-2">
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  <span>模型: {agent.model || '默认'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  <span>模型: {agent.model}</span>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className={agent.use_memory ? 'text-[var(--color-success)]' : 'text-[var(--color-text-tertiary)]'}>
-                    {agent.use_memory ? '✓ 记忆' : '✗ 记忆'}
-                  </span>
-                  <span className={agent.use_tools ? 'text-[var(--color-success)]' : 'text-[var(--color-text-tertiary)]'}>
-                    {agent.use_tools ? '✓ 工具' : '✗ 工具'}
-                  </span>
-                  {agent.vision_enabled && (
-                    <span className="text-[var(--color-info)]">✓ 视觉</span>
-                  )}
+                  <span>温度: {agent.temperature} · 场景: {agent.memory_scene === 'chat' ? '闲聊' : agent.memory_scene === 'task' ? '任务' : '首次交互'}</span>
                 </div>
               </div>
 
@@ -412,11 +396,6 @@ export function AgentsPage() {
                 <h3 className="font-medium text-[var(--color-text-primary)]">{template.name}</h3>
               </div>
               <p className="text-sm text-[var(--color-text-secondary)]">{template.description}</p>
-              <div className="flex gap-2 mt-2">
-                {template.use_memory && <Badge variant="primary" size="sm">记忆</Badge>}
-                {template.use_tools && <Badge variant="secondary" size="sm">工具</Badge>}
-                {template.vision_enabled && <Badge variant="info" size="sm">视觉</Badge>}
-              </div>
             </button>
           ))}
         </div>
@@ -434,15 +413,24 @@ export function AgentsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1.5">模型类型</label>
+              <label className="block text-sm font-medium mb-1.5">模型</label>
               <select
-                value={formData.model || 'main'}
+                value={formData.model}
                 onChange={(e) => setFormData({ ...formData, model: e.target.value })}
                 className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
               >
-                <option value="main">主模型 (Main)</option>
-                <option value="summary">摘要模型 (Summary)</option>
-                <option value="memory">记忆管理模型 (Memory)</option>
+                <optgroup label="配置的提供商">
+                  {providers.map(p => (
+                    <option key={p.id} value={p.name}>{p.name} ({p.provider})</option>
+                  ))}
+                </optgroup>
+                {availableModels.length > 0 && (
+                  <optgroup label="Ollama 可用模型">
+                    {availableModels.map(m => (
+                      <option key={m.name} value={m.name}>{m.name}</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
           </div>
@@ -507,36 +495,6 @@ export function AgentsPage() {
               <option value="task">任务 (Task)</option>
               <option value="first_interaction">首次交互 (First Interaction)</option>
             </select>
-          </div>
-
-          <div className="flex gap-6 flex-wrap">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.use_memory}
-                onChange={(e) => setFormData({ ...formData, use_memory: e.target.checked })}
-                className="w-4 h-4 rounded"
-              />
-              <span className="text-sm">启用记忆</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.use_tools}
-                onChange={(e) => setFormData({ ...formData, use_tools: e.target.checked })}
-                className="w-4 h-4 rounded"
-              />
-              <span className="text-sm">启用工具</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.vision_enabled}
-                onChange={(e) => setFormData({ ...formData, vision_enabled: e.target.checked })}
-                className="w-4 h-4 rounded"
-              />
-              <span className="text-sm">启用多模态 (Vision)</span>
-            </label>
           </div>
 
           <div className="flex justify-end gap-3 pt-4">

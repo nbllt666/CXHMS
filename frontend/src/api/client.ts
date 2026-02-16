@@ -496,6 +496,7 @@ class ApiClient {
     max_tokens?: number
     use_memory?: boolean
     use_tools?: boolean
+    vision_enabled?: boolean
     memory_scene?: string
   }) {
     this._clearCache('/api/agents')
@@ -512,6 +513,7 @@ class ApiClient {
     max_tokens: number
     use_memory: boolean
     use_tools: boolean
+    vision_enabled: boolean
     memory_scene: string
   }>) {
     this._clearCache('/api/agents')
@@ -599,7 +601,8 @@ class ApiClient {
       tool_name?: string;
       result?: unknown;
     }) => void,
-    agentId?: string
+    agentId?: string,
+    images?: string[]
   ) {
     try {
       const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
@@ -608,7 +611,11 @@ class ApiClient {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('cxhms-token') || ''}`
         },
-        body: JSON.stringify({ message, agent_id: agentId || 'default' })
+        body: JSON.stringify({ 
+          message, 
+          agent_id: agentId || 'default',
+          images: images && images.length > 0 ? images : undefined
+        })
       })
 
       if (!response.ok) {
@@ -794,6 +801,13 @@ class ApiClient {
     } catch (fetchError) {
       onChunk({ type: 'error', error: `Fetch error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}` })
     }
+  }
+
+  // ========== Models API ==========
+
+  async getAvailableModels() {
+    const response = await this.client.get('/api/service/models')
+    return response.data
   }
 }
 

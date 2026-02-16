@@ -153,7 +153,8 @@ async def lifespan(app: FastAPI):
         set_master_dependencies(
             memory_manager=memory_manager,
             secondary_router=secondary_router,
-            context_manager=context_manager
+            context_manager=context_manager,
+            acp_manager=acp_manager
         )
         register_master_tools()
         master_tools_registered = True

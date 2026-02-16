@@ -111,7 +111,8 @@ class ContextManager:
         workspace_id: str = "default",
         title: str = "",
         user_id: Optional[str] = None,
-        metadata: Optional[Dict] = None
+        metadata: Optional[Dict] = None,
+        session_id: Optional[str] = None
     ) -> str:
         """创建会话
         
@@ -120,11 +121,12 @@ class ContextManager:
             title: 会话标题
             user_id: 用户ID
             metadata: 元数据
+            session_id: 自定义会话ID（可选）
             
         Returns:
             会话ID
         """
-        session_id = str(uuid.uuid4())
+        session_id = session_id or str(uuid.uuid4())
         conn = self._get_connection()
         cursor = conn.cursor()
 

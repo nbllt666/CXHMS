@@ -16,6 +16,7 @@ interface Message {
   memory_refs?: number[]
   tool_calls?: ToolCall[]
   thinking?: string
+  images?: string[]  // base64 encoded images
 }
 
 interface ToolCall {
@@ -143,7 +144,7 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
                       参数: {JSON.stringify(toolCall.arguments, null, 2)}
                     </div>
                   )}
-                  {Boolean(toolCall.result) && (
+                  {toolCall.result !== undefined && (
                     <div className="text-[var(--color-text-tertiary)] font-mono text-[10px]">
                       结果: {JSON.stringify(toolCall.result, null, 2)}
                     </div>
@@ -163,11 +164,18 @@ export function ChatPage() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showSummaryModal, setShowSummaryModal] = useState(false)
+  const [selectedImages, setSelectedImages] = useState<string[]>([])  // base64 images
+  const fileInputRef = useRef<HTMLInputElement>(null)
   
   const {
     agents,
     currentAgentId,
+    fetchAgents,
   } = useChatStore()
+
+  useEffect(() => {
+    fetchAgents()
+  }, [])
 
   const currentAgent = agents.find(a => a.id === currentAgentId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -184,20 +192,27 @@ export function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
+  // 只在用户发送消息或AI开始响应时自动滚动
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(false)
+
   useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+    if (shouldAutoScroll) {
+      scrollToBottom()
+      setShouldAutoScroll(false)
+    }
+  }, [messages, shouldAutoScroll])
 
   const loadAgentHistory = async (agentId: string) => {
     try {
       const data = await api.getChatHistory(agentId)
       if (data.messages) {
-        const formattedMessages = data.messages.map((msg: {id?: string; role: 'user' | 'assistant'; content: string; created_at?: string; thinking?: string}) => ({
+        const formattedMessages = data.messages.map((msg: {id?: string; role: 'user' | 'assistant'; content: string; created_at?: string; thinking?: string; images?: string[]}) => ({
           id: msg.id || Math.random().toString(),
           role: msg.role,
           content: msg.content,
           timestamp: msg.created_at || new Date().toISOString(),
-          thinking: msg.thinking
+          thinking: msg.thinking,
+          images: msg.images
         }))
         setMessages(formattedMessages)
       }
@@ -207,14 +222,41 @@ export function ChatPage() {
     }
   }
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files) return
+
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith('image/')) return
+      if (selectedImages.length >= 4) {
+        alert('最多只能上传4张图片')
+        return
+      }
+
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string
+        setSelectedImages(prev => [...prev, base64])
+      }
+      reader.readAsDataURL(file)
+    })
+
+    e.target.value = ''
+  }
+
+  const removeImage = (index: number) => {
+    setSelectedImages(prev => prev.filter((_, i) => i !== index))
+  }
+
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return
+    if ((!input.trim() && selectedImages.length === 0) || isLoading) return
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
       content: input,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      images: selectedImages.length > 0 ? selectedImages : undefined
     }
 
     const tempAssistantId = (Date.now() + 1).toString()
@@ -229,13 +271,16 @@ export function ChatPage() {
 
     setMessages(prev => [...prev, userMessage, streamingMessage])
     setInput('')
+    setSelectedImages([])
     setIsLoading(true)
+    setShouldAutoScroll(true)
 
     try {
       await api.sendMessageStream(
         userMessage.content,
         (chunk) => {
           if (chunk.type === 'content' && chunk.content) {
+            // Handle content streaming
             setMessages(prev => {
               const lastMsg = prev[prev.length - 1]
               if (lastMsg && lastMsg.id === tempAssistantId) {
@@ -276,15 +321,19 @@ export function ChatPage() {
               }
               return prev
             })
-          } else if (chunk.type === 'tool_result' && chunk.tool_name && chunk.result) {
+          } else if (chunk.type === 'tool_result' && chunk.tool_name && chunk.result !== undefined) {
+            console.log('收到工具结果:', chunk.tool_name, chunk.result)
             setMessages(prev => {
               const lastMsg = prev[prev.length - 1]
+              console.log('当前最后消息:', lastMsg?.id, '期望ID:', tempAssistantId, 'tool_calls:', lastMsg?.tool_calls)
               if (lastMsg && lastMsg.id === tempAssistantId && lastMsg.tool_calls) {
+                const updatedToolCalls: ToolCall[] = lastMsg.tool_calls.map(tc =>
+                  tc.name === chunk.tool_name ? { ...tc, status: 'completed' as const, result: chunk.result } : tc
+                )
+                console.log('更新后的工具调用:', updatedToolCalls)
                 return [...prev.slice(0, -1), {
                   ...lastMsg,
-                  tool_calls: lastMsg.tool_calls.map(tc =>
-                    tc.name === chunk.tool_name ? { ...tc, status: 'completed', result: chunk.result } : tc
-                  )
+                  tool_calls: updatedToolCalls
                 }]
               }
               return prev
@@ -315,7 +364,8 @@ export function ChatPage() {
             throw new Error(chunk.error || '未知错误')
           }
         },
-        currentAgentId || 'default'
+        currentAgentId || 'default',
+        userMessage.images
       )
     } catch (error) {
       console.error('发送消息失败:', error)
@@ -351,7 +401,8 @@ export function ChatPage() {
     try {
       const sessionId = `agent-${currentAgentId}`
       await api.deleteSession(sessionId)
-      setMessages([])
+      // 清空后重新加载历史（会创建新的空会话）
+      await loadAgentHistory(currentAgentId || 'default')
       alert('上下文已清空')
     } catch (error) {
       console.error('清空上下文失败:', error)
@@ -506,7 +557,52 @@ export function ChatPage() {
       </div>
 
       <div className="border-t border-[var(--color-border)] pt-4">
+        {/* 图片预览 */}
+        {selectedImages.length > 0 && (
+          <div className="flex gap-2 mb-2 flex-wrap">
+            {selectedImages.map((img, index) => (
+              <div key={index} className="relative">
+                <img 
+                  src={img} 
+                  alt={`预览 ${index + 1}`} 
+                  className="w-16 h-16 object-cover rounded border border-[var(--color-border)]"
+                />
+                <button
+                  onClick={() => removeImage(index)}
+                  className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center hover:bg-red-600"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        
         <div className="flex gap-2">
+          {/* 图片上传按钮 - 仅当 Agent 启用视觉时显示 */}
+          {currentAgent?.vision_enabled && (
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleImageSelect}
+              className="hidden"
+            />
+          )}
+          {currentAgent?.vision_enabled && (
+            <Button
+              variant="secondary"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isLoading || selectedImages.length >= 4}
+              className="self-end"
+              title="上传图片（最多4张）"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </Button>
+          )}
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -517,7 +613,7 @@ export function ChatPage() {
           />
           <Button
             onClick={handleSend}
-            disabled={!input.trim() || isLoading}
+            disabled={(!input.trim() && selectedImages.length === 0) || isLoading}
             loading={isLoading}
             className="self-end"
           >
@@ -528,6 +624,7 @@ export function ChatPage() {
         </div>
         <p className="text-xs text-[var(--color-text-tertiary)] mt-2 text-center">
           按 Enter 发送，Shift + Enter 换行
+          {currentAgent?.vision_enabled && ' · 支持图片上传'}
         </p>
       </div>
 

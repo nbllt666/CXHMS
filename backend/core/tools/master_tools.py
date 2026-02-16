@@ -10,14 +10,16 @@ from .registry import tool_registry
 _MEMORY_MANAGER = None
 _SECONDARY_ROUTER = None
 _CONTEXT_MANAGER = None
+_ACP_MANAGER = None
 
 
-def set_dependencies(memory_manager=None, secondary_router=None, context_manager=None):
+def set_dependencies(memory_manager=None, secondary_router=None, context_manager=None, acp_manager=None):
     """设置依赖的组件"""
-    global _MEMORY_MANAGER, _SECONDARY_ROUTER, _CONTEXT_MANAGER
+    global _MEMORY_MANAGER, _SECONDARY_ROUTER, _CONTEXT_MANAGER, _ACP_MANAGER
     _MEMORY_MANAGER = memory_manager
     _SECONDARY_ROUTER = secondary_router
     _CONTEXT_MANAGER = context_manager
+    _ACP_MANAGER = acp_manager
 
 
 def get_memory_manager():
@@ -33,6 +35,11 @@ def get_secondary_router():
 def get_context_manager():
     """获取上下文管理器"""
     return _CONTEXT_MANAGER
+
+
+def get_acp_manager():
+    """获取 ACP 管理器"""
+    return _ACP_MANAGER
 
 
 def register_master_tools():
@@ -202,6 +209,218 @@ def register_master_tools():
         ]
     )
 
+    # 6. write_permanent_memory - 写入永久记忆
+    tool_registry.register(
+        name="write_permanent_memory",
+        description="将关键信息写入永久记忆库。永久记忆永远不会被衰减或删除，适合存储用户的核心理念、重要事实等。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "要永久记住的内容（用户的核心信念、重要事实、关键偏好等）"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "标签列表，用于后续检索",
+                    "default": []
+                }
+            },
+            "required": ["content"]
+        },
+        function=write_permanent_memory,
+        category="memory",
+        tags=["memory", "permanent", "save"],
+        examples=[
+            "永久记住用户的名字叫张三",
+            "记住用户是素食主义者",
+            "保存用户的核心理念：诚实是最重要的品质"
+        ]
+    )
+
+    # 7. acp_list_agents - 列出可用的远程 Agent
+    tool_registry.register(
+        name="acp_list_agents",
+        description="列出 ACP 网络中所有可用的远程 Agent。可以查看哪些 Agent 在线并可以连接。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "online_only": {
+                    "type": "boolean",
+                    "description": "是否只显示在线的 Agent",
+                    "default": True
+                }
+            },
+            "required": []
+        },
+        function=acp_list_agents,
+        category="acp",
+        tags=["acp", "agent", "network"],
+        examples=[
+            "列出所有在线的 Agent",
+            "查看网络中有哪些 Agent"
+        ]
+    )
+
+    # 8. acp_connect - 连接到远程 Agent
+    tool_registry.register(
+        name="acp_connect",
+        description="连接到 ACP 网络中的远程 Agent，建立通信通道。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "type": "string",
+                    "description": "要连接的远程 Agent ID"
+                },
+                "host": {
+                    "type": "string",
+                    "description": "远程 Agent 的主机地址（可选，如果 Agent 已注册则不需要）"
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "远程 Agent 的端口（可选）"
+                }
+            },
+            "required": ["agent_id"]
+        },
+        function=acp_connect,
+        category="acp",
+        tags=["acp", "connect", "network"],
+        examples=[
+            "连接到 Agent 'assistant-001'",
+            "连接到远程 Agent"
+        ]
+    )
+
+    # 9. acp_disconnect - 断开与远程 Agent 的连接
+    tool_registry.register(
+        name="acp_disconnect",
+        description="断开与远程 Agent 的连接。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "connection_id": {
+                    "type": "string",
+                    "description": "要断开的连接 ID"
+                }
+            },
+            "required": ["connection_id"]
+        },
+        function=acp_disconnect,
+        category="acp",
+        tags=["acp", "disconnect", "network"],
+        examples=[
+            "断开与 Agent 的连接"
+        ]
+    )
+
+    # 10. acp_send_message - 向远程 Agent 发送消息
+    tool_registry.register(
+        name="acp_send_message",
+        description="向远程 Agent 发送消息。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "type": "string",
+                    "description": "目标 Agent ID"
+                },
+                "message": {
+                    "type": "string",
+                    "description": "要发送的消息内容"
+                },
+                "message_type": {
+                    "type": "string",
+                    "enum": ["chat", "task", "query"],
+                    "description": "消息类型",
+                    "default": "chat"
+                }
+            },
+            "required": ["agent_id", "message"]
+        },
+        function=acp_send_message,
+        category="acp",
+        tags=["acp", "message", "network"],
+        examples=[
+            "向 Agent 发送消息",
+            "请求其他 Agent 帮助处理任务"
+        ]
+    )
+
+    # 11. acp_create_group - 创建 Agent 群组
+    tool_registry.register(
+        name="acp_create_group",
+        description="创建一个 Agent 群组，用于群组通信和协作。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "群组名称"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "群组描述",
+                    "default": ""
+                }
+            },
+            "required": ["name"]
+        },
+        function=acp_create_group,
+        category="acp",
+        tags=["acp", "group", "network"],
+        examples=[
+            "创建一个项目协作群组",
+            "创建讨论组"
+        ]
+    )
+
+    # 12. acp_join_group - 加入群组
+    tool_registry.register(
+        name="acp_join_group",
+        description="加入一个已存在的 Agent 群组。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "group_id": {
+                    "type": "string",
+                    "description": "要加入的群组 ID"
+                }
+            },
+            "required": ["group_id"]
+        },
+        function=acp_join_group,
+        category="acp",
+        tags=["acp", "group", "network"],
+        examples=[
+            "加入协作群组"
+        ]
+    )
+
+    # 13. acp_leave_group - 离开群组
+    tool_registry.register(
+        name="acp_leave_group",
+        description="离开一个 Agent 群组。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "group_id": {
+                    "type": "string",
+                    "description": "要离开的群组 ID"
+                }
+            },
+            "required": ["group_id"]
+        },
+        function=acp_leave_group,
+        category="acp",
+        tags=["acp", "group", "network"],
+        examples=[
+            "离开协作群组"
+        ]
+    )
+
 
 def write_long_term_memory(content: str, importance: int = 3, tags: List[str] = None) -> Dict[str, Any]:
     """写入长期记忆"""
@@ -332,3 +551,221 @@ def mono(content: str, session_id: str = None, rounds: int = 1) -> Dict[str, Any
         }
     except Exception as e:
         return {"error": f"添加上下文信息失败: {str(e)}"}
+
+
+def write_permanent_memory(content: str, tags: List[str] = None) -> Dict[str, Any]:
+    """写入永久记忆"""
+    mm = get_memory_manager()
+    if not mm:
+        return {"error": "记忆管理器不可用"}
+    
+    try:
+        memory_id = mm.write_permanent_memory(
+            content=content,
+            tags=tags or [],
+            is_from_main=True
+        )
+        return {
+            "status": "success",
+            "message": "永久记忆已保存",
+            "memory_id": memory_id,
+            "content_preview": content[:100] + "..." if len(content) > 100 else content
+        }
+    except Exception as e:
+        return {"error": f"保存永久记忆失败: {str(e)}"}
+
+
+async def acp_list_agents(online_only: bool = True) -> Dict[str, Any]:
+    """列出可用的远程 Agent"""
+    acp = get_acp_manager()
+    if not acp:
+        return {"error": "ACP 管理器不可用"}
+    
+    try:
+        agents = await acp.list_agents(online_only=online_only)
+        return {
+            "status": "success",
+            "count": len(agents),
+            "agents": agents
+        }
+    except Exception as e:
+        return {"error": f"获取 Agent 列表失败: {str(e)}"}
+
+
+async def acp_connect(agent_id: str, host: str = None, port: int = None) -> Dict[str, Any]:
+    """连接到远程 Agent"""
+    acp = get_acp_manager()
+    if not acp:
+        return {"error": "ACP 管理器不可用"}
+    
+    try:
+        from backend.core.acp.manager import ACPConnectionInfo
+        import uuid
+        
+        # 检查 Agent 是否已注册
+        agent = await acp.get_agent(agent_id)
+        if agent:
+            host = host or agent.get("host", "")
+            port = port or agent.get("port", 0)
+        
+        if not host:
+            return {"error": f"Agent '{agent_id}' 未注册，请提供 host 和 port"}
+        
+        connection = ACPConnectionInfo(
+            id=str(uuid.uuid4()),
+            local_agent_id=acp._local_agent_id,
+            remote_agent_id=agent_id,
+            remote_agent_name=agent.get("name", agent_id) if agent else agent_id,
+            host=host,
+            port=port,
+            status="connected",
+            connected_at=datetime.now().isoformat()
+        )
+        
+        await acp.create_connection(connection)
+        
+        return {
+            "status": "success",
+            "connection_id": connection.id,
+            "remote_agent_id": agent_id,
+            "remote_agent_name": connection.remote_agent_name,
+            "host": host,
+            "port": port
+        }
+    except Exception as e:
+        return {"error": f"连接 Agent 失败: {str(e)}"}
+
+
+async def acp_disconnect(connection_id: str) -> Dict[str, Any]:
+    """断开与远程 Agent 的连接"""
+    acp = get_acp_manager()
+    if not acp:
+        return {"error": "ACP 管理器不可用"}
+    
+    try:
+        success = await acp.delete_connection(connection_id)
+        if success:
+            return {
+                "status": "success",
+                "message": f"连接 {connection_id} 已断开"
+            }
+        else:
+            return {"error": f"连接 {connection_id} 不存在"}
+    except Exception as e:
+        return {"error": f"断开连接失败: {str(e)}"}
+
+
+async def acp_send_message(agent_id: str, message: str, message_type: str = "chat") -> Dict[str, Any]:
+    """向远程 Agent 发送消息"""
+    acp = get_acp_manager()
+    if not acp:
+        return {"error": "ACP 管理器不可用"}
+    
+    try:
+        from backend.core.acp.manager import ACPMessageInfo
+        import uuid
+        
+        msg = ACPMessageInfo(
+            id=str(uuid.uuid4()),
+            from_agent_id=acp._local_agent_id,
+            to_agent_id=agent_id,
+            message_type=message_type,
+            content=message,
+            created_at=datetime.now().isoformat()
+        )
+        
+        await acp.send_message(msg)
+        
+        return {
+            "status": "success",
+            "message_id": msg.id,
+            "to_agent_id": agent_id,
+            "message_type": message_type
+        }
+    except Exception as e:
+        return {"error": f"发送消息失败: {str(e)}"}
+
+
+async def acp_create_group(name: str, description: str = "") -> Dict[str, Any]:
+    """创建 Agent 群组"""
+    acp = get_acp_manager()
+    if not acp:
+        return {"error": "ACP 管理器不可用"}
+    
+    try:
+        from backend.core.acp.manager import ACPGroupInfo
+        import uuid
+        
+        group = ACPGroupInfo(
+            id=str(uuid.uuid4()),
+            name=name,
+            description=description,
+            creator_id=acp._local_agent_id,
+            creator_name=acp._local_agent_name,
+            members=[{
+                "agent_id": acp._local_agent_id,
+                "agent_name": acp._local_agent_name,
+                "joined_at": datetime.now().isoformat()
+            }],
+            created_at=datetime.now().isoformat(),
+            updated_at=datetime.now().isoformat()
+        )
+        
+        await acp.create_group(group)
+        
+        return {
+            "status": "success",
+            "group_id": group.id,
+            "name": name,
+            "description": description
+        }
+    except Exception as e:
+        return {"error": f"创建群组失败: {str(e)}"}
+
+
+async def acp_join_group(group_id: str) -> Dict[str, Any]:
+    """加入群组"""
+    acp = get_acp_manager()
+    if not acp:
+        return {"error": "ACP 管理器不可用"}
+    
+    try:
+        member = {
+            "agent_id": acp._local_agent_id,
+            "agent_name": acp._local_agent_name,
+            "joined_at": datetime.now().isoformat()
+        }
+        
+        success = await acp.add_group_member(group_id, member)
+        
+        if success:
+            return {
+                "status": "success",
+                "group_id": group_id,
+                "message": f"已加入群组 {group_id}"
+            }
+        else:
+            return {"error": f"群组 {group_id} 不存在"}
+    except Exception as e:
+        return {"error": f"加入群组失败: {str(e)}"}
+
+
+async def acp_leave_group(group_id: str) -> Dict[str, Any]:
+    """离开群组"""
+    acp = get_acp_manager()
+    if not acp:
+        return {"error": "ACP 管理器不可用"}
+    
+    try:
+        success = await acp.remove_group_member(group_id, acp._local_agent_id)
+        
+        if success:
+            return {
+                "status": "success",
+                "group_id": group_id,
+                "message": f"已离开群组 {group_id}"
+            }
+        else:
+            return {"error": f"群组 {group_id} 不存在或你不在该群组中"}
+    except Exception as e:
+        return {"error": f"离开群组失败: {str(e)}"}
