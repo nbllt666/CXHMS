@@ -164,6 +164,7 @@ export function ChatPage() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showSummaryModal, setShowSummaryModal] = useState(false)
+  const [autoStartSummary, setAutoStartSummary] = useState(false)
   const [selectedImages, setSelectedImages] = useState<string[]>([])  // base64 images
   const fileInputRef = useRef<HTMLInputElement>(null)
   
@@ -423,33 +424,8 @@ export function ChatPage() {
   }
 
   const handleAutoSummary = async () => {
-    if (!confirm('确定要自动摘要当前对话吗？这将分析对话内容并保存关键记忆。')) return
-    
-    try {
-      const contextText = getContextText()
-      const fullPrompt = `请对以下对话进行自动摘要，生成多条记忆。每条记忆应包含：
-1. 内容（简洁明了）
-2. 重要性（1-10，10为最重要）
-3. 时间（格式：yyyymmddhhmm，如202602112235）
-
-对话内容：
-${contextText}
-
-请使用 save_summary_memory 工具保存每条记忆。你可以保存多条记忆。`
-
-      await api.sendMessageStream(
-        fullPrompt,
-        (chunk: { type: string; content?: string; done?: boolean; error?: string }) => {
-          if (chunk.done) {
-            alert('自动摘要完成')
-          }
-        },
-        currentAgentId || 'default'
-      )
-    } catch (error) {
-      console.error('自动摘要失败:', error)
-      alert('自动摘要失败')
-    }
+    setAutoStartSummary(true)
+    setShowSummaryModal(true)
   }
 
   return (
@@ -674,10 +650,14 @@ ${contextText}
 
       <SummaryModal
         isOpen={showSummaryModal}
-        onClose={() => setShowSummaryModal(false)}
+        onClose={() => {
+          setShowSummaryModal(false)
+          setAutoStartSummary(false)
+        }}
         contextText={getContextText()}
         agentId={currentAgentId || 'default'}
         sessionId={currentAgentId || 'default'}
+        autoStart={autoStartSummary}
       />
     </div>
   )
