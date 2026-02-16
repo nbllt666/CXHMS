@@ -21,6 +21,8 @@ from .master_tools import (
 from .summary_tools import (
     register_summary_tools,
     summarize_content,
+    get_session_messages,
+    clear_summary_context,
     set_dependencies as set_summary_dependencies
 )
 from .assistant_tools import (
@@ -70,6 +72,8 @@ __all__ = [
     # Summary tools
     "register_summary_tools",
     "summarize_content",
+    "get_session_messages",
+    "clear_summary_context",
     "set_summary_dependencies",
     # Assistant tools
     "register_assistant_tools",

@@ -7,13 +7,15 @@ from .registry import tool_registry
 
 _MEMORY_MANAGER = None
 _MODEL_ROUTER = None
+_CONTEXT_MANAGER = None
 
 
-def set_dependencies(memory_manager=None, model_router=None):
+def set_dependencies(memory_manager=None, model_router=None, context_manager=None):
     """设置依赖的组件"""
-    global _MEMORY_MANAGER, _MODEL_ROUTER
+    global _MEMORY_MANAGER, _MODEL_ROUTER, _CONTEXT_MANAGER
     _MEMORY_MANAGER = memory_manager
     _MODEL_ROUTER = model_router
+    _CONTEXT_MANAGER = context_manager
 
 
 def get_summary_client():
@@ -23,6 +25,11 @@ def get_summary_client():
         if client:
             return client
     return None
+
+
+def get_context_manager():
+    """获取上下文管理器"""
+    return _CONTEXT_MANAGER
 
 
 def register_summary_tools():
@@ -95,6 +102,57 @@ def register_summary_tools():
         examples=[
             "保存这条记忆：用户喜欢喝咖啡，重要性8，时间202602112300",
             "记录：用户明天要开会，重要性9，时间202602111200"
+        ]
+    )
+
+    # 3. get_session_messages - 获取会话消息
+    tool_registry.register(
+        name="get_session_messages",
+        description="获取指定会话的消息列表，用于了解当前对话上下文。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "会话ID"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "获取的消息数量限制",
+                    "default": 50
+                }
+            },
+            "required": ["session_id"]
+        },
+        function=get_session_messages,
+        category="summary",
+        tags=["summary", "context", "messages"],
+        examples=[
+            "获取当前会话的消息",
+            "查看最近的对话内容"
+        ]
+    )
+
+    # 4. clear_summary_context - 清空摘要助手上下文
+    tool_registry.register(
+        name="clear_summary_context",
+        description="清空摘要助手会话的所有消息，重置对话上下文。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "要清空的会话ID"
+                }
+            },
+            "required": ["session_id"]
+        },
+        function=clear_summary_context,
+        category="summary",
+        tags=["summary", "context", "clear"],
+        examples=[
+            "清空当前会话的上下文",
+            "重置对话历史"
         ]
     )
 
@@ -200,3 +258,38 @@ async def save_summary_memory(content: str, importance: int, timestamp: str, tag
         
     except Exception as e:
         return {"error": f"保存记忆失败: {str(e)}"}
+
+
+def get_session_messages(session_id: str, limit: int = 50) -> Dict[str, Any]:
+    """获取会话消息"""
+    cm = get_context_manager()
+    if not cm:
+        return {"error": "上下文管理器不可用"}
+    
+    try:
+        messages = cm.get_messages(session_id, limit=limit)
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "count": len(messages),
+            "messages": messages
+        }
+    except Exception as e:
+        return {"error": f"获取会话消息失败: {str(e)}"}
+
+
+def clear_summary_context(session_id: str) -> Dict[str, Any]:
+    """清空摘要助手上下文"""
+    cm = get_context_manager()
+    if not cm:
+        return {"error": "上下文管理器不可用"}
+    
+    try:
+        cm.clear_session_messages(session_id)
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "message": "上下文已清空"
+        }
+    except Exception as e:
+        return {"error": f"清空上下文失败: {str(e)}"}

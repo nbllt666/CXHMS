@@ -120,14 +120,6 @@ acp:
   broadcast_port: 9998
   broadcast_address: 255.255.255.255
   discovery_interval: 30
-webui:
-  enabled: true
-  host: 0.0.0.0
-  port: 7860
-  share: false
-  auth_enabled: false
-  auth_username: admin
-  auth_password: admin
 security:
   api_key_enabled: false
   api_key: ''

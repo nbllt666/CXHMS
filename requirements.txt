@@ -5,18 +5,16 @@ pydantic-settings>=2.1.0
 python-multipart>=0.0.6
 httpx>=0.25.2
 pyyaml>=6.0.1
-gradio>=4.7.1
 numpy>=1.26.2
-scikit-learn>=1.3.2
 python-dateutil>=2.8.2
 aiofiles>=23.2.1
 psutil>=5.9.6
 
-# Vector stores
+# Vector stores (optional)
 pymilvus>=2.3.3
 qdrant-client>=1.6.9
 weaviate-client>=4.0.0
 
-# LLM clients
+# LLM clients (optional)
 openai>=1.3.6
 anthropic>=0.7.8

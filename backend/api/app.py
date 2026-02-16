@@ -171,7 +171,8 @@ async def lifespan(app: FastAPI):
         )
         set_summary_dependencies(
             memory_manager=memory_manager,
-            model_router=model_router
+            model_router=model_router,
+            context_manager=context_manager
         )
         register_summary_tools()
         summary_tools_registered = True

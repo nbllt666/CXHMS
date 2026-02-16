@@ -53,28 +53,3 @@ class MCPError(CXHMSException):
 class ContextError(CXHMSException):
     """上下文管理异常"""
     pass
-
-
-class ConfigurationError(CXHMSException):
-    """配置异常"""
-    pass
-
-
-class AuthenticationError(CXHMSException):
-    """认证异常"""
-    pass
-
-
-class PermissionError(CXHMSException):
-    """权限异常"""
-    pass
-
-
-class RateLimitError(CXHMSException):
-    """速率限制异常"""
-    pass
-
-
-class ServiceUnavailableError(CXHMSException):
-    """服务不可用异常"""
-    pass

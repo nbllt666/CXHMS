@@ -25,7 +25,6 @@ if %errorlevel% neq 0 (
     echo ========================================
     
     REM 尝试单独安装可能有问题的包
-    pip install gradio==4.19.2 --upgrade --quiet || echo Gradio安装可能需要特殊处理
     pip install pydantic==2.5.3 --quiet
 )
 
@@ -33,6 +32,6 @@ echo.
 echo ========================================
 echo 安装完成！请检查版本兼容性
 echo 使用以下命令验证:
-echo pip list ^| findstr /i "multipart gradio protobuf pillow"
+echo pip list ^| findstr /i "fastapi pydantic httpx"
 echo ========================================
 pause

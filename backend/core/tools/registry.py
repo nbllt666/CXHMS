@@ -219,12 +219,34 @@ class ToolRegistry:
                     "success": False,
                     "error": f"工具 {name} 没有实现函数"
                 }
+        except TypeError as e:
+            logger.error(f"调用工具 {name} 参数错误: {e}")
+            params = tool.parameters.get("properties", {})
+            required = tool.parameters.get("required", [])
+            valid_params = list(params.keys())
+            return {
+                "success": False,
+                "error": f"参数错误: {str(e)}。正确参数为: {', '.join(valid_params)}",
+                "tool_name": name,
+                "correct_usage": {
+                    "description": tool.description,
+                    "parameters": params,
+                    "required": required
+                }
+            }
         except Exception as e:
             logger.error(f"调用工具 {name} 失败: {e}")
+            params = tool.parameters.get("properties", {}) if tool else {}
+            required = tool.parameters.get("required", []) if tool else []
             return {
                 "success": False,
                 "error": str(e),
-                "tool_name": name
+                "tool_name": name,
+                "correct_usage": {
+                    "description": tool.description if tool else "",
+                    "parameters": params,
+                    "required": required
+                }
             }
 
     async def call_tool_async(self, name: str, arguments: Dict = None) -> Dict:

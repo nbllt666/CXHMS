@@ -643,8 +643,9 @@ class MemoryManager:
             params = [workspace_id]
 
             if query:
-                conditions.append("content LIKE ?")
-                params.append(f"%{query}%")
+                escaped_query = query.replace("%", "\\%").replace("_", "\\_")
+                conditions.append("content LIKE ? ESCAPE '\\'")
+                params.append(f"%{escaped_query[:500]}%")
 
             if memory_type:
                 conditions.append("type = ?")
@@ -652,8 +653,9 @@ class MemoryManager:
 
             if tags:
                 for tag in tags:
-                    conditions.append("tags LIKE ?")
-                    params.append(f'%"{tag}"%')
+                    escaped_tag = tag.replace("%", "\\%").replace("_", "\\_")
+                    conditions.append("tags LIKE ? ESCAPE '\\'")
+                    params.append(f'%"{escaped_tag[:100]}"%')
 
             if time_range:
                 from datetime import timedelta

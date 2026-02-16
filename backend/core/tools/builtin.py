@@ -352,12 +352,42 @@ class BuiltinTools:
                 "error": f"未知工具: {name}"
             }
         
+        # 获取工具定义
+        all_tools = cls.get_all_tools()
+        tool_def = None
+        for t in all_tools:
+            if t.get("function", {}).get("name") == name:
+                tool_def = t.get("function", {})
+                break
+        
         try:
             return tools_map[name](**arguments)
-        except Exception as e:
+        except TypeError as e:
+            params = tool_def.get("parameters", {}).get("properties", {}) if tool_def else {}
+            required = tool_def.get("parameters", {}).get("required", []) if tool_def else []
+            valid_params = list(params.keys())
             return {
                 "success": False,
-                "error": f"工具执行错误: {str(e)}"
+                "error": f"参数错误: {str(e)}。正确参数为: {', '.join(valid_params)}",
+                "tool_name": name,
+                "correct_usage": {
+                    "description": tool_def.get("description", "") if tool_def else "",
+                    "parameters": params,
+                    "required": required
+                }
+            }
+        except Exception as e:
+            params = tool_def.get("parameters", {}).get("properties", {}) if tool_def else {}
+            required = tool_def.get("parameters", {}).get("required", []) if tool_def else []
+            return {
+                "success": False,
+                "error": f"工具执行错误: {str(e)}",
+                "tool_name": name,
+                "correct_usage": {
+                    "description": tool_def.get("description", "") if tool_def else "",
+                    "parameters": params,
+                    "required": required
+                }
             }
 
 

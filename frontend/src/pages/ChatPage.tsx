@@ -422,6 +422,36 @@ export function ChatPage() {
     }
   }
 
+  const handleAutoSummary = async () => {
+    if (!confirm('确定要自动摘要当前对话吗？这将分析对话内容并保存关键记忆。')) return
+    
+    try {
+      const contextText = getContextText()
+      const fullPrompt = `请对以下对话进行自动摘要，生成多条记忆。每条记忆应包含：
+1. 内容（简洁明了）
+2. 重要性（1-10，10为最重要）
+3. 时间（格式：yyyymmddhhmm，如202602112235）
+
+对话内容：
+${contextText}
+
+请使用 save_summary_memory 工具保存每条记忆。你可以保存多条记忆。`
+
+      await api.sendMessageStream(
+        fullPrompt,
+        (chunk: { type: string; content?: string; done?: boolean; error?: string }) => {
+          if (chunk.done) {
+            alert('自动摘要完成')
+          }
+        },
+        currentAgentId || 'default'
+      )
+    } catch (error) {
+      console.error('自动摘要失败:', error)
+      alert('自动摘要失败')
+    }
+  }
+
   return (
     <div className="max-w-4xl mx-auto h-full flex flex-col">
       <PageHeader
@@ -454,18 +484,32 @@ export function ChatPage() {
               清空上下文
             </Button>
             {messages.length > 0 && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowSummaryModal(true)}
-                icon={
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                  </svg>
-                }
-              >
-                保存记忆
-              </Button>
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleAutoSummary}
+                  icon={
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                  }
+                >
+                  自动摘要
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowSummaryModal(true)}
+                  icon={
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  }
+                >
+                  自定义摘要
+                </Button>
+              </>
             )}
           </div>
         }

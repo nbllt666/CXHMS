@@ -121,10 +121,23 @@ ${contextText}
     }
   }
 
-  const handleClearContext = () => {
-    if (confirm('确定要清空当前对话并删除大部分上下文吗？仅保留最近10条消息。')) {
-      // 保留最近10条（5轮对话）
-      setMessages(prev => prev.slice(-10))
+  const handleClearContext = async () => {
+    if (!confirm('确定要清空当前对话的所有上下文吗？')) return
+    
+    try {
+      const summarySessionId = `summary-${agentId}`
+      await api.deleteSession(summarySessionId)
+      setMessages([])
+      const systemMsg: SummaryMessage = {
+        id: 'system-1',
+        role: 'assistant',
+        content: `我是摘要助手。我会分析这段对话并生成摘要记忆。\n\n你可以：\n1. 直接让我自动摘要\n2. 告诉我需要关注哪些方面\n3. 指定每条记忆的重要性和时间\n\n我会将摘要保存为多条记忆，每条包含：内容、重要性(1-10)、时间(yyyymmddhhmm格式)。`,
+        timestamp: new Date().toISOString()
+      }
+      setMessages([systemMsg])
+    } catch (error) {
+      console.error('清空上下文失败:', error)
+      alert('清空上下文失败')
     }
   }
 
@@ -137,16 +150,16 @@ ${contextText}
         <div className="flex items-center justify-between p-4 border-b border-border">
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />
-            <h3 className="font-semibold">保存记忆 - 摘要助手</h3>
+            <h3 className="font-semibold">自定义摘要 - 摘要助手</h3>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handleClearContext}
               className="flex items-center gap-1 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-              title="清空大部分上下文，仅保留最近10条"
+              title="清空当前对话的所有上下文"
             >
               <Trash2 className="w-4 h-4" />
-              清理上下文
+              清空上下文
             </button>
             <button
               onClick={onClose}
