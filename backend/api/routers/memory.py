@@ -102,6 +102,37 @@ async def list_memories(
     
     try:
         memory_mgr = get_memory_manager()
+        
+        # 处理永久记忆类型
+        if actual_type == "permanent":
+            memories = memory_mgr.get_permanent_memories(
+                limit=limit,
+                offset=offset
+            )
+            # 统一字段名：importance_score -> importance
+            normalized_memories = []
+            for m in memories:
+                normalized_memories.append({
+                    "id": m.get("id"),
+                    "content": m.get("content"),
+                    "type": "permanent",
+                    "importance": m.get("importance_score", 3),
+                    "tags": m.get("tags", []),
+                    "created_at": m.get("created_at"),
+                    "updated_at": m.get("updated_at"),
+                    "is_archived": False,
+                    "metadata": m.get("metadata", {}),
+                    "emotion_score": m.get("emotion_score", 0),
+                    "source": m.get("source", "user"),
+                    "verified": m.get("verified", True)
+                })
+            return {
+                "status": "success",
+                "memories": normalized_memories,
+                "total": len(normalized_memories)
+            }
+        
+        # 普通记忆查询
         memories = memory_mgr.search_memories(
             memory_type=actual_type,
             limit=limit,

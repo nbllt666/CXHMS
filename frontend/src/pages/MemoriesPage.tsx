@@ -58,18 +58,6 @@ export function MemoriesPage() {
   const { data: memories, isLoading, refetch } = useQuery({
     queryKey: ['memories', filterType, currentAgentId],
     queryFn: async () => {
-      if (filterType === 'permanent') {
-        const result = await api.getPermanentMemories({ limit: 1000 });
-        return {
-          status: result.status,
-          memories: result.memories.map((m: { id: number; content: string; importance: number; tags: string[]; created_at: string }) => ({
-            ...m,
-            type: 'permanent',
-            is_archived: false,
-          })),
-          total: result.total,
-        };
-      }
       const result = await api.getMemories({
         type: filterType === 'all' ? undefined : filterType,
         limit: 1000,
