@@ -422,8 +422,26 @@ def register_master_tools():
     )
 
 
-def write_long_term_memory(content: str, importance: int = 3, tags: List[str] = None) -> Dict[str, Any]:
+def write_long_term_memory(
+    content: str = None,
+    importance: int = 3,
+    tags: List[str] = None,
+    # 别名参数（兼容模型不同调用方式）
+    message: str = None,
+    priority: int = None,
+    tag: str = None
+) -> Dict[str, Any]:
     """写入长期记忆"""
+    # 参数别名映射
+    content = content or message
+    if priority is not None:
+        importance = priority
+    if tag and not tags:
+        tags = [tag]
+    
+    if not content:
+        return {"error": "内容不能为空"}
+    
     mm = get_memory_manager()
     if not mm:
         return {"error": "记忆管理器不可用"}
@@ -553,8 +571,22 @@ def mono(content: str, session_id: str = None, rounds: int = 1) -> Dict[str, Any
         return {"error": f"添加上下文信息失败: {str(e)}"}
 
 
-def write_permanent_memory(content: str, tags: List[str] = None) -> Dict[str, Any]:
+def write_permanent_memory(
+    content: str = None,
+    tags: List[str] = None,
+    # 别名参数（兼容模型不同调用方式）
+    message: str = None,
+    tag: str = None
+) -> Dict[str, Any]:
     """写入永久记忆"""
+    # 参数别名映射
+    content = content or message
+    if tag and not tags:
+        tags = [tag]
+    
+    if not content:
+        return {"error": "内容不能为空"}
+    
     mm = get_memory_manager()
     if not mm:
         return {"error": "记忆管理器不可用"}
