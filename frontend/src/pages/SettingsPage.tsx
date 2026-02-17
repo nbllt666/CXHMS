@@ -135,10 +135,14 @@ export function SettingsPage() {
   });
 
   const [vectorConfig, setVectorConfig] = useState({
-    backend: 'weaviate_embedded',
+    backend: 'chroma',
+    vectorSize: 768,
+    dbPath: 'data/chroma_db',
+    collectionName: 'memory_vectors',
     weaviateHost: 'localhost',
     weaviatePort: 8080,
-    vectorSize: 768,
+    qdrantHost: 'localhost',
+    qdrantPort: 6333,
   });
 
   const [modelsConfig, setModelsConfig] = useState({
@@ -153,11 +157,16 @@ export function SettingsPage() {
   useEffect(() => {
     if (serviceConfig?.config) {
       if (serviceConfig.config.vector) {
+        const vec = serviceConfig.config.vector;
         setVectorConfig({
-          backend: serviceConfig.config.vector.backend ?? 'weaviate_embedded',
-          weaviateHost: serviceConfig.config.vector.weaviate_host ?? 'localhost',
-          weaviatePort: serviceConfig.config.vector.weaviate_port ?? 8080,
-          vectorSize: serviceConfig.config.vector.vector_size ?? 768,
+          backend: vec.backend ?? 'chroma',
+          vectorSize: vec.vector_size ?? 768,
+          dbPath: vec.db_path ?? 'data/chroma_db',
+          collectionName: vec.collection_name ?? 'memory_vectors',
+          weaviateHost: vec.weaviate_host ?? 'localhost',
+          weaviatePort: vec.weaviate_port ?? 8080,
+          qdrantHost: vec.qdrant_host ?? 'localhost',
+          qdrantPort: vec.qdrant_port ?? 6333,
         });
       }
       if (serviceConfig.config.models) {
@@ -266,13 +275,26 @@ export function SettingsPage() {
     setSaveStatus('saving');
     try {
       if (activeSection === 'vector') {
+        const vectorPayload: Record<string, unknown> = {
+          backend: vectorConfig.backend,
+          vector_size: vectorConfig.vectorSize,
+        };
+        
+        if (vectorConfig.backend === 'chroma') {
+          vectorPayload.db_path = vectorConfig.dbPath;
+          vectorPayload.collection_name = vectorConfig.collectionName;
+        } else if (vectorConfig.backend === 'milvus_lite') {
+          vectorPayload.db_path = vectorConfig.dbPath;
+        } else if (vectorConfig.backend === 'weaviate' || vectorConfig.backend === 'weaviate_embedded') {
+          vectorPayload.weaviate_host = vectorConfig.weaviateHost;
+          vectorPayload.weaviate_port = vectorConfig.weaviatePort;
+        } else if (vectorConfig.backend === 'qdrant') {
+          vectorPayload.qdrant_host = vectorConfig.qdrantHost;
+          vectorPayload.qdrant_port = vectorConfig.qdrantPort;
+        }
+        
         await api.updateServiceConfig({
-          vector: {
-            backend: vectorConfig.backend,
-            weaviate_host: vectorConfig.weaviateHost,
-            weaviate_port: vectorConfig.weaviatePort,
-            vector_size: vectorConfig.vectorSize,
-          },
+          vector: vectorPayload,
         });
       } else if (activeSection === 'llm') {
         await api.updateServiceConfig({
@@ -460,9 +482,10 @@ export function SettingsPage() {
                         onChange={(e) => setVectorConfig({ ...vectorConfig, backend: e.target.value })}
                         className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
                       >
-                        <option value="weaviate_embedded">Weaviate Embedded (推荐)</option>
+                        <option value="chroma">Chroma (推荐 Windows)</option>
+                        <option value="milvus_lite">Milvus Lite (仅 Linux/macOS)</option>
+                        <option value="weaviate_embedded">Weaviate Embedded</option>
                         <option value="weaviate">Weaviate (独立服务)</option>
-                        <option value="milvus_lite">Milvus Lite</option>
                         <option value="qdrant">Qdrant</option>
                       </select>
                     </div>
@@ -479,6 +502,66 @@ export function SettingsPage() {
                         <option value={1536}>1536 (OpenAI)</option>
                       </select>
                     </div>
+                    {(vectorConfig.backend === 'chroma') && (
+                      <div>
+                        <label className="text-sm font-medium mb-2 block">数据存储路径</label>
+                        <input
+                          type="text"
+                          value={vectorConfig.dbPath || 'data/chroma_db'}
+                          onChange={(e) => setVectorConfig({ ...vectorConfig, dbPath: e.target.value })}
+                          className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
+                          placeholder="data/chroma_db"
+                        />
+                      </div>
+                    )}
+                    {(vectorConfig.backend === 'weaviate' || vectorConfig.backend === 'weaviate_embedded') && (
+                      <>
+                        <div>
+                          <label className="text-sm font-medium mb-2 block">Weaviate 主机</label>
+                          <input
+                            type="text"
+                            value={vectorConfig.weaviateHost || 'localhost'}
+                            onChange={(e) => setVectorConfig({ ...vectorConfig, weaviateHost: e.target.value })}
+                            className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
+                            placeholder="localhost"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium mb-2 block">Weaviate 端口</label>
+                          <input
+                            type="number"
+                            value={vectorConfig.weaviatePort || 8080}
+                            onChange={(e) => setVectorConfig({ ...vectorConfig, weaviatePort: parseInt(e.target.value) })}
+                            className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
+                            placeholder="8080"
+                          />
+                        </div>
+                      </>
+                    )}
+                    {vectorConfig.backend === 'qdrant' && (
+                      <>
+                        <div>
+                          <label className="text-sm font-medium mb-2 block">Qdrant 主机</label>
+                          <input
+                            type="text"
+                            value={vectorConfig.qdrantHost || 'localhost'}
+                            onChange={(e) => setVectorConfig({ ...vectorConfig, qdrantHost: e.target.value })}
+                            className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
+                            placeholder="localhost"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium mb-2 block">Qdrant 端口</label>
+                          <input
+                            type="number"
+                            value={vectorConfig.qdrantPort || 6333}
+                            onChange={(e) => setVectorConfig({ ...vectorConfig, qdrantPort: parseInt(e.target.value) })}
+                            className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
+                            placeholder="6333"
+                          />
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div className="flex justify-end mt-6">
                     <Button onClick={handleSave} loading={saveStatus === 'saving'} disabled={!isBackendRunning}>

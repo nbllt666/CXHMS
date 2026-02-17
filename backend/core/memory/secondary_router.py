@@ -4,6 +4,7 @@ from datetime import datetime
 from enum import Enum
 import json
 from backend.core.logging_config import get_contextual_logger
+from backend.core.utils import format_messages_for_summary
 
 logger = get_contextual_logger(__name__)
 
@@ -597,7 +598,7 @@ class SecondaryModelRouter:
             )
 
         # 格式化对话内容
-        conversation_text = self._format_conversation_for_summary(messages)
+        conversation_text = format_messages_for_summary(messages)
         message_count = len(messages)
 
         # 使用摘要模型生成深度分析
@@ -751,18 +752,6 @@ class SecondaryModelRouter:
             },
             execution_time_ms=0.0
         )
-
-    def _format_conversation_for_summary(self, messages: List[Dict]) -> str:
-        """格式化对话内容为摘要输入格式"""
-        lines = []
-        for i, msg in enumerate(messages, 1):
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")
-            # 限制每条消息长度
-            if len(content) > 500:
-                content = content[:500] + "..."
-            lines.append(f"[{i}] {role}: {content}")
-        return "\n".join(lines)
 
     async def _extract_key_points(self, params: Dict) -> SecondaryResult:
         """使用模型智能提取关键点"""

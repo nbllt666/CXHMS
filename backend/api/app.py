@@ -211,7 +211,15 @@ async def lifespan(app: FastAPI):
     try:
         if memory_manager and llm_client and settings.config.memory.vector_enabled:
             vector_backend = settings.config.memory.vector_backend
-            if vector_backend == "milvus_lite":
+            if vector_backend == "chroma":
+                memory_manager.enable_vector_search(
+                    embedding_model=llm_client,
+                    vector_backend="chroma",
+                    db_path=settings.config.memory.chroma.db_path,
+                    collection_name=settings.config.memory.chroma.collection_name,
+                    vector_size=settings.config.memory.chroma.vector_size
+                )
+            elif vector_backend == "milvus_lite":
                 memory_manager.enable_vector_search(
                     embedding_model=llm_client,
                     vector_backend="milvus_lite",

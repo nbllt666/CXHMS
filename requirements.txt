@@ -11,7 +11,9 @@ aiofiles>=23.2.1
 psutil>=5.9.6
 
 # Vector stores (optional)
-pymilvus>=2.3.3
+# Note: Chroma 0.4.x works on Windows, newer versions (1.x) may have Rust backend issues
+chromadb>=0.4.24,<1.0.0
+pymilvus>=2.4.2
 qdrant-client>=1.6.9
 weaviate-client>=4.0.0
 

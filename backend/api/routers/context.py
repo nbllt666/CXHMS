@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from typing import Dict, List, Optional
 from pydantic import BaseModel
+from backend.core.utils import format_messages_for_summary
 
 router = APIRouter()
 
@@ -198,7 +199,7 @@ async def generate_summary(
             raise HTTPException(status_code=503, detail="摘要模型不可用")
 
         # 格式化对话内容
-        conversation_text = _format_messages_for_summary(messages)
+        conversation_text = format_messages_for_summary(messages)
         message_count = len(messages)
 
         # 调用摘要模型生成深度分析
@@ -331,19 +332,6 @@ async def generate_summary(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-def _format_messages_for_summary(messages: list) -> str:
-    """格式化消息为摘要输入格式"""
-    lines = []
-    for i, msg in enumerate(messages, 1):
-        role = msg.get("role", "unknown")
-        content = msg.get("content", "")
-        # 限制每条消息长度
-        if len(content) > 500:
-            content = content[:500] + "..."
-        lines.append(f"[{i}] {role}: {content}")
-    return "\n".join(lines)
 
 
 @router.get("/context/stats")

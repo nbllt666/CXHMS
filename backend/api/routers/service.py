@@ -376,13 +376,36 @@ async def get_service_config():
         config['llm_params'] = settings.config.llm_params
     
     # 添加向量配置
-    if hasattr(settings.config, 'memory') and hasattr(settings.config.memory, 'vector'):
-        config['vector'] = {
-            'backend': settings.config.memory.vector.backend,
-            'weaviate_host': settings.config.memory.vector.weaviate_host,
-            'weaviate_port': settings.config.memory.vector.weaviate_port,
-            'vector_size': settings.config.memory.vector.vector_size
+    if hasattr(settings.config, 'memory'):
+        memory_config = settings.config.memory
+        vector_config = {
+            'backend': getattr(memory_config, 'vector_backend', 'chroma'),
+            'vector_size': 768,
         }
+        
+        # 根据后端类型添加特定配置
+        backend = vector_config['backend']
+        if backend == 'chroma' and hasattr(memory_config, 'chroma'):
+            chroma_cfg = memory_config.chroma
+            vector_config['db_path'] = getattr(chroma_cfg, 'db_path', 'data/chroma_db')
+            vector_config['collection_name'] = getattr(chroma_cfg, 'collection_name', 'memory_vectors')
+            vector_config['vector_size'] = getattr(chroma_cfg, 'vector_size', 768)
+        elif backend == 'milvus_lite' and hasattr(memory_config, 'milvus_lite'):
+            milvus_cfg = memory_config.milvus_lite
+            vector_config['db_path'] = getattr(milvus_cfg, 'db_path', 'data/milvus_lite.db')
+            vector_config['vector_size'] = getattr(milvus_cfg, 'vector_size', 768)
+        elif backend in ['weaviate', 'weaviate_embedded'] and hasattr(memory_config, 'weaviate'):
+            weaviate_cfg = memory_config.weaviate
+            vector_config['weaviate_host'] = getattr(weaviate_cfg, 'host', 'localhost')
+            vector_config['weaviate_port'] = getattr(weaviate_cfg, 'port', 8080)
+            vector_config['vector_size'] = getattr(weaviate_cfg, 'vector_size', 768)
+        elif backend == 'qdrant' and hasattr(memory_config, 'qdrant'):
+            qdrant_cfg = memory_config.qdrant
+            vector_config['qdrant_host'] = getattr(qdrant_cfg, 'host', 'localhost')
+            vector_config['qdrant_port'] = getattr(qdrant_cfg, 'port', 6333)
+            vector_config['vector_size'] = getattr(qdrant_cfg, 'vector_size', 768)
+        
+        config['vector'] = vector_config
 
     return {
         "status": "success",
@@ -407,9 +430,50 @@ async def update_service_config(config: dict):
 
         # 更新配置 - 根据配置类型更新对应的部分
         if 'vector' in config:
+            vector_cfg = config['vector']
             if 'memory' not in current_config:
                 current_config['memory'] = {}
-            current_config['memory']['vector'] = config['vector']
+            
+            # 更新 vector_backend
+            if 'backend' in vector_cfg:
+                current_config['memory']['vector_backend'] = vector_cfg['backend']
+            
+            # 更新对应后端的配置
+            backend = vector_cfg.get('backend', 'chroma')
+            if backend == 'chroma':
+                if 'chroma' not in current_config['memory']:
+                    current_config['memory']['chroma'] = {}
+                if 'db_path' in vector_cfg:
+                    current_config['memory']['chroma']['db_path'] = vector_cfg['db_path']
+                if 'collection_name' in vector_cfg:
+                    current_config['memory']['chroma']['collection_name'] = vector_cfg['collection_name']
+                if 'vector_size' in vector_cfg:
+                    current_config['memory']['chroma']['vector_size'] = vector_cfg['vector_size']
+            elif backend == 'milvus_lite':
+                if 'milvus_lite' not in current_config['memory']:
+                    current_config['memory']['milvus_lite'] = {}
+                if 'db_path' in vector_cfg:
+                    current_config['memory']['milvus_lite']['db_path'] = vector_cfg['db_path']
+                if 'vector_size' in vector_cfg:
+                    current_config['memory']['milvus_lite']['vector_size'] = vector_cfg['vector_size']
+            elif backend in ['weaviate', 'weaviate_embedded']:
+                if 'weaviate' not in current_config['memory']:
+                    current_config['memory']['weaviate'] = {}
+                if 'weaviate_host' in vector_cfg:
+                    current_config['memory']['weaviate']['host'] = vector_cfg['weaviate_host']
+                if 'weaviate_port' in vector_cfg:
+                    current_config['memory']['weaviate']['port'] = vector_cfg['weaviate_port']
+                if 'vector_size' in vector_cfg:
+                    current_config['memory']['weaviate']['vector_size'] = vector_cfg['vector_size']
+            elif backend == 'qdrant':
+                if 'qdrant' not in current_config['memory']:
+                    current_config['memory']['qdrant'] = {}
+                if 'qdrant_host' in vector_cfg:
+                    current_config['memory']['qdrant']['host'] = vector_cfg['qdrant_host']
+                if 'qdrant_port' in vector_cfg:
+                    current_config['memory']['qdrant']['port'] = vector_cfg['qdrant_port']
+                if 'vector_size' in vector_cfg:
+                    current_config['memory']['qdrant']['vector_size'] = vector_cfg['vector_size']
         
         if 'models' in config:
             current_config['models'] = config['models']

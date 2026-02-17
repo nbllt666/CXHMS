@@ -2,15 +2,13 @@ server:
   host: 0.0.0.0
   port: 8000
   debug: true
-  cors_origins:
-  - '*'
-  cors_methods:
-  - '*'
-  cors_headers:
-  - '*'
 cors:
   enabled: true
   origins:
+  - '*'
+  methods:
+  - '*'
+  headers:
   - '*'
   allow_credentials: true
 logging:
@@ -68,11 +66,15 @@ memory:
   reactivation_boost: 0.2
   emotion_enabled: true
   vector_enabled: true
-  vector_backend: milvus_lite
+  vector_backend: weaviate
   decay_model: exponential
   ebbinghaus_params:
     t50: 30.0
     k: 2.0
+  chroma:
+    db_path: data/chroma_db
+    collection_name: memory_vectors
+    vector_size: 768
   milvus_lite:
     db_path: data/milvus_lite.db
     vector_size: 768
@@ -82,8 +84,8 @@ memory:
     vector_size: 768
   weaviate:
     host: localhost
-    port: 8080
-    grpc_port: 50051
+    port: 8090
+    grpc_port: 50061
     embedded: false
     vector_size: 768
     schema_class: CXHMSMemory
@@ -92,11 +94,6 @@ memory:
   archive_enabled: true
   dedup_threshold: 0.85
   archive_compression_enabled: true
-  vector:
-    backend: weaviate_embedded
-    weaviate_host: localhost
-    weaviate_port: 8080
-    vector_size: 768
 context:
   enabled: true
   max_context_length: 4000

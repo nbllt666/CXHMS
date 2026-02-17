@@ -111,6 +111,8 @@ class QdrantVectorStore(VectorStoreBase):
             return
 
         try:
+            from qdrant_client.models import VectorParams, Distance
+
             collections = self._client.get_collections().collections
             collection_names = [c.name for c in collections]
 
@@ -375,7 +377,7 @@ def create_vector_store(
     创建向量存储实例
     
     Args:
-        backend: 向量存储后端类型 ("milvus_lite", "qdrant", "weaviate", "weaviate_embedded")
+        backend: 向量存储后端类型 ("milvus_lite", "chroma", "qdrant", "weaviate", "weaviate_embedded")
         **kwargs: 向量存储配置参数
     
     Returns:
@@ -384,6 +386,9 @@ def create_vector_store(
     if backend == "milvus_lite":
         from .milvus_lite_store import MilvusLiteVectorStore
         return MilvusLiteVectorStore(**kwargs)
+    elif backend == "chroma":
+        from .chroma_store import ChromaVectorStore
+        return ChromaVectorStore(**kwargs)
     elif backend == "qdrant":
         return QdrantVectorStore(**kwargs)
     elif backend == "weaviate":
@@ -393,6 +398,6 @@ def create_vector_store(
         from .weaviate_store import WeaviateVectorStore
         return WeaviateVectorStore(embedded=True, **kwargs)
     else:
-        logger.warning(f"未知的向量存储后端: {backend}, 使用Milvus Lite")
-        from .milvus_lite_store import MilvusLiteVectorStore
-        return MilvusLiteVectorStore(**kwargs)
+        logger.warning(f"未知的向量存储后端: {backend}, 使用Chroma")
+        from .chroma_store import ChromaVectorStore
+        return ChromaVectorStore(**kwargs)

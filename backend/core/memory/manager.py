@@ -887,18 +887,24 @@ class MemoryManager:
         self,
         embedding_model=None,
         vector_store=None,
-        vector_backend: str = "milvus_lite",
+        vector_backend: str = "chroma",
         qdrant_host: str = "localhost",
         qdrant_port: int = 6333,
-        milvus_db_path: str = "data/milvus_lite.db"
+        milvus_db_path: str = "data/milvus_lite.db",
+        db_path: str = "data/chroma_db",
+        collection_name: str = "memory_vectors",
+        vector_size: int = 768,
+        **kwargs
     ):
-        dimension = embedding_model.dimension if embedding_model else 768
+        dimension = embedding_model.dimension if embedding_model else vector_size
 
         self._vector_store_config = {
             'backend': vector_backend,
             'milvus_db_path': milvus_db_path,
             'qdrant_host': qdrant_host,
             'qdrant_port': qdrant_port,
+            'db_path': db_path,
+            'collection_name': collection_name,
             'vector_size': dimension,
             'embedding_model': embedding_model
         }
@@ -907,7 +913,15 @@ class MemoryManager:
             try:
                 from backend.core.memory.vector_store import create_vector_store
 
-                if vector_backend == "milvus_lite":
+                if vector_backend == "chroma":
+                    vector_store = create_vector_store(
+                        backend="chroma",
+                        db_path=db_path,
+                        collection_name=collection_name,
+                        vector_size=dimension,
+                        embedding_model=embedding_model
+                    )
+                elif vector_backend == "milvus_lite":
                     vector_store = create_vector_store(
                         backend="milvus_lite",
                         db_path=milvus_db_path,
@@ -921,6 +935,13 @@ class MemoryManager:
                         port=qdrant_port,
                         vector_size=dimension,
                         embedding_model=embedding_model
+                    )
+                elif vector_backend in ["weaviate", "weaviate_embedded"]:
+                    vector_store = create_vector_store(
+                        backend=vector_backend,
+                        vector_size=dimension,
+                        embedding_model=embedding_model,
+                        **kwargs
                     )
                 else:
                     logger.warning(f"未知的向量存储后端: {vector_backend}")
