@@ -31,18 +31,33 @@ models:
     model: qwen3-vl:8b
     apiKey: ''
     enabled: true
+    port: 8000
+    temperature: 0.7
+    max_tokens: 0
+    timeout: 60
+    api_key: ''
   summary:
     provider: ollama
     host: http://localhost:11434
     model: qwen3-vl:8b
     apiKey: ''
-    enabled: true
+    enabled: false
+    port: 8000
+    temperature: 0.7
+    max_tokens: 131072
+    timeout: 60
+    api_key: ''
   memory:
     provider: ollama
     host: http://localhost:11434
     model: qwen3-vl:8b
     apiKey: ''
-    enabled: true
+    enabled: false
+    port: 8000
+    temperature: 0.7
+    max_tokens: 131072
+    timeout: 60
+    api_key: ''
 model_defaults:
   summary: main
   memory: main
@@ -128,3 +143,8 @@ monitoring:
   metrics_enabled: true
   health_check_enabled: true
   performance_logging: true
+llm_params:
+  temperature: 1.3
+  maxTokens: 0
+  topP: 0.9
+  timeout: 30

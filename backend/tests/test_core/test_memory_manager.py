@@ -16,6 +16,7 @@ class TestMemoryManager:
         db_path = tmp_path / "test_memories.db"
         manager = MemoryManager(db_path=str(db_path))
         yield manager
+        manager.close_all_connections()
 
     def test_initialization(self, memory_manager):
         """Test memory manager initialization."""

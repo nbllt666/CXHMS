@@ -197,14 +197,27 @@ class ChromaVectorStore:
             logger.error(f"检查向量存在失败: {e}")
             return False
 
-    async def sync_with_sqlite(self, sqlite_manager) -> SyncResult:
+    async def sync_with_sqlite(self, sqlite_manager, last_sync_time: str = None) -> SyncResult:
         result = SyncResult()
         
         if not self._collection or not sqlite_manager:
             return result
 
         try:
-            memories = sqlite_manager.get_all_memories(include_deleted=False)
+            if last_sync_time:
+                logger.info(f"开始增量同步 (since {last_sync_time})...")
+            else:
+                logger.info("开始SQLite与Chroma全量数据同步...")
+            
+            memories = sqlite_manager.search_memories(
+                memory_type=None,
+                limit=10000,
+                include_deleted=False
+            )
+            
+            if last_sync_time:
+                memories = [m for m in memories if m.get("updated_at") and m.get("updated_at") > last_sync_time]
+                logger.info(f"增量同步: 筛选出 {len(memories)} 条需要同步的记忆")
             
             for memory in memories:
                 memory_id = memory.get("id")
@@ -216,7 +229,7 @@ class ChromaVectorStore:
                 
                 if not exists and content:
                     if self.embedding_model:
-                        embedding = self.embedding_model.embed(content)
+                        embedding = await self.embedding_model.get_embedding(content)
                         if embedding:
                             success = await self.add_memory_vector(
                                 memory_id=memory_id,
@@ -235,7 +248,25 @@ class ChromaVectorStore:
                         if result.details is None:
                             result.details = []
                         result.details.append(f"无法生成嵌入: memory_id={memory_id}")
+                elif exists and content:
+                    existing = await self.get_vector_by_id(memory_id)
+                    if existing and existing.get("content") != content:
+                        if self.embedding_model:
+                            embedding = await self.embedding_model.get_embedding(content)
+                            if embedding:
+                                await self.delete_by_memory_id(memory_id)
+                                success = await self.add_memory_vector(
+                                    memory_id=memory_id,
+                                    content=content,
+                                    embedding=embedding,
+                                    metadata={"type": memory.get("type"), "importance": memory.get("importance")}
+                                )
+                                if success:
+                                    result.synced += 1
+                                else:
+                                    result.errors += 1
 
+            logger.info(f"同步完成: checked={result.total_checked}, synced={result.synced}, errors={result.errors}")
             return result
         except Exception as e:
             logger.error(f"同步失败: {e}")

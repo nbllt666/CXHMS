@@ -184,20 +184,27 @@ class MilvusLiteVectorStore:
         result = await self.get_vector_by_id(memory_id)
         return result is not None
 
-    async def sync_with_sqlite(self, sqlite_manager) -> SyncResult:
+    async def sync_with_sqlite(self, sqlite_manager, last_sync_time: str = None) -> SyncResult:
         if not self._client:
             return SyncResult(errors=1, details=["Milvus Lite不可用"])
 
         result = SyncResult(details=[])
 
         try:
-            logger.info("开始SQLite与Milvus Lite数据同步...")
+            if last_sync_time:
+                logger.info(f"开始增量同步 (since {last_sync_time})...")
+            else:
+                logger.info("开始SQLite与Milvus Lite全量数据同步...")
 
             memories = sqlite_manager.search_memories(
                 memory_type=None,
                 limit=10000,
                 include_deleted=False
             )
+
+            if last_sync_time:
+                memories = [m for m in memories if m.get("updated_at") and m.get("updated_at") > last_sync_time]
+                logger.info(f"增量同步: 筛选出 {len(memories)} 条需要同步的记忆")
 
             milvus_ids = set()
             result.total_checked = len(memories)

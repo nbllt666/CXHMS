@@ -1,4 +1,5 @@
 import re
+import asyncio
 from typing import List, Dict, Optional, Any, Tuple
 from datetime import datetime
 from pathlib import Path
@@ -77,6 +78,7 @@ class MemoryManager:
         self._hybrid_search = None
         self.archiver = None
         self.deduplication_engine = None
+        self._last_sync_time: Optional[str] = None
 
         self._init_db()
         self._init_advanced_components()
@@ -199,6 +201,120 @@ class MemoryManager:
         except Exception as e:
             logger.warning(f"去重引擎初始化失败: {e}")
             self.deduplication_engine = None
+
+    def _run_async_sync(self, coro):
+        """在同步方法中运行异步协程
+        
+        Args:
+            coro: 异步协程对象
+            
+        Returns:
+            协程的返回值
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        
+        if loop and loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, coro)
+                return future.result()
+        else:
+            return asyncio.run(coro)
+
+    def _sync_vector_for_memory(self, memory_id: int, content: str, metadata: Dict = None) -> bool:
+        """同步记忆到向量数据库
+        
+        Args:
+            memory_id: 记忆ID
+            content: 记忆内容
+            metadata: 元数据
+            
+        Returns:
+            是否同步成功
+        """
+        if not self._vector_store or not self._embedding_model:
+            logger.debug(f"向量存储或嵌入模型未启用，跳过向量同步: memory_id={memory_id}")
+            return False
+        
+        try:
+            async def _sync():
+                embedding = await self._embedding_model.get_embedding(content)
+                return await self._vector_store.add_memory_vector(
+                    memory_id=memory_id,
+                    content=content,
+                    embedding=embedding,
+                    metadata=metadata
+                )
+            
+            result = self._run_async_sync(_sync())
+            if result:
+                logger.info(f"向量同步成功: memory_id={memory_id}")
+            return result
+        except Exception as e:
+            logger.warning(f"向量同步失败: memory_id={memory_id}, error={e}")
+            return False
+
+    def _update_vector_for_memory(self, memory_id: int, content: str, metadata: Dict = None) -> bool:
+        """更新记忆的向量
+        
+        Args:
+            memory_id: 记忆ID
+            content: 新的记忆内容
+            metadata: 新的元数据
+            
+        Returns:
+            是否更新成功
+        """
+        if not self._vector_store or not self._embedding_model:
+            logger.debug(f"向量存储或嵌入模型未启用，跳过向量更新: memory_id={memory_id}")
+            return False
+        
+        try:
+            async def _update():
+                await self._vector_store.delete_by_memory_id(memory_id)
+                embedding = await self._embedding_model.get_embedding(content)
+                return await self._vector_store.add_memory_vector(
+                    memory_id=memory_id,
+                    content=content,
+                    embedding=embedding,
+                    metadata=metadata
+                )
+            
+            result = self._run_async_sync(_update())
+            if result:
+                logger.info(f"向量更新成功: memory_id={memory_id}")
+            return result
+        except Exception as e:
+            logger.warning(f"向量更新失败: memory_id={memory_id}, error={e}")
+            return False
+
+    def _delete_vector_for_memory(self, memory_id: int) -> bool:
+        """删除记忆的向量
+        
+        Args:
+            memory_id: 记忆ID
+            
+        Returns:
+            是否删除成功
+        """
+        if not self._vector_store:
+            logger.debug(f"向量存储未启用，跳过向量删除: memory_id={memory_id}")
+            return False
+        
+        try:
+            async def _delete():
+                return await self._vector_store.delete_by_memory_id(memory_id)
+            
+            result = self._run_async_sync(_delete())
+            if result:
+                logger.info(f"向量删除成功: memory_id={memory_id}")
+            return result
+        except Exception as e:
+            logger.warning(f"向量删除失败: memory_id={memory_id}, error={e}")
+            return False
 
     def _start_cleanup_task(self):
         def cleanup_task():
@@ -570,6 +686,21 @@ class MemoryManager:
 
             conn.commit()
             logger.info(f"记忆已写入: id={memory_id}, type={memory_type}, agent={agent_id}")
+            
+            try:
+                vector_metadata = {
+                    "type": memory_type,
+                    "importance": importance,
+                    "tags": tags or [],
+                    "workspace_id": workspace_id,
+                    "agent_id": agent_id,
+                    "permanent": permanent,
+                    "emotion_score": emotion_score
+                }
+                self._sync_vector_for_memory(memory_id, content, vector_metadata)
+            except Exception as vec_e:
+                logger.warning(f"向量同步失败，不影响主操作: memory_id={memory_id}, error={vec_e}")
+            
             return memory_id
         except Exception as e:
             if conn:
@@ -744,6 +875,20 @@ class MemoryManager:
 
             success = cursor.rowcount > 0
             conn.commit()
+            
+            if success and new_content is not None:
+                try:
+                    vector_metadata = {
+                        "tags": new_tags or [],
+                        "importance": new_importance,
+                        "agent_id": agent_id
+                    }
+                    if new_metadata:
+                        vector_metadata.update(new_metadata)
+                    self._update_vector_for_memory(memory_id, new_content, vector_metadata)
+                except Exception as vec_e:
+                    logger.warning(f"向量更新失败，不影响主操作: memory_id={memory_id}, error={vec_e}")
+            
             return success
         except Exception as e:
             logger.error(f"更新记忆失败: {e}", exc_info=True)
@@ -782,6 +927,13 @@ class MemoryManager:
                 ''', ("delete" if not soft_delete else "soft_delete", memory_id, "system", json_dumps({"soft_delete": soft_delete, "agent_id": agent_id})))
 
             conn.commit()
+            
+            if success:
+                try:
+                    self._delete_vector_for_memory(memory_id)
+                except Exception as vec_e:
+                    logger.warning(f"向量删除失败，不影响主操作: memory_id={memory_id}, error={vec_e}")
+            
             return success
         except Exception as e:
             logger.error(f"删除记忆失败: {e}", exc_info=True)
@@ -985,8 +1137,14 @@ class MemoryManager:
             return self.search_memories(query=query, memory_type=memory_type, limit=limit)
 
     async def hybrid_search(self, query: str, memory_type: str = None, tags: List[str] = None, limit: int = 10, workspace_id: str = None) -> List[Dict]:
+        fallback = False
+
         if not self.is_vector_search_enabled():
-            return self.search_memories(query=query, memory_type=memory_type, tags=tags, limit=limit)
+            fallback = True
+            results = self.search_memories(query=query, memory_type=memory_type, tags=tags, limit=limit)
+            for result in results:
+                result['fallback'] = fallback
+            return results
 
         try:
             from backend.core.memory.hybrid_search import HybridSearchOptions
@@ -1006,13 +1164,18 @@ class MemoryManager:
                     "content": r.content,
                     "score": r.score,
                     "source": r.source,
-                    "metadata": r.metadata
+                    "metadata": r.metadata,
+                    "fallback": fallback
                 }
                 for r in search_results
             ]
         except Exception as e:
             logger.error(f"混合搜索失败: {e}")
-            return self.search_memories(query=query, memory_type=memory_type, tags=tags, limit=limit)
+            fallback = True
+            results = self.search_memories(query=query, memory_type=memory_type, tags=tags, limit=limit)
+            for result in results:
+                result['fallback'] = fallback
+            return results
 
     def write_permanent_memory(
         self,

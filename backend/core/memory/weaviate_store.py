@@ -340,7 +340,7 @@ class WeaviateVectorStore:
         result = await self.get_vector_by_id(memory_id)
         return result is not None
     
-    async def sync_with_sqlite(self, sqlite_manager) -> "SyncResult":
+    async def sync_with_sqlite(self, sqlite_manager, last_sync_time: str = None) -> "SyncResult":
         """与 SQLite 同步数据"""
         from .vector_store import SyncResult
         
@@ -350,14 +350,20 @@ class WeaviateVectorStore:
         result = SyncResult(details=[])
         
         try:
-            logger.info("开始 SQLite 与 Weaviate 数据同步...")
+            if last_sync_time:
+                logger.info(f"开始增量同步 (since {last_sync_time})...")
+            else:
+                logger.info("开始 SQLite 与 Weaviate 全量数据同步...")
             
-            # 获取所有记忆
             memories = sqlite_manager.search_memories(
                 memory_type=None,
                 limit=10000,
                 include_deleted=False
             )
+            
+            if last_sync_time:
+                memories = [m for m in memories if m.get("updated_at") and m.get("updated_at") > last_sync_time]
+                logger.info(f"增量同步: 筛选出 {len(memories)} 条需要同步的记忆")
             
             result.total_checked = len(memories)
             
@@ -366,11 +372,9 @@ class WeaviateVectorStore:
                 content = memory["content"]
                 
                 try:
-                    # 检查向量是否存在
                     existing = await self.get_vector_by_id(memory_id)
                     
                     if existing is None:
-                        # 创建新向量
                         logger.info(f"Weaviate 向量不存在，创建: memory_id={memory_id}")
                         if self.embedding_model:
                             embedding = await self.embedding_model.get_embedding(content)
@@ -383,7 +387,6 @@ class WeaviateVectorStore:
                             result.synced += 1
                             result.details.append(f"创建: {memory_id}")
                     elif existing.get("content") != content:
-                        # 更新向量
                         logger.info(f"Weaviate 内容不一致，更新: memory_id={memory_id}")
                         if self.embedding_model:
                             embedding = await self.embedding_model.get_embedding(content)

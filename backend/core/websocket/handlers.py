@@ -25,6 +25,8 @@ class ChatWebSocketHandler:
         self.ws_manager.register_handler("subscribe", self._handle_subscribe)
         self.ws_manager.register_handler("unsubscribe", self._handle_unsubscribe)
         self.ws_manager.register_handler("ping", self._handle_ping)
+        self.ws_manager.register_handler("cancel", self._handle_cancel)
+        self.ws_manager.register_handler("config", self._handle_config)
     
     async def _handle_chat(self, client_id: str, message: Dict[str, Any]):
         """处理普通聊天消息"""
@@ -279,6 +281,38 @@ class ChatWebSocketHandler:
             "type": "pong",
             "timestamp": datetime.now().isoformat()
         })
+    
+    async def _handle_cancel(self, client_id: str, message: Dict[str, Any]):
+        """处理取消响应请求"""
+        logger.info(f"客户端 {client_id} 请求取消响应")
+        await self.ws_manager.send_to_client(client_id, {
+            "type": "cancelled",
+            "timestamp": datetime.now().isoformat()
+        })
+    
+    async def _handle_config(self, client_id: str, message: Dict[str, Any]):
+        """处理配置更新"""
+        if "timeout" in message:
+            timeout = message["timeout"]
+            if client_id in self.ws_manager.connections:
+                self.ws_manager.connections[client_id].metadata["timeout"] = timeout
+            await self.ws_manager.send_to_client(client_id, {
+                "type": "config_updated",
+                "timeout": timeout
+            })
+
+
+async def push_alarm_to_agent(agent_id: str, alarm_message: str):
+    """向指定 Agent 推送提醒消息"""
+    from .manager import get_websocket_manager
+    ws_manager = get_websocket_manager()
+    
+    await ws_manager.broadcast_to_channel(f"agent:{agent_id}", {
+        "type": "alarm",
+        "message": alarm_message,
+        "triggered_at": datetime.now().isoformat()
+    })
+    logger.info(f"已向 Agent {agent_id} 推送提醒: {alarm_message}")
 
 
 # 全局处理器实例

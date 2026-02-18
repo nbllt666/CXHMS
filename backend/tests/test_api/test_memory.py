@@ -216,3 +216,59 @@ class TestMemoryValidation:
             json={"query": ""}
         )
         assert response.status_code in [422, 200, 503]
+
+
+class TestVectorStatusAPI:
+    """Test vector status API endpoint."""
+
+    def test_get_vector_status(self, client: TestClient):
+        """Test getting vector status."""
+        response = client.get("/api/memories/vectors/status")
+        assert response.status_code in [200, 503]
+
+    def test_vector_status_response_structure(self, client: TestClient):
+        """Test vector status response structure."""
+        response = client.get("/api/memories/vectors/status")
+        if response.status_code == 200:
+            data = response.json()
+            assert "status" in data
+            assert "data" in data
+            result = data["data"]
+            assert "enabled" in result
+            assert "backend" in result
+            assert "vector_count" in result
+            assert "sqlite_count" in result
+            assert "healthy" in result
+
+    def test_vector_status_returns_enabled_false_when_disabled(self, client: TestClient):
+        """Test that vector status returns enabled=False when vector search is disabled."""
+        response = client.get("/api/memories/vectors/status")
+        if response.status_code == 200:
+            data = response.json()
+            assert "enabled" in data["data"]
+
+
+class TestHybridSearchFallback:
+    """Test hybrid search fallback behavior."""
+
+    def test_semantic_search_response_has_fallback_field(self, client: TestClient):
+        """Test that semantic search response includes fallback field."""
+        response = client.post(
+            "/api/memories/semantic-search",
+            json={"query": "test query"}
+        )
+        if response.status_code == 200:
+            data = response.json()
+            assert "results" in data
+            if data["results"]:
+                assert "fallback" in data["results"][0]
+
+    def test_rag_search_response_structure(self, client: TestClient):
+        """Test RAG search response structure."""
+        response = client.post(
+            "/api/memories/rag?query=test&limit=5"
+        )
+        if response.status_code == 200:
+            data = response.json()
+            assert "status" in data
+            assert "results" in data

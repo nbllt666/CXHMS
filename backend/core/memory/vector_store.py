@@ -55,8 +55,13 @@ class VectorStoreBase:
         """检查向量是否存在"""
         raise NotImplementedError
 
-    async def sync_with_sqlite(self, sqlite_manager) -> SyncResult:
-        """与SQLite同步数据"""
+    async def sync_with_sqlite(self, sqlite_manager, last_sync_time: str = None) -> SyncResult:
+        """与SQLite同步数据
+        
+        Args:
+            sqlite_manager: SQLite管理器实例
+            last_sync_time: 上次同步时间，用于增量同步
+        """
         raise NotImplementedError
 
     def get_collection_info(self) -> Dict:
@@ -264,20 +269,27 @@ class QdrantVectorStore(VectorStoreBase):
         result = await self.get_vector_by_id(memory_id)
         return result is not None
 
-    async def sync_with_sqlite(self, sqlite_manager) -> SyncResult:
+    async def sync_with_sqlite(self, sqlite_manager, last_sync_time: str = None) -> SyncResult:
         if not self._client:
             return SyncResult(errors=1, details=["Qdrant不可用"])
 
         result = SyncResult(details=[])
 
         try:
-            logger.info("开始SQLite与Qdrant数据同步...")
+            if last_sync_time:
+                logger.info(f"开始增量同步 (since {last_sync_time})...")
+            else:
+                logger.info("开始SQLite与Qdrant全量数据同步...")
 
             memories = sqlite_manager.search_memories(
                 memory_type=None,
                 limit=10000,
                 include_deleted=False
             )
+
+            if last_sync_time:
+                memories = [m for m in memories if m.get("updated_at") and m.get("updated_at") > last_sync_time]
+                logger.info(f"增量同步: 筛选出 {len(memories)} 条需要同步的记忆")
 
             qdrant_ids = set()
             result.total_checked = len(memories)

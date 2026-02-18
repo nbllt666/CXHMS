@@ -18,7 +18,7 @@ BUILTIN_TOOL_NAMES = {
     # 基础工具
     "calculator", "datetime", "random", "json_format",
     # 主模型工具
-    "write_long_term_memory", "search_all_memories", "call_assistant", "set_alarm", "mono",
+    "write_long_term_memory", "search_all_memories", "call_assistant", "set_alarm", "get_alarms", "cancel_alarm", "mono",
     # 摘要模型工具
     "summarize_content", "save_summary_memory",
     # 助手工具

@@ -1,11 +1,34 @@
 import pytest
 import asyncio
+import os
+import shutil
+import atexit
 from typing import AsyncGenerator, Generator
 from httpx import AsyncClient
 from fastapi.testclient import TestClient
 
 from backend.api.app import app
 from config.settings import settings
+
+
+AGENTS_CONFIG_PATH = "data/agents.json"
+AGENTS_BACKUP_PATH = "data/agents.json.backup"
+_backup_created = False
+
+
+def _restore_agents():
+    """Restore agents.json from backup if exists."""
+    global _backup_created
+    if _backup_created and os.path.exists(AGENTS_BACKUP_PATH):
+        try:
+            shutil.copy2(AGENTS_BACKUP_PATH, AGENTS_CONFIG_PATH)
+            os.remove(AGENTS_BACKUP_PATH)
+        except Exception:
+            pass
+        _backup_created = False
+
+
+atexit.register(_restore_agents)
 
 
 @pytest.fixture(scope="session")
@@ -19,8 +42,19 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
 @pytest.fixture(scope="session")
 def client() -> Generator[TestClient, None, None]:
     """Create a test client for the FastAPI app."""
-    with TestClient(app) as test_client:
-        yield test_client
+    global _backup_created
+    
+    os.makedirs("data", exist_ok=True)
+    
+    if os.path.exists(AGENTS_CONFIG_PATH):
+        shutil.copy2(AGENTS_CONFIG_PATH, AGENTS_BACKUP_PATH)
+        _backup_created = True
+    
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        _restore_agents()
 
 
 @pytest.fixture(scope="session")

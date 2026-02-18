@@ -60,6 +60,8 @@ class WebSocketManager:
         self.message_handlers: Dict[str, Callable] = {}
         self._cleanup_task: Optional[asyncio.Task] = None
         self._running = False
+        self._offline_callback: Optional[Callable] = None
+        self._agent_timeouts: Dict[str, int] = {}  # agent_id -> timeout seconds
     
     async def connect(
         self,
@@ -171,6 +173,20 @@ class WebSocketManager:
         self.message_handlers[message_type] = handler
         logger.debug(f"注册消息处理器: {message_type}")
     
+    def set_offline_callback(self, callback: Callable):
+        """设置离线回调函数
+        
+        当连接超时离线时调用，用于保存上下文到长期记忆
+        callback(agent_id: str) -> None
+        """
+        self._offline_callback = callback
+        logger.debug("已设置离线回调函数")
+    
+    def set_agent_timeout(self, agent_id: str, timeout: int):
+        """设置 Agent 的离线超时时间"""
+        self._agent_timeouts[agent_id] = timeout
+        logger.debug(f"设置 Agent {agent_id} 离线超时: {timeout}秒")
+    
     async def handle_message(self, client_id: str, message: Dict[str, Any]):
         """处理收到的消息"""
         msg_type = message.get("type", "unknown")
@@ -219,20 +235,30 @@ class WebSocketManager:
             await asyncio.sleep(interval_seconds)
     
     async def _cleanup_inactive_connections(self):
-        """清理不活跃的连接"""
+        """清理不活跃的连接，并触发离线保存"""
         from datetime import timedelta
         
         now = datetime.now()
-        timeout = timedelta(minutes=30)  # 30分钟无活动视为不活跃
+        default_timeout = timedelta(minutes=30)
         
         inactive = []
         for client_id, connection in self.connections.items():
+            agent_id = connection.metadata.get("agent_id", "default")
+            timeout_seconds = self._agent_timeouts.get(agent_id, 1800)
+            timeout = timedelta(seconds=timeout_seconds)
+            
             if now - connection.last_activity > timeout:
-                inactive.append(client_id)
+                inactive.append((client_id, agent_id))
         
-        for client_id in inactive:
-            logger.info(f"清理不活跃连接: {client_id}")
+        for client_id, agent_id in inactive:
+            logger.info(f"连接超时离线: {client_id}, agent={agent_id}")
             await self.disconnect(client_id)
+            
+            if self._offline_callback:
+                try:
+                    await self._offline_callback(agent_id)
+                except Exception as e:
+                    logger.error(f"离线回调失败 {agent_id}: {e}")
     
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""

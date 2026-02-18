@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from contextlib import asynccontextmanager
 import asyncio
+from datetime import datetime
 
 from config.settings import settings
 from backend.api.routers import chat, memory, context, tools, acp, admin, archive, service, agents, websocket, backup
@@ -223,14 +224,16 @@ async def lifespan(app: FastAPI):
                 memory_manager.enable_vector_search(
                     embedding_model=llm_client,
                     vector_backend="milvus_lite",
-                    milvus_db_path=settings.config.memory.milvus_lite.db_path
+                    db_path=settings.config.memory.milvus_lite.db_path,
+                    vector_size=settings.config.memory.milvus_lite.vector_size
                 )
             elif vector_backend == "qdrant":
                 memory_manager.enable_vector_search(
                     embedding_model=llm_client,
                     vector_backend="qdrant",
-                    qdrant_host=settings.config.memory.qdrant.host,
-                    qdrant_port=settings.config.memory.qdrant.port
+                    host=settings.config.memory.qdrant.host,
+                    port=settings.config.memory.qdrant.port,
+                    vector_size=settings.config.memory.qdrant.vector_size
                 )
             elif vector_backend == "weaviate":
                 memory_manager.enable_vector_search(
@@ -252,8 +255,82 @@ async def lifespan(app: FastAPI):
                     schema_class=settings.config.memory.weaviate.schema_class
                 )
             logger.info(f"向量搜索已启用: {vector_backend}")
+            
+            if memory_manager.is_vector_search_enabled():
+                try:
+                    sync_result = await memory_manager._vector_store.sync_with_sqlite(
+                        memory_manager, 
+                        last_sync_time=memory_manager._last_sync_time
+                    )
+                    memory_manager._last_sync_time = datetime.now().isoformat()
+                    logger.info(f"启动时向量同步完成: checked={sync_result.total_checked}, synced={sync_result.synced}, errors={sync_result.errors}")
+                except Exception as e:
+                    logger.warning(f"启动时向量同步失败: {e}")
     except Exception as e:
         logger.warning(f"向量搜索启动失败: {e}")
+
+    try:
+        from backend.core.alarm import get_alarm_manager
+        from backend.core.websocket.handlers import push_alarm_to_agent
+        from backend.core.websocket.manager import get_websocket_manager
+        
+        alarm_manager = get_alarm_manager()
+        main_loop = asyncio.get_running_loop()
+        
+        def on_alarm_trigger(agent_id: str, message: str):
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    push_alarm_to_agent(agent_id, message),
+                    main_loop
+                )
+                future.result(timeout=5)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"推送提醒失败: {e}")
+        
+        alarm_manager.set_trigger_callback(on_alarm_trigger)
+        alarm_manager.restore_pending_alarms()
+        logger.info("提醒管理器已启动")
+        
+        async def on_offline(agent_id: str):
+            """离线时保存上下文到长期记忆"""
+            try:
+                session_id = f"agent-{agent_id}"
+                cm = get_context_manager()
+                messages = cm.get_messages(session_id, limit=100)
+                
+                if not messages:
+                    return
+                
+                context_text = "\n".join([
+                    f"{msg.get('role', 'unknown')}: {msg.get('content', '')}"
+                    for msg in messages[-20:]
+                ])
+                
+                summary_content = f"[离线自动保存] Agent {agent_id} 的对话上下文摘要:\n\n"
+                if len(context_text) > 500:
+                    summary_content += context_text[-500:] + "..."
+                else:
+                    summary_content += context_text
+                
+                mm = get_memory_manager()
+                if mm:
+                    mm.write_memory(
+                        content=summary_content,
+                        memory_type="long_term",
+                        importance=2,
+                        tags=["offline_save", "context", agent_id]
+                    )
+                    logger.info(f"离线保存上下文成功: agent={agent_id}")
+            except Exception as e:
+                logger.error(f"离线保存上下文失败: {e}")
+        
+        ws_manager = get_websocket_manager()
+        ws_manager.set_offline_callback(on_offline)
+        await ws_manager.start_cleanup_task(interval_seconds=30)
+        logger.info("WebSocket 离线保存已启用")
+    except Exception as e:
+        logger.warning(f"提醒管理器启动失败: {e}")
 
     try:
         if memory_manager:

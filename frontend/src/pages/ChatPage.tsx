@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from '../api/client'
@@ -7,6 +7,7 @@ import { formatRelativeTime } from '../lib/utils'
 import { SummaryModal } from '../components/SummaryModal'
 import { Button, Textarea, Card } from '../components/ui'
 import { PageHeader } from '../components/layout'
+import { useWebSocket } from '../hooks/useWebSocket'
 
 interface Message {
   id: string
@@ -165,14 +166,153 @@ export function ChatPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [showSummaryModal, setShowSummaryModal] = useState(false)
   const [autoStartSummary, setAutoStartSummary] = useState(false)
-  const [selectedImages, setSelectedImages] = useState<string[]>([])  // base64 images
+  const [selectedImages, setSelectedImages] = useState<string[]>([])
+  const [alarms, setAlarms] = useState<{ message: string; triggeredAt: string }[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const tempAssistantIdRef = useRef<string>('')
   
   const {
     agents,
     currentAgentId,
     fetchAgents,
   } = useChatStore()
+
+  const handleWebSocketMessage = useCallback((data: { 
+    type: string
+    content?: string
+    done?: boolean
+    error?: string
+    tool_call?: Record<string, unknown>
+    tool_name?: string
+    result?: unknown
+    thinking?: string
+  }) => {
+    if (data.type === 'content' && data.content) {
+      setMessages(prev => {
+        const lastMsg = prev[prev.length - 1]
+        if (lastMsg && lastMsg.id === tempAssistantIdRef.current) {
+          return [...prev.slice(0, -1), {
+            ...lastMsg,
+            content: lastMsg.content + data.content!
+          }]
+        }
+        return prev
+      })
+    } else if (data.type === 'tool_call' && data.tool_call) {
+      const tc = data.tool_call as StreamToolCall
+      setMessages(prev => {
+        const lastMsg = prev[prev.length - 1]
+        if (lastMsg && lastMsg.id === tempAssistantIdRef.current) {
+          return [...prev.slice(0, -1), {
+            ...lastMsg,
+            tool_calls: [...(lastMsg.tool_calls || []), {
+              id: tc.id || Date.now().toString(),
+              name: tc.name || tc.function?.name || 'unknown',
+              arguments: tc.arguments || tc.function?.arguments,
+              status: 'pending'
+            }]
+          }]
+        }
+        return prev
+      })
+    } else if (data.type === 'tool_start' && data.tool_name) {
+      setMessages(prev => {
+        const lastMsg = prev[prev.length - 1]
+        if (lastMsg && lastMsg.id === tempAssistantIdRef.current && lastMsg.tool_calls) {
+          return [...prev.slice(0, -1), {
+            ...lastMsg,
+            tool_calls: lastMsg.tool_calls.map(tc =>
+              tc.name === data.tool_name ? { ...tc, status: 'executing' } : tc
+            )
+          }]
+        }
+        return prev
+      })
+    } else if (data.type === 'tool_result' && data.tool_name && data.result !== undefined) {
+      setMessages(prev => {
+        const lastMsg = prev[prev.length - 1]
+        if (lastMsg && lastMsg.id === tempAssistantIdRef.current && lastMsg.tool_calls) {
+          const updatedToolCalls: ToolCall[] = lastMsg.tool_calls.map(tc =>
+            tc.name === data.tool_name ? { ...tc, status: 'completed' as const, result: data.result } : tc
+          )
+          return [...prev.slice(0, -1), {
+            ...lastMsg,
+            tool_calls: updatedToolCalls
+          }]
+        }
+        return prev
+      })
+    } else if (data.type === 'thinking' && data.content) {
+      setMessages(prev => {
+        const lastMsg = prev[prev.length - 1]
+        if (lastMsg && lastMsg.id === tempAssistantIdRef.current) {
+          return [...prev.slice(0, -1), {
+            ...lastMsg,
+            thinking: (lastMsg.thinking || '') + data.content
+          }]
+        }
+        return prev
+      })
+    } else if (data.type === 'done') {
+      setIsLoading(false)
+      setMessages(prev => {
+        const lastMsg = prev[prev.length - 1]
+        if (lastMsg && lastMsg.id === tempAssistantIdRef.current) {
+          return [...prev.slice(0, -1), {
+            ...lastMsg,
+            content: lastMsg.content || '响应已完成'
+          }]
+        }
+        return prev
+      })
+    } else if (data.type === 'error') {
+      setIsLoading(false)
+      setMessages(prev => {
+        const lastMsg = prev[prev.length - 1]
+        if (lastMsg && lastMsg.id === tempAssistantIdRef.current) {
+          return [...prev.slice(0, -1), {
+            ...lastMsg,
+            content: `抱歉，发生错误：${data.error || '未知错误'}`
+          }]
+        }
+        return prev
+      })
+    } else if (data.type === 'cancelled') {
+      setIsLoading(false)
+      setMessages(prev => {
+        const lastMsg = prev[prev.length - 1]
+        if (lastMsg && lastMsg.id === tempAssistantIdRef.current) {
+          return [...prev.slice(0, -1), {
+            ...lastMsg,
+            content: lastMsg.content || '响应已取消'
+          }]
+        }
+        return prev
+      })
+    }
+  }, [])
+
+  const handleAlarm = useCallback((message: string, triggeredAt: string) => {
+    setAlarms(prev => [...prev, { message, triggeredAt }])
+    setTimeout(() => {
+      setAlarms(prev => prev.slice(1))
+    }, 5000)
+  }, [])
+
+  const { 
+    isConnected, 
+    sendMessage: wsSendMessage, 
+    cancelGeneration 
+  } = useWebSocket({
+    agentId: currentAgentId || 'default',
+    timeout: 60,
+    onMessage: handleWebSocketMessage,
+    onAlarm: handleAlarm,
+    onError: (error) => {
+      console.error('WebSocket error:', error)
+      setIsLoading(false)
+    }
+  })
 
   useEffect(() => {
     fetchAgents()
@@ -261,6 +401,7 @@ export function ChatPage() {
     }
 
     const tempAssistantId = (Date.now() + 1).toString()
+    tempAssistantIdRef.current = tempAssistantId
     const streamingMessage: Message = {
       id: tempAssistantId,
       role: 'assistant',
@@ -276,112 +417,112 @@ export function ChatPage() {
     setIsLoading(true)
     setShouldAutoScroll(true)
 
-    try {
-      await api.sendMessageStream(
-        userMessage.content,
-        (chunk) => {
-          if (chunk.type === 'content' && chunk.content) {
-            // Handle content streaming
-            setMessages(prev => {
-              const lastMsg = prev[prev.length - 1]
-              if (lastMsg && lastMsg.id === tempAssistantId) {
-                return [...prev.slice(0, -1), {
-                  ...lastMsg,
-                  content: lastMsg.content + chunk.content!
-                }]
-              }
-              return prev
-            })
-          } else if (chunk.type === 'tool_call' && chunk.tool_call) {
-            const tc = chunk.tool_call as StreamToolCall
-            setMessages(prev => {
-              const lastMsg = prev[prev.length - 1]
-              if (lastMsg && lastMsg.id === tempAssistantId) {
-                return [...prev.slice(0, -1), {
-                  ...lastMsg,
-                  tool_calls: [...(lastMsg.tool_calls || []), {
-                    id: tc.id || Date.now().toString(),
-                    name: tc.name || tc.function?.name || 'unknown',
-                    arguments: tc.arguments || tc.function?.arguments,
-                    status: 'pending'
+    if (isConnected) {
+      wsSendMessage(userMessage.content, userMessage.images)
+    } else {
+      try {
+        await api.sendMessageStream(
+          userMessage.content,
+          (chunk) => {
+            if (chunk.type === 'content' && chunk.content) {
+              setMessages(prev => {
+                const lastMsg = prev[prev.length - 1]
+                if (lastMsg && lastMsg.id === tempAssistantId) {
+                  return [...prev.slice(0, -1), {
+                    ...lastMsg,
+                    content: lastMsg.content + chunk.content!
                   }]
-                }]
-              }
-              return prev
-            })
-          } else if (chunk.type === 'tool_start' && chunk.tool_name) {
-            setMessages(prev => {
-              const lastMsg = prev[prev.length - 1]
-              if (lastMsg && lastMsg.id === tempAssistantId && lastMsg.tool_calls) {
-                return [...prev.slice(0, -1), {
-                  ...lastMsg,
-                  tool_calls: lastMsg.tool_calls.map(tc =>
-                    tc.name === chunk.tool_name ? { ...tc, status: 'executing' } : tc
+                }
+                return prev
+              })
+            } else if (chunk.type === 'tool_call' && chunk.tool_call) {
+              const tc = chunk.tool_call as StreamToolCall
+              setMessages(prev => {
+                const lastMsg = prev[prev.length - 1]
+                if (lastMsg && lastMsg.id === tempAssistantId) {
+                  return [...prev.slice(0, -1), {
+                    ...lastMsg,
+                    tool_calls: [...(lastMsg.tool_calls || []), {
+                      id: tc.id || Date.now().toString(),
+                      name: tc.name || tc.function?.name || 'unknown',
+                      arguments: tc.arguments || tc.function?.arguments,
+                      status: 'pending'
+                    }]
+                  }]
+                }
+                return prev
+              })
+            } else if (chunk.type === 'tool_start' && chunk.tool_name) {
+              setMessages(prev => {
+                const lastMsg = prev[prev.length - 1]
+                if (lastMsg && lastMsg.id === tempAssistantId && lastMsg.tool_calls) {
+                  return [...prev.slice(0, -1), {
+                    ...lastMsg,
+                    tool_calls: lastMsg.tool_calls.map(tc =>
+                      tc.name === chunk.tool_name ? { ...tc, status: 'executing' } : tc
+                    )
+                  }]
+                }
+                return prev
+              })
+            } else if (chunk.type === 'tool_result' && chunk.tool_name && chunk.result !== undefined) {
+              setMessages(prev => {
+                const lastMsg = prev[prev.length - 1]
+                if (lastMsg && lastMsg.id === tempAssistantId && lastMsg.tool_calls) {
+                  const updatedToolCalls: ToolCall[] = lastMsg.tool_calls.map(tc =>
+                    tc.name === chunk.tool_name ? { ...tc, status: 'completed' as const, result: chunk.result } : tc
                   )
-                }]
-              }
-              return prev
-            })
-          } else if (chunk.type === 'tool_result' && chunk.tool_name && chunk.result !== undefined) {
-            console.log('收到工具结果:', chunk.tool_name, chunk.result)
-            setMessages(prev => {
-              const lastMsg = prev[prev.length - 1]
-              console.log('当前最后消息:', lastMsg?.id, '期望ID:', tempAssistantId, 'tool_calls:', lastMsg?.tool_calls)
-              if (lastMsg && lastMsg.id === tempAssistantId && lastMsg.tool_calls) {
-                const updatedToolCalls: ToolCall[] = lastMsg.tool_calls.map(tc =>
-                  tc.name === chunk.tool_name ? { ...tc, status: 'completed' as const, result: chunk.result } : tc
-                )
-                console.log('更新后的工具调用:', updatedToolCalls)
-                return [...prev.slice(0, -1), {
-                  ...lastMsg,
-                  tool_calls: updatedToolCalls
-                }]
-              }
-              return prev
-            })
-          } else if (chunk.type === 'thinking' && chunk.content) {
-            setMessages(prev => {
-              const lastMsg = prev[prev.length - 1]
-              if (lastMsg && lastMsg.id === tempAssistantId) {
-                return [...prev.slice(0, -1), {
-                  ...lastMsg,
-                  thinking: (lastMsg.thinking || '') + chunk.content
-                }]
-              }
-              return prev
-            })
-          } else if (chunk.type === 'done') {
-            setMessages(prev => {
-              const lastMsg = prev[prev.length - 1]
-              if (lastMsg && lastMsg.id === tempAssistantId) {
-                return [...prev.slice(0, -1), {
-                  ...lastMsg,
-                  content: lastMsg.content || '响应已完成'
-                }]
-              }
-              return prev
-            })
-          } else if (chunk.type === 'error') {
-            throw new Error(chunk.error || '未知错误')
+                  return [...prev.slice(0, -1), {
+                    ...lastMsg,
+                    tool_calls: updatedToolCalls
+                  }]
+                }
+                return prev
+              })
+            } else if (chunk.type === 'thinking' && chunk.content) {
+              setMessages(prev => {
+                const lastMsg = prev[prev.length - 1]
+                if (lastMsg && lastMsg.id === tempAssistantId) {
+                  return [...prev.slice(0, -1), {
+                    ...lastMsg,
+                    thinking: (lastMsg.thinking || '') + chunk.content
+                  }]
+                }
+                return prev
+              })
+            } else if (chunk.type === 'done') {
+              setMessages(prev => {
+                const lastMsg = prev[prev.length - 1]
+                if (lastMsg && lastMsg.id === tempAssistantId) {
+                  return [...prev.slice(0, -1), {
+                    ...lastMsg,
+                    content: lastMsg.content || '响应已完成'
+                  }]
+                }
+                return prev
+              })
+            } else if (chunk.type === 'error') {
+              throw new Error(chunk.error || '未知错误')
+            }
+          },
+          currentAgentId || 'default',
+          userMessage.images
+        )
+      } catch (error) {
+        console.error('发送消息失败:', error)
+        setMessages(prev => {
+          const lastMsg = prev[prev.length - 1]
+          if (lastMsg && lastMsg.id === tempAssistantId) {
+            return [...prev.slice(0, -1), {
+              ...lastMsg,
+              content: '抱歉，服务暂时不可用，请稍后重试。'
+            }]
           }
-        },
-        currentAgentId || 'default',
-        userMessage.images
-      )
-    } catch (error) {
-      console.error('发送消息失败:', error)
-      setMessages(prev => {
-        const lastMsg = prev[prev.length - 1]
-        if (lastMsg && lastMsg.id === tempAssistantId) {
-          return [...prev.slice(0, -1), {
-            ...lastMsg,
-            content: '抱歉，服务暂时不可用，请稍后重试。'
-          }]
-        }
-        return prev
-      })
-    } finally {
-      setIsLoading(false)
+          return prev
+        })
+      } finally {
+        setIsLoading(false)
+      }
     }
   }
 
@@ -631,22 +772,65 @@ export function ChatPage() {
             className="flex-1 min-h-[48px] max-h-[200px]"
             disabled={isLoading}
           />
-          <Button
-            onClick={handleSend}
-            disabled={(!input.trim() && selectedImages.length === 0) || isLoading}
-            loading={isLoading}
-            className="self-end"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
-          </Button>
+          {isLoading ? (
+            <Button
+              variant="secondary"
+              onClick={cancelGeneration}
+              className="self-end"
+              title="停止生成"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+              </svg>
+            </Button>
+          ) : (
+            <Button
+              onClick={handleSend}
+              disabled={(!input.trim() && selectedImages.length === 0) || isLoading}
+              className="self-end"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            </Button>
+          )}
         </div>
-        <p className="text-xs text-[var(--color-text-tertiary)] mt-2 text-center">
-          按 Enter 发送，Shift + Enter 换行
-          {currentAgent?.vision_enabled && ' · 支持图片上传'}
-        </p>
+        <div className="flex items-center justify-between mt-2">
+          <p className="text-xs text-[var(--color-text-tertiary)]">
+            按 Enter 发送，Shift + Enter 换行
+            {currentAgent?.vision_enabled && ' · 支持图片上传'}
+          </p>
+          <div className="flex items-center gap-1 text-xs">
+            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+            <span className="text-[var(--color-text-tertiary)]">
+              {isConnected ? 'WebSocket' : 'SSE'}
+            </span>
+          </div>
+        </div>
       </div>
+
+      {/* 提醒通知 */}
+      {alarms.length > 0 && (
+        <div className="fixed top-4 right-4 z-50 space-y-2">
+          {alarms.map((alarm, index) => (
+            <div
+              key={index}
+              className="bg-[var(--color-accent)] text-white px-4 py-3 rounded-lg shadow-lg animate-slide-in max-w-sm"
+            >
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                <div>
+                  <p className="font-medium">提醒</p>
+                  <p className="text-sm opacity-90">{alarm.message}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <SummaryModal
         isOpen={showSummaryModal}

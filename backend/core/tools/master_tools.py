@@ -161,6 +161,11 @@ def register_master_tools():
                 "message": {
                     "type": "string",
                     "description": "提醒消息内容"
+                },
+                "agent_id": {
+                    "type": "string",
+                    "description": "Agent ID（可选，默认为 'default'）",
+                    "default": "default"
                 }
             },
             "required": ["seconds", "message"]
@@ -172,6 +177,58 @@ def register_master_tools():
             "5分钟后提醒我喝水",
             "1小时后提醒我开会",
             "设置一个30秒后的测试提醒"
+        ]
+    )
+
+    # 4.1 get_alarms - 获取提醒列表
+    tool_registry.register(
+        name="get_alarms",
+        description="获取当前 Agent 的提醒列表。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "type": "string",
+                    "description": "Agent ID（可选，默认为 'default'）",
+                    "default": "default"
+                },
+                "include_triggered": {
+                    "type": "boolean",
+                    "description": "是否包含已触发的提醒",
+                    "default": False
+                }
+            },
+            "required": []
+        },
+        function=get_alarms,
+        category="reminder",
+        tags=["alarm", "reminder", "list"],
+        examples=[
+            "查看我的提醒列表",
+            "获取所有提醒（包括已触发的）"
+        ]
+    )
+
+    # 4.2 cancel_alarm - 取消提醒
+    tool_registry.register(
+        name="cancel_alarm",
+        description="取消一个已设置的提醒。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "alarm_id": {
+                    "type": "string",
+                    "description": "要取消的提醒 ID"
+                }
+            },
+            "required": ["alarm_id"]
+        },
+        function=cancel_alarm,
+        category="reminder",
+        tags=["alarm", "reminder", "cancel"],
+        examples=[
+            "取消提醒 abc123",
+            "删除刚才设置的提醒"
         ]
     )
 
@@ -526,13 +583,25 @@ async def call_assistant(message: str) -> Dict[str, Any]:
         return {"error": f"调用记忆管理模型失败: {str(e)}"}
 
 
-def set_alarm(seconds: int, message: str) -> Dict[str, Any]:
-    """设置提醒"""
+def set_alarm(seconds: int, message: str, agent_id: str = "default") -> Dict[str, Any]:
+    """设置提醒
+    
+    Args:
+        seconds: 秒数（1-86400，即24小时内）
+        message: 提醒消息
+        agent_id: Agent ID（可选）
+    
+    Returns:
+        包含 alarm_id 和 scheduled_time 的字典
+    """
     if not (1 <= seconds <= 86400):
         return {"error": "秒数必须在1-86400之间（24小时内）"}
     
     try:
-        alarm_id = f"alarm_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        from backend.core.alarm import get_alarm_manager
+        alarm_mgr = get_alarm_manager()
+        alarm_id = alarm_mgr.create_alarm(agent_id, seconds, message)
+        
         return {
             "status": "scheduled",
             "alarm_id": alarm_id,
@@ -542,6 +611,60 @@ def set_alarm(seconds: int, message: str) -> Dict[str, Any]:
         }
     except Exception as e:
         return {"error": f"设置提醒失败: {str(e)}"}
+
+
+def get_alarms(agent_id: str = "default", include_triggered: bool = False) -> Dict[str, Any]:
+    """获取提醒列表
+    
+    Args:
+        agent_id: Agent ID
+        include_triggered: 是否包含已触发的提醒
+    
+    Returns:
+        提醒列表
+    """
+    try:
+        from backend.core.alarm import get_alarm_manager
+        alarm_mgr = get_alarm_manager()
+        alarms = alarm_mgr.get_alarms_by_agent(agent_id, include_triggered)
+        
+        return {
+            "status": "success",
+            "agent_id": agent_id,
+            "count": len(alarms),
+            "alarms": alarms
+        }
+    except Exception as e:
+        return {"error": f"获取提醒列表失败: {str(e)}"}
+
+
+def cancel_alarm(alarm_id: str) -> Dict[str, Any]:
+    """取消提醒
+    
+    Args:
+        alarm_id: 提醒ID
+    
+    Returns:
+        取消结果
+    """
+    try:
+        from backend.core.alarm import get_alarm_manager
+        alarm_mgr = get_alarm_manager()
+        success = alarm_mgr.cancel_alarm(alarm_id)
+        
+        if success:
+            return {
+                "status": "cancelled",
+                "alarm_id": alarm_id
+            }
+        else:
+            return {
+                "status": "not_found",
+                "alarm_id": alarm_id,
+                "error": "提醒不存在或已触发"
+            }
+    except Exception as e:
+        return {"error": f"取消提醒失败: {str(e)}"}
 
 
 def mono(content: str, session_id: str = None, rounds: int = 1) -> Dict[str, Any]:

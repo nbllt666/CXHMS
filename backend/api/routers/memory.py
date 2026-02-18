@@ -1010,3 +1010,63 @@ async def semantic_search(request: SemanticSearchRequest):
     except Exception as e:
         logger.error(f"语义搜索失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="语义搜索失败")
+
+
+@router.get("/memories/vectors/status")
+async def get_vector_status():
+    """获取向量数据库状态"""
+    from backend.api.app import get_memory_manager
+
+    try:
+        memory_mgr = get_memory_manager()
+        enabled = memory_mgr.is_vector_search_enabled()
+
+        result = {
+            "enabled": enabled,
+            "backend": None,
+            "vector_count": 0,
+            "sqlite_count": 0,
+            "healthy": False,
+            "last_sync": None
+        }
+
+        conn = memory_mgr._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM memories WHERE is_deleted = 0")
+        row = cursor.fetchone()
+        result["sqlite_count"] = row[0] if row else 0
+        conn.close()
+
+        if enabled:
+            vector_store = memory_mgr._vector_store
+            config = getattr(memory_mgr, '_vector_store_config', {})
+
+            result["backend"] = config.get('backend', 'unknown')
+
+            if vector_store:
+                try:
+                    healthy = vector_store.is_available()
+                    result["healthy"] = healthy
+
+                    if healthy:
+                        info = vector_store.get_collection_info()
+                        if "error" not in info:
+                            if "count" in info:
+                                result["vector_count"] = info["count"]
+                            elif "vectors_count" in info:
+                                result["vector_count"] = info["vectors_count"]
+                            elif "row_count" in info:
+                                result["vector_count"] = info["row_count"]
+                        else:
+                            result["healthy"] = False
+                except Exception as e:
+                    logger.warning(f"获取向量存储状态失败: {e}")
+                    result["healthy"] = False
+
+        return {
+            "status": "success",
+            "data": result
+        }
+    except Exception as e:
+        logger.error(f"获取向量状态失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
