@@ -28,7 +28,17 @@ def _restore_agents():
         _backup_created = False
 
 
+def _cleanup_alarm_manager():
+    """Cleanup alarm manager to prevent logging errors after tests."""
+    try:
+        from backend.core.alarm.manager import reset_alarm_manager
+        reset_alarm_manager()
+    except Exception:
+        pass
+
+
 atexit.register(_restore_agents)
+atexit.register(_cleanup_alarm_manager)
 
 
 @pytest.fixture(scope="session")

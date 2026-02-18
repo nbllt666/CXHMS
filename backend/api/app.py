@@ -293,23 +293,25 @@ async def lifespan(app: FastAPI):
         logger.info("提醒管理器已启动")
         
         async def on_offline(agent_id: str):
-            """离线时保存上下文到长期记忆"""
+            """离线时保存上下文到长期记忆，并清理旧消息"""
             try:
                 session_id = f"agent-{agent_id}"
                 cm = get_context_manager()
-                messages = cm.get_messages(session_id, limit=100)
                 
-                if not messages:
+                all_messages = cm.get_messages(session_id, limit=1000)
+                
+                if not all_messages or len(all_messages) <= 10:
                     return
                 
+                messages_to_archive = all_messages[:-10]
                 context_text = "\n".join([
                     f"{msg.get('role', 'unknown')}: {msg.get('content', '')}"
-                    for msg in messages[-20:]
+                    for msg in messages_to_archive
                 ])
                 
                 summary_content = f"[离线自动保存] Agent {agent_id} 的对话上下文摘要:\n\n"
-                if len(context_text) > 500:
-                    summary_content += context_text[-500:] + "..."
+                if len(context_text) > 1000:
+                    summary_content += context_text[:1000] + "..."
                 else:
                     summary_content += context_text
                 
@@ -321,7 +323,11 @@ async def lifespan(app: FastAPI):
                         importance=2,
                         tags=["offline_save", "context", agent_id]
                     )
-                    logger.info(f"离线保存上下文成功: agent={agent_id}")
+                
+                for msg in messages_to_archive:
+                    cm.delete_message(msg.get("id"))
+                
+                logger.info(f"离线保存上下文成功: agent={agent_id}, 归档 {len(messages_to_archive)} 条消息")
             except Exception as e:
                 logger.error(f"离线保存上下文失败: {e}")
         
@@ -344,6 +350,20 @@ async def lifespan(app: FastAPI):
     yield
 
     logger.info("正在关闭CXHMS服务...")
+
+    try:
+        from backend.core.alarm import get_alarm_manager
+        alarm_mgr = get_alarm_manager()
+        alarm_mgr.shutdown()
+    except Exception:
+        pass
+
+    try:
+        from backend.core.websocket.manager import get_websocket_manager
+        ws_mgr = get_websocket_manager()
+        await ws_mgr.stop_cleanup_task()
+    except Exception:
+        pass
 
     if decay_batch_processor:
         await decay_batch_processor.stop()

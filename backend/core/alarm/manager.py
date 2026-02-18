@@ -3,13 +3,35 @@ import uuid
 import threading
 import time
 import asyncio
+import sys
+import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
-import logging
 import os
 
 logger = logging.getLogger(__name__)
+
+
+class _SilentHandler(logging.NullHandler):
+    """A handler that silently ignores all log records."""
+    def emit(self, record):
+        pass
+
+
+def _silence_logger():
+    """Silence the alarm logger to prevent logging errors during shutdown."""
+    if not logger.handlers or all(isinstance(h, logging.NullHandler) for h in logger.handlers):
+        return
+    logger.handlers = [_SilentHandler()]
+
+
+def _safe_log(level, msg):
+    """Safely log a message, ignoring errors if logging is unavailable."""
+    try:
+        logger.log(level, msg)
+    except (ValueError, AttributeError, OSError):
+        pass
 
 
 @dataclass
@@ -42,6 +64,7 @@ class AlarmManager:
         self._timers: Dict[str, threading.Timer] = {}
         self._lock = threading.Lock()
         self._on_trigger_callback = None
+        self._shutdown = False
         self._ensure_db()
 
     def _ensure_db(self):
@@ -95,7 +118,7 @@ class AlarmManager:
         conn.close()
 
         self._schedule_alarm(alarm)
-        logger.info(f"创建提醒: {alarm_id}, agent={agent_id}, trigger_at={trigger_time}")
+        _safe_log(logging.INFO, f"创建提醒: {alarm_id}, agent={agent_id}, trigger_at={trigger_time}")
         return alarm_id
 
     def get_alarm(self, alarm_id: str) -> Optional[Dict]:
@@ -145,7 +168,7 @@ class AlarmManager:
         conn.close()
 
         if affected > 0:
-            logger.info(f"取消提醒: {alarm_id}")
+            _safe_log(logging.INFO, f"取消提醒: {alarm_id}")
             return True
         return False
 
@@ -194,14 +217,17 @@ class AlarmManager:
         timer.start()
 
     def _trigger_alarm(self, alarm: Alarm):
-        logger.info(f"提醒触发: {alarm.id}, agent={alarm.agent_id}, message={alarm.message}")
+        if self._shutdown:
+            return
         self.mark_triggered(alarm.id)
+        _safe_log(logging.INFO, f"提醒触发: {alarm.id}, agent={alarm.agent_id}, message={alarm.message}")
 
-        if self._on_trigger_callback:
+        if self._on_trigger_callback and not self._shutdown:
             try:
                 self._on_trigger_callback(alarm.agent_id, alarm.message)
             except Exception as e:
-                logger.error(f"提醒回调失败: {e}")
+                if not self._shutdown:
+                    _safe_log(logging.ERROR, f"提醒回调失败: {e}")
 
     def restore_pending_alarms(self):
         pending = self.get_pending_alarms()
@@ -223,14 +249,15 @@ class AlarmManager:
             else:
                 self._schedule_alarm(alarm)
 
-        logger.info(f"恢复 {len(pending)} 个待触发提醒")
+        _safe_log(logging.INFO, f"恢复 {len(pending)} 个待触发提醒")
 
     def shutdown(self):
+        self._shutdown = True
         with self._lock:
             for timer in self._timers.values():
                 timer.cancel()
             self._timers.clear()
-        logger.info("提醒管理器已关闭")
+        _silence_logger()
 
 
 _alarm_manager: Optional[AlarmManager] = None
@@ -241,3 +268,11 @@ def get_alarm_manager() -> AlarmManager:
     if _alarm_manager is None:
         _alarm_manager = AlarmManager()
     return _alarm_manager
+
+
+def reset_alarm_manager():
+    """重置全局 AlarmManager 实例（用于测试）"""
+    global _alarm_manager
+    if _alarm_manager is not None:
+        _alarm_manager.shutdown()
+        _alarm_manager = None
