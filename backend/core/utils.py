@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import Dict, List
 
 
 def format_messages_for_summary(messages: List[Dict], max_content_length: int = 500) -> str:

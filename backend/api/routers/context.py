@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException
 from typing import Dict, List, Optional
+
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
 from backend.core.utils import format_messages_for_summary
 
 router = APIRouter()
@@ -21,25 +23,15 @@ class MessageCreateRequest(BaseModel):
 
 
 @router.get("/context/sessions")
-async def list_sessions(
-    workspace_id: str = "default",
-    limit: int = 20,
-    active_only: bool = True
-):
+async def list_sessions(workspace_id: str = "default", limit: int = 20, active_only: bool = True):
     from backend.api.app import get_context_manager
 
     try:
         context_mgr = get_context_manager()
         sessions = context_mgr.get_sessions(
-            workspace_id=workspace_id,
-            limit=limit,
-            active_only=active_only
+            workspace_id=workspace_id, limit=limit, active_only=active_only
         )
-        return {
-            "status": "success",
-            "sessions": sessions,
-            "total": len(sessions)
-        }
+        return {"status": "success", "sessions": sessions, "total": len(sessions)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -51,15 +43,9 @@ async def create_session(request: SessionCreateRequest):
     try:
         context_mgr = get_context_manager()
         session_id = context_mgr.create_session(
-            workspace_id=request.workspace_id,
-            title=request.title,
-            metadata=request.metadata
+            workspace_id=request.workspace_id, title=request.title, metadata=request.metadata
         )
-        return {
-            "status": "success",
-            "session_id": session_id,
-            "message": "会话创建成功"
-        }
+        return {"status": "success", "session_id": session_id, "message": "会话创建成功"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -75,10 +61,7 @@ async def get_session(session_id: str):
         if not session:
             raise HTTPException(status_code=404, detail="会话不存在")
 
-        return {
-            "status": "success",
-            "session": session
-        }
+        return {"status": "success", "session": session}
     except HTTPException:
         raise
     except Exception as e:
@@ -96,10 +79,7 @@ async def delete_session(session_id: str):
         if not success:
             raise HTTPException(status_code=404, detail="会话不存在")
 
-        return {
-            "status": "success",
-            "message": "会话删除成功"
-        }
+        return {"status": "success", "message": "会话删除成功"}
     except HTTPException:
         raise
     except Exception as e:
@@ -115,35 +95,23 @@ async def clear_all_sessions():
         context_mgr = get_context_manager()
         count = context_mgr.clear_all_sessions()
 
-        return {
-            "status": "success",
-            "message": f"已删除 {count} 个会话",
-            "deleted_count": count
-        }
+        return {"status": "success", "message": f"已删除 {count} 个会话", "deleted_count": count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/context/messages/{session_id}")
-async def get_messages(
-    session_id: str,
-    limit: int = 50,
-    offset: int = 0
-):
+async def get_messages(session_id: str, limit: int = 50, offset: int = 0):
     from backend.api.app import get_context_manager
 
     try:
         context_mgr = get_context_manager()
-        messages = context_mgr.get_messages(
-            session_id=session_id,
-            limit=limit,
-            offset=offset
-        )
+        messages = context_mgr.get_messages(session_id=session_id, limit=limit, offset=offset)
         return {
             "status": "success",
             "session_id": session_id,
             "messages": messages,
-            "total": len(messages)
+            "total": len(messages),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -160,25 +128,17 @@ async def add_message(request: MessageCreateRequest):
             role=request.role,
             content=request.content,
             content_type=request.content_type,
-            metadata=request.metadata
+            metadata=request.metadata,
         )
-        return {
-            "status": "success",
-            "message_id": message_id,
-            "message": "消息添加成功"
-        }
+        return {"status": "success", "message_id": message_id, "message": "消息添加成功"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/context/summary")
-async def generate_summary(
-    session_id: str,
-    max_points: int = 5,
-    save_as_memory: bool = True
-):
+async def generate_summary(session_id: str, max_points: int = 5, save_as_memory: bool = True):
     """使用摘要模型生成对话摘要和报告"""
-    from backend.api.app import get_context_manager, get_model_router, get_memory_manager
+    from backend.api.app import get_context_manager, get_memory_manager, get_model_router
 
     try:
         context_mgr = get_context_manager()
@@ -252,14 +212,12 @@ async def generate_summary(
 }}"""
 
         response = await summary_client.chat(
-            messages=[{"role": "user", "content": prompt}],
-            stream=False,
-            max_tokens=2048
+            messages=[{"role": "user", "content": prompt}], stream=False, max_tokens=2048
         )
 
         # 解析模型响应
         try:
-            if hasattr(response, 'content'):
+            if hasattr(response, "content"):
                 result_text = response.content
             elif isinstance(response, dict):
                 result_text = response.get("content", "")
@@ -267,10 +225,10 @@ async def generate_summary(
                 result_text = str(response)
 
             # 尝试提取JSON部分
-            json_start = result_text.find('{')
-            json_end = result_text.rfind('}')
+            json_start = result_text.find("{")
+            json_end = result_text.rfind("}")
             if json_start != -1 and json_end != -1:
-                result_text = result_text[json_start:json_end+1]
+                result_text = result_text[json_start : json_end + 1]
 
             result = json.loads(result_text)
             key_points = result.get("key_points", [])
@@ -282,8 +240,10 @@ async def generate_summary(
                 "topic": "对话摘要",
                 "participants": ["user", "assistant"],
                 "message_count": message_count,
-                "main_discussion": conversation_text[:300] if len(conversation_text) > 300 else conversation_text,
-                "sentiment": "neutral"
+                "main_discussion": (
+                    conversation_text[:300] if len(conversation_text) > 300 else conversation_text
+                ),
+                "sentiment": "neutral",
             }
 
         # 生成摘要文本
@@ -306,11 +266,12 @@ async def generate_summary(
                         "key_points": key_points,
                         "report": report,
                         "message_count": message_count,
-                        "summarized_at": datetime.now().isoformat()
-                    }
+                        "summarized_at": datetime.now().isoformat(),
+                    },
                 )
             except Exception as e:
                 import logging
+
                 logging.getLogger(__name__).error(f"保存摘要记忆失败: {e}")
 
         # 更新会话摘要
@@ -325,8 +286,8 @@ async def generate_summary(
             "metadata": {
                 "original_message_count": message_count,
                 "summary_generated_at": datetime.now().isoformat(),
-                "model_used": "summary"
-            }
+                "model_used": "summary",
+            },
         }
     except HTTPException:
         raise
@@ -342,9 +303,6 @@ async def get_context_stats(workspace_id: str = "default"):
         context_mgr = get_context_manager()
         stats = context_mgr.get_statistics(workspace_id)
 
-        return {
-            "status": "success",
-            "statistics": stats
-        }
+        return {"status": "success", "statistics": stats}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -18,25 +18,22 @@ export interface HotkeyConfig extends HotkeyOptions {
 
 function normalizeKey(key: string): string {
   const keyMap: Record<string, string> = {
-    'esc': 'Escape',
-    'enter': 'Enter',
-    'return': 'Enter',
-    'space': ' ',
-    'up': 'ArrowUp',
-    'down': 'ArrowDown',
-    'left': 'ArrowLeft',
-    'right': 'ArrowRight',
-    'del': 'Delete',
-    'backspace': 'Backspace',
-    'tab': 'Tab',
+    esc: 'Escape',
+    enter: 'Enter',
+    return: 'Enter',
+    space: ' ',
+    up: 'ArrowUp',
+    down: 'ArrowDown',
+    left: 'ArrowLeft',
+    right: 'ArrowRight',
+    del: 'Delete',
+    backspace: 'Backspace',
+    tab: 'Tab',
   };
   return keyMap[key.toLowerCase()] || key.toLowerCase();
 }
 
-function matchModifiers(
-  event: KeyboardEvent,
-  options: HotkeyOptions
-): boolean {
+function matchModifiers(event: KeyboardEvent, options: HotkeyOptions): boolean {
   const { ctrl = false, alt = false, shift = false, meta = false } = options;
 
   return (
@@ -47,11 +44,7 @@ function matchModifiers(
   );
 }
 
-export function useHotkey(
-  key: string,
-  callback: () => void,
-  options: HotkeyOptions = {}
-): void {
+export function useHotkey(key: string, callback: () => void, options: HotkeyOptions = {}): void {
   const callbackRef = useRef(callback);
   const optionsRef = useRef(options);
 
@@ -68,10 +61,7 @@ export function useHotkey(
     const normalizedKey = normalizeKey(key);
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        normalizedKey === normalizeKey(event.key) &&
-        matchModifiers(event, optionsRef.current)
-      ) {
+      if (normalizedKey === normalizeKey(event.key) && matchModifiers(event, optionsRef.current)) {
         if (preventDefault) {
           event.preventDefault();
         }
@@ -139,14 +129,14 @@ export function useHotkeys(hotkeys: HotkeyConfig[]): void {
 
 export function formatHotkey(config: HotkeyOptions & { key: string }): string {
   const parts: string[] = [];
-  
+
   if (config.ctrl) parts.push('Ctrl');
   if (config.alt) parts.push('Alt');
   if (config.shift) parts.push('Shift');
   if (config.meta) parts.push('⌘');
-  
+
   parts.push(config.key.toUpperCase());
-  
+
   return parts.join('+');
 }
 

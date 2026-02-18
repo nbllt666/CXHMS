@@ -1,8 +1,9 @@
-import pytest
-import os
-import tempfile
-import shutil
 import asyncio
+import os
+import shutil
+import tempfile
+
+import pytest
 
 from backend.core.memory.chroma_store import ChromaVectorStore
 
@@ -16,10 +17,7 @@ class TestChromaVectorStore:
     def chroma_store(self):
         """创建Chroma向量存储实例（内存模式）"""
         store = ChromaVectorStore(
-            db_path=":memory:",
-            collection_name="test_collection",
-            vector_size=128,
-            persistent=False
+            db_path=":memory:", collection_name="test_collection", vector_size=128, persistent=False
         )
         yield store
         store.close()
@@ -40,10 +38,7 @@ class TestChromaVectorStore:
         """测试添加向量"""
         embedding = [0.1] * 128
         success = await chroma_store.add_memory_vector(
-            memory_id=1,
-            content="测试内容",
-            embedding=embedding,
-            metadata={"type": "test"}
+            memory_id=1, content="测试内容", embedding=embedding, metadata={"type": "test"}
         )
         assert success is True
 
@@ -57,23 +52,14 @@ class TestChromaVectorStore:
         embedding2 = [0.9] * 128
 
         await chroma_store.add_memory_vector(
-            memory_id=1,
-            content="相似内容",
-            embedding=embedding1,
-            metadata={"type": "test"}
+            memory_id=1, content="相似内容", embedding=embedding1, metadata={"type": "test"}
         )
 
         await chroma_store.add_memory_vector(
-            memory_id=2,
-            content="不同内容",
-            embedding=embedding2,
-            metadata={"type": "test"}
+            memory_id=2, content="不同内容", embedding=embedding2, metadata={"type": "test"}
         )
 
-        results = await chroma_store.search_similar(
-            query_embedding=embedding1,
-            limit=10
-        )
+        results = await chroma_store.search_similar(query_embedding=embedding1, limit=10)
 
         assert len(results) >= 1
         assert results[0]["id"] in [1, 2]
@@ -84,11 +70,7 @@ class TestChromaVectorStore:
         """测试删除向量"""
         embedding = [0.1] * 128
 
-        await chroma_store.add_memory_vector(
-            memory_id=1,
-            content="测试内容",
-            embedding=embedding
-        )
+        await chroma_store.add_memory_vector(memory_id=1, content="测试内容", embedding=embedding)
 
         assert await chroma_store.check_exists(1) is True
 
@@ -103,10 +85,7 @@ class TestChromaVectorStore:
         embedding = [0.1] * 128
 
         await chroma_store.add_memory_vector(
-            memory_id=1,
-            content="测试内容",
-            embedding=embedding,
-            metadata={"importance": 5}
+            memory_id=1, content="测试内容", embedding=embedding, metadata={"importance": 5}
         )
 
         result = await chroma_store.get_vector_by_id(1)
@@ -117,11 +96,9 @@ class TestChromaVectorStore:
     def test_clear_collection(self, chroma_store):
         """测试清空集合"""
         embedding = [0.15] * 128
-        asyncio.run(chroma_store.add_memory_vector(
-            memory_id=999,
-            content="测试清空",
-            embedding=embedding
-        ))
+        asyncio.run(
+            chroma_store.add_memory_vector(memory_id=999, content="测试清空", embedding=embedding)
+        )
 
         info = chroma_store.get_collection_info()
         assert info["count"] >= 1
@@ -150,17 +127,10 @@ class TestChromaVectorStorePersistent:
         embedding = [0.1] * 128
 
         store1 = ChromaVectorStore(
-            db_path=db_path,
-            collection_name="persist_test",
-            vector_size=128,
-            persistent=True
+            db_path=db_path, collection_name="persist_test", vector_size=128, persistent=True
         )
 
-        await store1.add_memory_vector(
-            memory_id=1,
-            content="持久化测试",
-            embedding=embedding
-        )
+        await store1.add_memory_vector(memory_id=1, content="持久化测试", embedding=embedding)
 
         info1 = store1.get_collection_info()
         assert info1["count"] == 1
@@ -168,10 +138,7 @@ class TestChromaVectorStorePersistent:
         store1.close()
 
         store2 = ChromaVectorStore(
-            db_path=db_path,
-            collection_name="persist_test",
-            vector_size=128,
-            persistent=True
+            db_path=db_path, collection_name="persist_test", vector_size=128, persistent=True
         )
 
         info2 = store2.get_collection_info()

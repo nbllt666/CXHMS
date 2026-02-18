@@ -1,8 +1,10 @@
 """Memory manager unit tests."""
-import pytest
+
 import sqlite3
-from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 from backend.core.memory.manager import MemoryManager
 
@@ -26,9 +28,7 @@ class TestMemoryManager:
     def test_write_memory(self, memory_manager):
         """Test writing a memory."""
         memory_id = memory_manager.write_memory(
-            content="Test memory",
-            memory_type="long_term",
-            importance=3
+            content="Test memory", memory_type="long_term", importance=3
         )
         assert memory_id is not None
         assert isinstance(memory_id, int)
@@ -36,10 +36,7 @@ class TestMemoryManager:
     def test_get_memory(self, memory_manager):
         """Test getting a memory by ID."""
         # Write a memory first
-        memory_id = memory_manager.write_memory(
-            content="Test memory",
-            memory_type="long_term"
-        )
+        memory_id = memory_manager.write_memory(content="Test memory", memory_type="long_term")
 
         # Retrieve it
         memory = memory_manager.get_memory(memory_id)
@@ -54,16 +51,10 @@ class TestMemoryManager:
     def test_update_memory(self, memory_manager):
         """Test updating a memory."""
         # Write a memory
-        memory_id = memory_manager.write_memory(
-            content="Original content",
-            memory_type="long_term"
-        )
+        memory_id = memory_manager.write_memory(content="Original content", memory_type="long_term")
 
         # Update it
-        updated = memory_manager.update_memory(
-            memory_id,
-            new_content="Updated content"
-        )
+        updated = memory_manager.update_memory(memory_id, new_content="Updated content")
         assert updated is True
 
         # Verify update
@@ -73,10 +64,7 @@ class TestMemoryManager:
     def test_delete_memory(self, memory_manager):
         """Test deleting a memory."""
         # Write a memory
-        memory_id = memory_manager.write_memory(
-            content="To be deleted",
-            memory_type="short_term"
-        )
+        memory_id = memory_manager.write_memory(content="To be deleted", memory_type="short_term")
 
         # Delete it
         result = memory_manager.delete_memory(memory_id)
@@ -101,8 +89,7 @@ class TestMemoryManager:
         """Test different importance levels."""
         for importance in range(1, 6):
             memory_id = memory_manager.write_memory(
-                content=f"Importance {importance}",
-                importance=importance
+                content=f"Importance {importance}", importance=importance
             )
             assert memory_id is not None
             memory = memory_manager.get_memory(memory_id)

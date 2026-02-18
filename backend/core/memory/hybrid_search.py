@@ -1,5 +1,6 @@
-from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+
 from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
@@ -29,20 +30,12 @@ class HybridSearchOptions:
 
 
 class HybridSearch:
-    def __init__(
-        self,
-        vector_store,
-        sqlite_manager,
-        embedding_model=None
-    ):
+    def __init__(self, vector_store, sqlite_manager, embedding_model=None):
         self.vector_store = vector_store
         self.sqlite_manager = sqlite_manager
         self.embedding_model = embedding_model
 
-    async def search(
-        self,
-        options: HybridSearchOptions
-    ) -> List[SearchResult]:
+    async def search(self, options: HybridSearchOptions) -> List[SearchResult]:
         results: List[SearchResult] = []
 
         vector_results = []
@@ -55,26 +48,21 @@ class HybridSearch:
             keyword_results = await self._keyword_search(options)
 
         merged = self._merge_results(
-            vector_results,
-            keyword_results,
-            options.vector_weight,
-            options.keyword_weight
+            vector_results, keyword_results, options.vector_weight, options.keyword_weight
         )
 
         filtered = [r for r in merged if r.score >= options.min_score]
 
         filtered.sort(key=lambda x: x.score, reverse=True)
 
-        return filtered[:options.limit]
+        return filtered[: options.limit]
 
     async def _vector_search(self, options: HybridSearchOptions) -> List[SearchResult]:
         try:
             embedding = await self.embedding_model.get_embedding(options.query)
 
             vector_results = await self.vector_store.search_similar(
-                query_embedding=embedding,
-                limit=options.limit * 2,
-                memory_type=options.memory_type
+                query_embedding=embedding, limit=options.limit * 2, memory_type=options.memory_type
             )
 
             return [
@@ -83,7 +71,7 @@ class HybridSearch:
                     content=r["content"],
                     score=r["score"],
                     source="vector",
-                    metadata=r.get("metadata")
+                    metadata=r.get("metadata"),
                 )
                 for r in vector_results
             ]
@@ -97,7 +85,7 @@ class HybridSearch:
                 query=options.query,
                 memory_type=options.memory_type,
                 tags=options.tags,
-                limit=options.limit * 2
+                limit=options.limit * 2,
             )
 
             return [
@@ -106,7 +94,7 @@ class HybridSearch:
                     content=r["content"],
                     score=self._calculate_keyword_score(r["content"], options.query),
                     source="keyword",
-                    metadata=r
+                    metadata=r,
                 )
                 for r in keyword_results
             ]
@@ -133,7 +121,7 @@ class HybridSearch:
         vector_results: List[SearchResult],
         keyword_results: List[SearchResult],
         vector_weight: float,
-        keyword_weight: float
+        keyword_weight: float,
     ) -> List[SearchResult]:
         merged_dict: Dict[int, SearchResult] = {}
 
@@ -148,16 +136,13 @@ class HybridSearch:
                     content=r.content,
                     score=r.score * vector_weight,
                     source="vector",
-                    metadata=r.metadata
+                    metadata=r.metadata,
                 )
 
         for r in keyword_results:
             if r.memory_id in merged_dict:
                 existing = merged_dict[r.memory_id]
-                combined_score = (
-                    existing.score * (1 - keyword_weight) +
-                    r.score * keyword_weight
-                )
+                combined_score = existing.score * (1 - keyword_weight) + r.score * keyword_weight
                 existing.score = combined_score
                 existing.source = "hybrid"
                 if r.metadata:
@@ -168,23 +153,16 @@ class HybridSearch:
                     content=r.content,
                     score=r.score * keyword_weight,
                     source="keyword",
-                    metadata=r.metadata
+                    metadata=r.metadata,
                 )
 
         return list(merged_dict.values())
 
     async def semantic_search(
-        self,
-        query: str,
-        memory_type: str = None,
-        limit: int = 10
+        self, query: str, memory_type: str = None, limit: int = 10
     ) -> List[Dict]:
         options = HybridSearchOptions(
-            query=query,
-            memory_type=memory_type,
-            limit=limit,
-            use_vector=True,
-            use_keyword=False
+            query=query, memory_type=memory_type, limit=limit, use_vector=True, use_keyword=False
         )
 
         results = await self.search(options)
@@ -194,17 +172,13 @@ class HybridSearch:
                 "memory_id": r.memory_id,
                 "content": r.content,
                 "score": r.score,
-                "metadata": r.metadata
+                "metadata": r.metadata,
             }
             for r in results
         ]
 
     async def keyword_search(
-        self,
-        query: str,
-        memory_type: str = None,
-        tags: List[str] = None,
-        limit: int = 10
+        self, query: str, memory_type: str = None, tags: List[str] = None, limit: int = 10
     ) -> List[Dict]:
         options = HybridSearchOptions(
             query=query,
@@ -212,7 +186,7 @@ class HybridSearch:
             tags=tags,
             limit=limit,
             use_vector=False,
-            use_keyword=True
+            use_keyword=True,
         )
 
         results = await self.search(options)
@@ -222,7 +196,7 @@ class HybridSearch:
                 "memory_id": r.memory_id,
                 "content": r.content,
                 "score": r.score,
-                "metadata": r.metadata
+                "metadata": r.metadata,
             }
             for r in results
         ]

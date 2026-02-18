@@ -1,7 +1,9 @@
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 from fastapi import HTTPException, Request
-from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
 from .response import APIResponse, ErrorResponse
 
 
@@ -11,7 +13,7 @@ class CXHMSError(Exception):
         message: str,
         error_code: str = None,
         status_code: int = 500,
-        details: Dict[str, Any] = None
+        details: Dict[str, Any] = None,
     ):
         self.message = message
         self.error_code = error_code or "INTERNAL_ERROR"
@@ -66,7 +68,7 @@ class RateLimitError(CXHMSError):
             f"Rate limit exceeded. Retry after {retry_after} seconds",
             "RATE_LIMIT_ERROR",
             429,
-            {"retry_after": retry_after}
+            {"retry_after": retry_after},
         )
 
 
@@ -74,10 +76,8 @@ async def cxhms_exception_handler(request: Request, exc: CXHMSError) -> JSONResp
     return JSONResponse(
         status_code=exc.status_code,
         content=ErrorResponse(
-            error=exc.message,
-            error_code=exc.error_code,
-            details=exc.details
-        ).model_dump()
+            error=exc.message, error_code=exc.error_code, details=exc.details
+        ).model_dump(),
     )
 
 
@@ -85,28 +85,29 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     return JSONResponse(
         status_code=exc.status_code,
         content=ErrorResponse(
-            error=str(exc.detail),
-            error_code=f"HTTP_{exc.status_code}"
-        ).model_dump()
+            error=str(exc.detail), error_code=f"HTTP_{exc.status_code}"
+        ).model_dump(),
     )
 
 
-async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
     errors = []
     for error in exc.errors():
-        errors.append({
-            "field": ".".join(str(loc) for loc in error["loc"]),
-            "message": error["msg"],
-            "type": error["type"]
-        })
+        errors.append(
+            {
+                "field": ".".join(str(loc) for loc in error["loc"]),
+                "message": error["msg"],
+                "type": error["type"],
+            }
+        )
 
     return JSONResponse(
         status_code=422,
         content=ErrorResponse(
-            error="Validation failed",
-            error_code="VALIDATION_ERROR",
-            details={"errors": errors}
-        ).model_dump()
+            error="Validation failed", error_code="VALIDATION_ERROR", details={"errors": errors}
+        ).model_dump(),
     )
 
 
@@ -116,6 +117,6 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
         content=ErrorResponse(
             error="Internal server error",
             error_code="INTERNAL_ERROR",
-            details={"exception": str(exc)} if str(exc) else None
-        ).model_dump()
+            details={"exception": str(exc)} if str(exc) else None,
+        ).model_dump(),
     )

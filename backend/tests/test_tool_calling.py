@@ -1,13 +1,15 @@
 """工具调用测试"""
-import pytest
-from pathlib import Path
-import sys
+
 import os
+import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import pytest
 
-from backend.core.tools import tool_registry, register_master_tools, set_master_dependencies
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 from backend.core.llm.client import OllamaClient, VLLMClient
+from backend.core.tools import register_master_tools, set_master_dependencies, tool_registry
 
 
 class TestToolCalling:
@@ -15,11 +17,7 @@ class TestToolCalling:
 
     def test_tool_registration(self):
         """测试工具注册"""
-        set_master_dependencies(
-            memory_manager=None,
-            secondary_router=None,
-            context_manager=None
-        )
+        set_master_dependencies(memory_manager=None, secondary_router=None, context_manager=None)
         register_master_tools()
 
         stats = tool_registry.get_tool_stats()
@@ -28,16 +26,12 @@ class TestToolCalling:
 
     def test_tool_to_openai_function(self):
         """测试工具转换为 OpenAI 格式"""
-        set_master_dependencies(
-            memory_manager=None,
-            secondary_router=None,
-            context_manager=None
-        )
+        set_master_dependencies(memory_manager=None, secondary_router=None, context_manager=None)
         register_master_tools()
 
         tool = tool_registry.get_tool("write_long_term_memory")
         assert tool is not None, "工具应该存在"
-        
+
         openai_func = tool.to_openai_function()
         assert "type" in openai_func, "应该有 type 字段"
         assert openai_func["type"] == "function", "type 应该是 function"
@@ -46,11 +40,7 @@ class TestToolCalling:
 
     def test_tool_call_execution(self):
         """测试工具调用执行"""
-        set_master_dependencies(
-            memory_manager=None,
-            secondary_router=None,
-            context_manager=None
-        )
+        set_master_dependencies(memory_manager=None, secondary_router=None, context_manager=None)
         register_master_tools()
 
         result = tool_registry.call_tool("set_alarm", {"seconds": 60, "message": "测试提醒"})
@@ -59,11 +49,7 @@ class TestToolCalling:
 
     def test_tool_not_found(self):
         """测试工具不存在的情况"""
-        set_master_dependencies(
-            memory_manager=None,
-            secondary_router=None,
-            context_manager=None
-        )
+        set_master_dependencies(memory_manager=None, secondary_router=None, context_manager=None)
         register_master_tools()
 
         result = tool_registry.call_tool("non_existent_tool", {})
@@ -72,11 +58,7 @@ class TestToolCalling:
 
     def test_tool_disabled(self):
         """测试禁用工具的调用"""
-        set_master_dependencies(
-            memory_manager=None,
-            secondary_router=None,
-            context_manager=None
-        )
+        set_master_dependencies(memory_manager=None, secondary_router=None, context_manager=None)
         register_master_tools()
 
         tool_registry.disable_tool("set_alarm")
@@ -88,11 +70,7 @@ class TestToolCalling:
 
     def test_tool_list_api(self):
         """测试工具列表 API"""
-        set_master_dependencies(
-            memory_manager=None,
-            secondary_router=None,
-            context_manager=None
-        )
+        set_master_dependencies(memory_manager=None, secondary_router=None, context_manager=None)
         register_master_tools()
 
         tools = tool_registry.list_openai_functions(include_builtin=True)
@@ -105,11 +83,7 @@ class TestToolCalling:
 
     def test_tool_stats(self):
         """测试工具统计"""
-        set_master_dependencies(
-            memory_manager=None,
-            secondary_router=None,
-            context_manager=None
-        )
+        set_master_dependencies(memory_manager=None, secondary_router=None, context_manager=None)
         register_master_tools()
 
         stats = tool_registry.get_tool_stats()
@@ -121,11 +95,7 @@ class TestToolCalling:
 
     def test_tool_enable_disable(self):
         """测试工具启用和禁用"""
-        set_master_dependencies(
-            memory_manager=None,
-            secondary_router=None,
-            context_manager=None
-        )
+        set_master_dependencies(memory_manager=None, secondary_router=None, context_manager=None)
         register_master_tools()
 
         tool_registry.disable_tool("set_alarm")

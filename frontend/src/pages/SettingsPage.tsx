@@ -19,7 +19,12 @@ const sections: SettingSection[] = [
     title: '外观设置',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
+        />
       </svg>
     ),
     description: '主题、颜色和界面设置',
@@ -29,7 +34,12 @@ const sections: SettingSection[] = [
     title: '服务管理',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"
+        />
       </svg>
     ),
     description: '启动/停止后端服务',
@@ -39,7 +49,12 @@ const sections: SettingSection[] = [
     title: '向量存储',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
+        />
       </svg>
     ),
     description: '配置向量数据库连接',
@@ -49,7 +64,12 @@ const sections: SettingSection[] = [
     title: '模型设置',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+        />
       </svg>
     ),
     description: '配置大语言模型参数',
@@ -72,13 +92,19 @@ const accentColors = [
 ];
 
 export function SettingsPage() {
-  const [activeSection, setActiveSection] = useState<'appearance' | 'service' | 'vector' | 'llm'>('appearance');
+  const [activeSection, setActiveSection] = useState<'appearance' | 'service' | 'vector' | 'llm'>(
+    'appearance'
+  );
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [logs, setLogs] = useState('');
   const [isBackendRunning, setIsBackendRunning] = useState(false);
   const [isControlServiceReady, setIsControlServiceReady] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [backendStatus, setBackendStatus] = useState<{ pid?: number; uptime?: number; port?: number }>({});
+  const [backendStatus, setBackendStatus] = useState<{
+    pid?: number;
+    uptime?: number;
+    port?: number;
+  }>({});
   const [themeTransition, setThemeTransition] = useState(false);
 
   const { theme, setTheme } = useThemeStore();
@@ -146,13 +172,36 @@ export function SettingsPage() {
   });
 
   const [modelsConfig, setModelsConfig] = useState({
-    main: { provider: 'ollama', host: 'http://localhost:11434', model: 'llama3.2:3b', apiKey: '', enabled: true },
-    summary: { provider: 'ollama', host: 'http://localhost:11434', model: 'llama3.2:3b', apiKey: '', enabled: false },
-    memory: { provider: 'ollama', host: 'http://localhost:11434', model: 'llama3.2:3b', apiKey: '', enabled: false },
+    main: {
+      provider: 'ollama',
+      host: 'http://localhost:11434',
+      model: 'llama3.2:3b',
+      apiKey: '',
+      enabled: true,
+    },
+    summary: {
+      provider: 'ollama',
+      host: 'http://localhost:11434',
+      model: 'llama3.2:3b',
+      apiKey: '',
+      enabled: false,
+    },
+    memory: {
+      provider: 'ollama',
+      host: 'http://localhost:11434',
+      model: 'llama3.2:3b',
+      apiKey: '',
+      enabled: false,
+    },
   });
 
   const [modelDefaults, setModelDefaults] = useState({ summary: 'main', memory: 'main' });
-  const [llmParams, setLlmParams] = useState({ temperature: 0.7, maxTokens: 0, topP: 0.9, timeout: 30 });
+  const [llmParams, setLlmParams] = useState({
+    temperature: 0.7,
+    maxTokens: 0,
+    topP: 0.9,
+    timeout: 30,
+  });
 
   useEffect(() => {
     if (serviceConfig?.config) {
@@ -171,9 +220,15 @@ export function SettingsPage() {
       }
       if (serviceConfig.config.models) {
         setModelsConfig((prev) => ({
-          main: serviceConfig.config.models?.main ? { ...prev.main, ...serviceConfig.config.models.main } : prev.main,
-          summary: serviceConfig.config.models?.summary ? { ...prev.summary, ...serviceConfig.config.models.summary } : prev.summary,
-          memory: serviceConfig.config.models?.memory ? { ...prev.memory, ...serviceConfig.config.models.memory } : prev.memory,
+          main: serviceConfig.config.models?.main
+            ? { ...prev.main, ...serviceConfig.config.models.main }
+            : prev.main,
+          summary: serviceConfig.config.models?.summary
+            ? { ...prev.summary, ...serviceConfig.config.models.summary }
+            : prev.summary,
+          memory: serviceConfig.config.models?.memory
+            ? { ...prev.memory, ...serviceConfig.config.models.memory }
+            : prev.memory,
         }));
       }
       if (serviceConfig.config.model_defaults) {
@@ -279,20 +334,23 @@ export function SettingsPage() {
           backend: vectorConfig.backend,
           vector_size: vectorConfig.vectorSize,
         };
-        
+
         if (vectorConfig.backend === 'chroma') {
           vectorPayload.db_path = vectorConfig.dbPath;
           vectorPayload.collection_name = vectorConfig.collectionName;
         } else if (vectorConfig.backend === 'milvus_lite') {
           vectorPayload.db_path = vectorConfig.dbPath;
-        } else if (vectorConfig.backend === 'weaviate' || vectorConfig.backend === 'weaviate_embedded') {
+        } else if (
+          vectorConfig.backend === 'weaviate' ||
+          vectorConfig.backend === 'weaviate_embedded'
+        ) {
           vectorPayload.weaviate_host = vectorConfig.weaviateHost;
           vectorPayload.weaviate_port = vectorConfig.weaviatePort;
         } else if (vectorConfig.backend === 'qdrant') {
           vectorPayload.qdrant_host = vectorConfig.qdrantHost;
           vectorPayload.qdrant_port = vectorConfig.qdrantPort;
         }
-        
+
         await api.updateServiceConfig({
           vector: vectorPayload,
         });
@@ -331,7 +389,9 @@ export function SettingsPage() {
               {section.icon}
               <div>
                 <div>{section.title}</div>
-                <div className="text-xs text-[var(--color-text-tertiary)] font-normal">{section.description}</div>
+                <div className="text-xs text-[var(--color-text-tertiary)] font-normal">
+                  {section.description}
+                </div>
               </div>
             </button>
           ))}
@@ -357,7 +417,9 @@ export function SettingsPage() {
                       >
                         <div className="text-2xl mb-2">{option.icon}</div>
                         <div className="font-medium">{option.label}</div>
-                        <div className="text-xs text-[var(--color-text-tertiary)]">{option.description}</div>
+                        <div className="text-xs text-[var(--color-text-tertiary)]">
+                          {option.description}
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -375,7 +437,9 @@ export function SettingsPage() {
                         className={cn(
                           'w-10 h-10 rounded-full transition-all',
                           color.class,
-                          selectedAccent === color.value ? 'ring-2 ring-offset-2 ring-[var(--color-accent)] scale-110' : 'hover:scale-105'
+                          selectedAccent === color.value
+                            ? 'ring-2 ring-offset-2 ring-[var(--color-accent)] scale-110'
+                            : 'hover:scale-105'
                         )}
                         title={color.label}
                       />
@@ -400,7 +464,9 @@ export function SettingsPage() {
                         value={localStorage.getItem('cxhms-offline-timeout') || '60'}
                         onChange={(e) => {
                           localStorage.setItem('cxhms-offline-timeout', e.target.value);
-                          window.dispatchEvent(new CustomEvent('offline-timeout-change', { detail: e.target.value }));
+                          window.dispatchEvent(
+                            new CustomEvent('offline-timeout-change', { detail: e.target.value })
+                          );
                         }}
                         className="w-full px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-[var(--radius-md)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                       >
@@ -424,13 +490,19 @@ export function SettingsPage() {
                       </div>
                       <div>
                         <div className="font-medium">示例标题</div>
-                        <div className="text-sm text-[var(--color-text-secondary)]">这是一个预览文本</div>
+                        <div className="text-sm text-[var(--color-text-secondary)]">
+                          这是一个预览文本
+                        </div>
                       </div>
                     </div>
                     <div className="flex gap-2">
                       <Button size="sm">主要按钮</Button>
-                      <Button variant="secondary" size="sm">次要按钮</Button>
-                      <Button variant="ghost" size="sm">幽灵按钮</Button>
+                      <Button variant="secondary" size="sm">
+                        次要按钮
+                      </Button>
+                      <Button variant="ghost" size="sm">
+                        幽灵按钮
+                      </Button>
                     </div>
                   </div>
                 </CardBody>
@@ -445,20 +517,34 @@ export function SettingsPage() {
                   <div className="flex items-center justify-between mb-6">
                     <div>
                       <h3 className="text-lg font-semibold">服务管理</h3>
-                      <p className="text-sm text-[var(--color-text-secondary)]">管理 CXHMS 后端服务</p>
+                      <p className="text-sm text-[var(--color-text-secondary)]">
+                        管理 CXHMS 后端服务
+                      </p>
                     </div>
                     <div className="flex items-center gap-2">
                       {isBackendRunning ? (
                         <>
-                          <Button variant="secondary" onClick={handleRestartBackend} loading={isProcessing}>
+                          <Button
+                            variant="secondary"
+                            onClick={handleRestartBackend}
+                            loading={isProcessing}
+                          >
                             重启
                           </Button>
-                          <Button variant="danger" onClick={handleStopBackend} loading={isProcessing}>
+                          <Button
+                            variant="danger"
+                            onClick={handleStopBackend}
+                            loading={isProcessing}
+                          >
                             停止
                           </Button>
                         </>
                       ) : (
-                        <Button onClick={handleStartBackend} loading={isProcessing} disabled={!isControlServiceReady}>
+                        <Button
+                          onClick={handleStartBackend}
+                          loading={isProcessing}
+                          disabled={!isControlServiceReady}
+                        >
                           启动服务
                         </Button>
                       )}
@@ -469,7 +555,9 @@ export function SettingsPage() {
                     <div>
                       <span className="text-xs text-[var(--color-text-tertiary)]">状态</span>
                       <p className="font-medium flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full ${isBackendRunning ? 'bg-green-500' : 'bg-red-500'}`} />
+                        <span
+                          className={`w-2 h-2 rounded-full ${isBackendRunning ? 'bg-green-500' : 'bg-red-500'}`}
+                        />
                         {isBackendRunning ? '运行中' : '已停止'}
                       </p>
                     </div>
@@ -506,7 +594,9 @@ export function SettingsPage() {
                       <label className="text-sm font-medium mb-2 block">向量存储后端</label>
                       <select
                         value={vectorConfig.backend}
-                        onChange={(e) => setVectorConfig({ ...vectorConfig, backend: e.target.value })}
+                        onChange={(e) =>
+                          setVectorConfig({ ...vectorConfig, backend: e.target.value })
+                        }
                         className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
                       >
                         <option value="chroma">Chroma (推荐 Windows)</option>
@@ -520,7 +610,9 @@ export function SettingsPage() {
                       <label className="text-sm font-medium mb-2 block">向量维度</label>
                       <select
                         value={vectorConfig.vectorSize}
-                        onChange={(e) => setVectorConfig({ ...vectorConfig, vectorSize: parseInt(e.target.value) })}
+                        onChange={(e) =>
+                          setVectorConfig({ ...vectorConfig, vectorSize: parseInt(e.target.value) })
+                        }
                         className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
                       >
                         <option value={384}>384 (小型模型)</option>
@@ -529,26 +621,31 @@ export function SettingsPage() {
                         <option value={1536}>1536 (OpenAI)</option>
                       </select>
                     </div>
-                    {(vectorConfig.backend === 'chroma') && (
+                    {vectorConfig.backend === 'chroma' && (
                       <div>
                         <label className="text-sm font-medium mb-2 block">数据存储路径</label>
                         <input
                           type="text"
                           value={vectorConfig.dbPath || 'data/chroma_db'}
-                          onChange={(e) => setVectorConfig({ ...vectorConfig, dbPath: e.target.value })}
+                          onChange={(e) =>
+                            setVectorConfig({ ...vectorConfig, dbPath: e.target.value })
+                          }
                           className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
                           placeholder="data/chroma_db"
                         />
                       </div>
                     )}
-                    {(vectorConfig.backend === 'weaviate' || vectorConfig.backend === 'weaviate_embedded') && (
+                    {(vectorConfig.backend === 'weaviate' ||
+                      vectorConfig.backend === 'weaviate_embedded') && (
                       <>
                         <div>
                           <label className="text-sm font-medium mb-2 block">Weaviate 主机</label>
                           <input
                             type="text"
                             value={vectorConfig.weaviateHost || 'localhost'}
-                            onChange={(e) => setVectorConfig({ ...vectorConfig, weaviateHost: e.target.value })}
+                            onChange={(e) =>
+                              setVectorConfig({ ...vectorConfig, weaviateHost: e.target.value })
+                            }
                             className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
                             placeholder="localhost"
                           />
@@ -558,7 +655,12 @@ export function SettingsPage() {
                           <input
                             type="number"
                             value={vectorConfig.weaviatePort || 8080}
-                            onChange={(e) => setVectorConfig({ ...vectorConfig, weaviatePort: parseInt(e.target.value) })}
+                            onChange={(e) =>
+                              setVectorConfig({
+                                ...vectorConfig,
+                                weaviatePort: parseInt(e.target.value),
+                              })
+                            }
                             className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
                             placeholder="8080"
                           />
@@ -572,7 +674,9 @@ export function SettingsPage() {
                           <input
                             type="text"
                             value={vectorConfig.qdrantHost || 'localhost'}
-                            onChange={(e) => setVectorConfig({ ...vectorConfig, qdrantHost: e.target.value })}
+                            onChange={(e) =>
+                              setVectorConfig({ ...vectorConfig, qdrantHost: e.target.value })
+                            }
                             className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
                             placeholder="localhost"
                           />
@@ -582,7 +686,12 @@ export function SettingsPage() {
                           <input
                             type="number"
                             value={vectorConfig.qdrantPort || 6333}
-                            onChange={(e) => setVectorConfig({ ...vectorConfig, qdrantPort: parseInt(e.target.value) })}
+                            onChange={(e) =>
+                              setVectorConfig({
+                                ...vectorConfig,
+                                qdrantPort: parseInt(e.target.value),
+                              })
+                            }
                             className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
                             placeholder="6333"
                           />
@@ -591,7 +700,11 @@ export function SettingsPage() {
                     )}
                   </div>
                   <div className="flex justify-end mt-6">
-                    <Button onClick={handleSave} loading={saveStatus === 'saving'} disabled={!isBackendRunning}>
+                    <Button
+                      onClick={handleSave}
+                      loading={saveStatus === 'saving'}
+                      disabled={!isBackendRunning}
+                    >
                       {saveStatus === 'saved' ? '已保存' : '保存配置'}
                     </Button>
                   </div>
@@ -611,7 +724,12 @@ export function SettingsPage() {
                         <label className="text-sm font-medium mb-2 block">模型提供商</label>
                         <select
                           value={modelsConfig.main.provider}
-                          onChange={(e) => setModelsConfig((prev) => ({ ...prev, main: { ...prev.main, provider: e.target.value } }))}
+                          onChange={(e) =>
+                            setModelsConfig((prev) => ({
+                              ...prev,
+                              main: { ...prev.main, provider: e.target.value },
+                            }))
+                          }
                           className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
                         >
                           <option value="ollama">Ollama (本地)</option>
@@ -624,26 +742,39 @@ export function SettingsPage() {
                         <input
                           type="text"
                           value={modelsConfig.main.model}
-                          onChange={(e) => setModelsConfig((prev) => ({ ...prev, main: { ...prev.main, model: e.target.value } }))}
+                          onChange={(e) =>
+                            setModelsConfig((prev) => ({
+                              ...prev,
+                              main: { ...prev.main, model: e.target.value },
+                            }))
+                          }
                           className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
                         />
                       </div>
                     </div>
                     <div>
-                      <label className="text-sm font-medium mb-2 block">温度: {llmParams.temperature}</label>
+                      <label className="text-sm font-medium mb-2 block">
+                        温度: {llmParams.temperature}
+                      </label>
                       <input
                         type="range"
                         min="0"
                         max="2"
                         step="0.1"
                         value={llmParams.temperature}
-                        onChange={(e) => setLlmParams({ ...llmParams, temperature: parseFloat(e.target.value) })}
+                        onChange={(e) =>
+                          setLlmParams({ ...llmParams, temperature: parseFloat(e.target.value) })
+                        }
                         className="w-full"
                       />
                     </div>
                   </div>
                   <div className="flex justify-end mt-6">
-                    <Button onClick={handleSave} loading={saveStatus === 'saving'} disabled={!isBackendRunning}>
+                    <Button
+                      onClick={handleSave}
+                      loading={saveStatus === 'saving'}
+                      disabled={!isBackendRunning}
+                    >
                       {saveStatus === 'saved' ? '已保存' : '保存配置'}
                     </Button>
                   </div>

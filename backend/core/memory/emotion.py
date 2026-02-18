@@ -1,6 +1,7 @@
 import re
-from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
+
 from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
@@ -17,31 +18,77 @@ class EmotionResult:
 
 class EmotionAnalyzer:
     POSITIVE_PATTERNS = {
-        "高兴": 0.9, "开心": 0.9, "快乐": 0.9, "喜悦": 0.85,
-        "满意": 0.7, "喜欢": 0.8, "热爱": 0.95, "感谢": 0.75,
-        "美好": 0.8, "棒": 0.85, "优秀": 0.85, "精彩": 0.8,
-        "幸福": 0.9, "温暖": 0.75, "感动": 0.8, "惊喜": 0.85,
-        "兴奋": 0.9, "骄傲": 0.8, "希望": 0.7, "期待": 0.65,
-        "爱": 0.9, "happy": 0.85, "great": 0.8, "wonderful": 0.9
+        "高兴": 0.9,
+        "开心": 0.9,
+        "快乐": 0.9,
+        "喜悦": 0.85,
+        "满意": 0.7,
+        "喜欢": 0.8,
+        "热爱": 0.95,
+        "感谢": 0.75,
+        "美好": 0.8,
+        "棒": 0.85,
+        "优秀": 0.85,
+        "精彩": 0.8,
+        "幸福": 0.9,
+        "温暖": 0.75,
+        "感动": 0.8,
+        "惊喜": 0.85,
+        "兴奋": 0.9,
+        "骄傲": 0.8,
+        "希望": 0.7,
+        "期待": 0.65,
+        "爱": 0.9,
+        "happy": 0.85,
+        "great": 0.8,
+        "wonderful": 0.9,
     }
 
     NEGATIVE_PATTERNS = {
-        "难过": 0.85, "悲伤": 0.9, "痛苦": 0.9, "失望": 0.75,
-        "沮丧": 0.8, "生气": 0.9, "愤怒": 0.95, "讨厌": 0.8,
-        "害怕": 0.8, "恐惧": 0.85, "担忧": 0.7, "焦虑": 0.8,
-        "后悔": 0.75, "遗憾": 0.7, "无奈": 0.7, "烦躁": 0.75,
-        "糟糕": 0.85, "sad": 0.85, "angry": 0.9, "bad": 0.7
+        "难过": 0.85,
+        "悲伤": 0.9,
+        "痛苦": 0.9,
+        "失望": 0.75,
+        "沮丧": 0.8,
+        "生气": 0.9,
+        "愤怒": 0.95,
+        "讨厌": 0.8,
+        "害怕": 0.8,
+        "恐惧": 0.85,
+        "担忧": 0.7,
+        "焦虑": 0.8,
+        "后悔": 0.75,
+        "遗憾": 0.7,
+        "无奈": 0.7,
+        "烦躁": 0.75,
+        "糟糕": 0.85,
+        "sad": 0.85,
+        "angry": 0.9,
+        "bad": 0.7,
     }
 
     NEUTRAL_PATTERNS = {
-        "正常": 0.0, "一般": 0.0, "普通": 0.0, "还行": 0.1,
-        "还好": 0.1, "可以": 0.1, "fine": 0.1
+        "正常": 0.0,
+        "一般": 0.0,
+        "普通": 0.0,
+        "还行": 0.1,
+        "还好": 0.1,
+        "可以": 0.1,
+        "fine": 0.1,
     }
 
     INTENSITY_WORDS = {
-        "非常": 1.5, "特别": 1.4, "极其": 1.6, "相当": 1.3,
-        "很": 1.2, "挺": 1.1, "稍微": 0.6, "有点": 0.5,
-        "really": 1.5, "very": 1.3, "extremely": 1.6
+        "非常": 1.5,
+        "特别": 1.4,
+        "极其": 1.6,
+        "相当": 1.3,
+        "很": 1.2,
+        "挺": 1.1,
+        "稍微": 0.6,
+        "有点": 0.5,
+        "really": 1.5,
+        "very": 1.3,
+        "extremely": 1.6,
     }
 
     NEGATION_WORDS = {"不", "没", "无", "非", "未", "别", "not", "no", "never"}
@@ -58,11 +105,7 @@ class EmotionAnalyzer:
     async def analyze(self, text: str, context: str = "") -> EmotionResult:
         if not text or not text.strip():
             return EmotionResult(
-                polarity=0.0,
-                intensity=0.0,
-                emotion_type="neutral",
-                confidence=0.5,
-                keywords=[]
+                polarity=0.0, intensity=0.0, emotion_type="neutral", confidence=0.5, keywords=[]
             )
 
         cache_key = f"{text[:100]}:{context[:50]}" if context else text[:100]
@@ -139,7 +182,7 @@ class EmotionAnalyzer:
             intensity=round(intensity, 4),
             emotion_type=emotion_type,
             confidence=round(confidence, 4),
-            keywords=matched_keywords[:10]
+            keywords=matched_keywords[:10],
         )
 
     def get_emotion_score(self, text: str) -> float:

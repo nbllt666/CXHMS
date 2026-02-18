@@ -1,11 +1,13 @@
-from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
 
 class SessionType(str, Enum):
     """会话类型"""
+
     CHAT = "chat"
     MEMORY = "memory"
     TOOL = "tool"
@@ -14,6 +16,7 @@ class SessionType(str, Enum):
 
 class Session(BaseModel):
     """会话模型"""
+
     id: str = Field(..., description="会话ID")
     workspace_id: str = Field(default="default", description="工作区ID")
     title: str = Field(default="新对话", description="会话标题")
@@ -27,15 +30,14 @@ class Session(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict, description="元数据")
     is_active: bool = Field(default=True, description="是否激活")
     expires_at: Optional[datetime] = Field(default=None, description="过期时间")
-    
+
     class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+        json_encoders = {datetime: lambda v: v.isoformat()}
 
 
 class SessionMessage(BaseModel):
     """会话消息模型"""
+
     id: str = Field(..., description="消息ID")
     session_id: str = Field(..., description="会话ID")
     role: str = Field(..., description="角色 (user/assistant/system/mono)")
@@ -45,15 +47,14 @@ class SessionMessage(BaseModel):
     tokens: int = Field(default=0, description="Token数量")
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
     is_deleted: bool = Field(default=False, description="是否删除")
-    
+
     class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+        json_encoders = {datetime: lambda v: v.isoformat()}
 
 
 class SessionStats(BaseModel):
     """会话统计"""
+
     total_sessions: int = Field(default=0, description="总会话数")
     active_sessions: int = Field(default=0, description="激活会话数")
     expired_sessions: int = Field(default=0, description="过期会话数")

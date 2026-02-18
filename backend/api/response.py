@@ -1,8 +1,9 @@
-from typing import Generic, TypeVar, Optional, Any, Dict, List
 from datetime import datetime
+from typing import Any, Dict, Generic, List, Optional, TypeVar
+
 from pydantic import BaseModel, Field
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class APIResponse(BaseModel, Generic[T]):
@@ -36,7 +37,9 @@ class PaginatedResponse(BaseModel, Generic[T]):
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
 
     @classmethod
-    def create(cls, data: List[T], total: int, page: int = 1, page_size: int = 20) -> "PaginatedResponse[T]":
+    def create(
+        cls, data: List[T], total: int, page: int = 1, page_size: int = 20
+    ) -> "PaginatedResponse[T]":
         total_pages = (total + page_size - 1) // page_size if page_size > 0 else 0
         return cls(
             success=True,
@@ -44,7 +47,7 @@ class PaginatedResponse(BaseModel, Generic[T]):
             total=total,
             page=page,
             page_size=page_size,
-            total_pages=total_pages
+            total_pages=total_pages,
         )
 
 

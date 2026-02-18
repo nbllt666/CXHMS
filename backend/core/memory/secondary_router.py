@@ -1,8 +1,9 @@
-from typing import Dict, List, Optional, Any
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-import json
+from typing import Any, Dict, List, Optional
+
 from backend.core.logging_config import get_contextual_logger
 from backend.core.utils import format_messages_for_summary
 
@@ -11,6 +12,7 @@ logger = get_contextual_logger(__name__)
 
 class SecondaryCommand(Enum):
     """副模型可执行的指令"""
+
     SUMMARIZE_MEMORY = "summarize_memory"
     ARCHIVE_MEMORY = "archive_memory"
     CLEANUP_MEMORIES = "cleanup_memories"
@@ -26,6 +28,7 @@ class SecondaryCommand(Enum):
 @dataclass
 class SecondaryInstruction:
     """副模型指令"""
+
     command: str
     target_id: Optional[str] = None
     target_type: Optional[str] = None
@@ -38,6 +41,7 @@ class SecondaryInstruction:
 @dataclass
 class SecondaryResult:
     """副模型执行结果"""
+
     status: str
     command: str
     output: Dict
@@ -47,95 +51,148 @@ class SecondaryResult:
 
 class SecondaryModelRouter:
     """副模型指令路由器"""
+
     COMMAND_DESCRIPTIONS = {
         SecondaryCommand.SUMMARIZE_MEMORY.value: {
             "description": "将长记忆内容摘要为简洁版本",
             "parameters": {
                 "memory_id": {"type": "int", "required": True, "description": "记忆ID"},
-                "max_length": {"type": "int", "required": False, "default": 200, "description": "摘要最大长度"}
+                "max_length": {
+                    "type": "int",
+                    "required": False,
+                    "default": 200,
+                    "description": "摘要最大长度",
+                },
             },
-            "example": {"memory_id": 123, "max_length": 150}
+            "example": {"memory_id": 123, "max_length": 150},
         },
         SecondaryCommand.ARCHIVE_MEMORY.value: {
             "description": "将记忆标记为归档",
             "parameters": {
                 "memory_id": {"type": "int", "required": True, "description": "记忆ID"},
-                "reason": {"type": "str", "required": False, "description": "归档原因"}
+                "reason": {"type": "str", "required": False, "description": "归档原因"},
             },
-            "example": {"memory_id": 123, "reason": "内容已过时"}
+            "example": {"memory_id": 123, "reason": "内容已过时"},
         },
         SecondaryCommand.CLEANUP_MEMORIES.value: {
             "description": "清理低价值或过期的记忆",
             "parameters": {
-                "threshold": {"type": "float", "required": False, "default": 0.1, "description": "重要性阈值"},
-                "max_count": {"type": "int", "required": False, "default": 100, "description": "最大清理数量"}
+                "threshold": {
+                    "type": "float",
+                    "required": False,
+                    "default": 0.1,
+                    "description": "重要性阈值",
+                },
+                "max_count": {
+                    "type": "int",
+                    "required": False,
+                    "default": 100,
+                    "description": "最大清理数量",
+                },
             },
-            "example": {"threshold": 0.05, "max_count": 50}
+            "example": {"threshold": 0.05, "max_count": 50},
         },
         SecondaryCommand.ANALYZE_IMPORTANCE.value: {
             "description": "分析记忆的重要性并给出评分",
             "parameters": {
                 "memory_id": {"type": "int", "required": True, "description": "记忆ID"},
-                "context": {"type": "str", "required": False, "description": "分析上下文"}
+                "context": {"type": "str", "required": False, "description": "分析上下文"},
             },
-            "example": {"memory_id": 123, "context": "用户多次提及"}
+            "example": {"memory_id": 123, "context": "用户多次提及"},
         },
         SecondaryCommand.DECAY_MEMORIES.value: {
             "description": "对所有记忆执行衰减计算",
             "parameters": {
-                "dry_run": {"type": "bool", "required": False, "default": True, "description": "仅预览不实际执行"}
+                "dry_run": {
+                    "type": "bool",
+                    "required": False,
+                    "default": True,
+                    "description": "仅预览不实际执行",
+                }
             },
-            "example": {"dry_run": False}
+            "example": {"dry_run": False},
         },
         SecondaryCommand.GET_MEMORY_INSIGHTS.value: {
             "description": "获取记忆系统的统计和洞察",
             "parameters": {
-                "time_range": {"type": "str", "required": False, "description": "时间范围 (7d, 30d, 90d)"},
-                "metrics": {"type": "list", "required": False, "description": "需要的指标列表"}
+                "time_range": {
+                    "type": "str",
+                    "required": False,
+                    "description": "时间范围 (7d, 30d, 90d)",
+                },
+                "metrics": {"type": "list", "required": False, "description": "需要的指标列表"},
             },
-            "example": {"time_range": "30d", "metrics": ["importance_distribution", "decay_rate"]}
+            "example": {"time_range": "30d", "metrics": ["importance_distribution", "decay_rate"]},
         },
         SecondaryCommand.BATCH_PROCESS.value: {
             "description": "批量处理多个记忆",
             "parameters": {
-                "action": {"type": "str", "required": True, "description": "操作 (summarize, archive, delete)"},
+                "action": {
+                    "type": "str",
+                    "required": True,
+                    "description": "操作 (summarize, archive, delete)",
+                },
                 "memory_ids": {"type": "list", "required": True, "description": "记忆ID列表"},
-                "criteria": {"type": "str", "required": False, "description": "选择标准"}
+                "criteria": {"type": "str", "required": False, "description": "选择标准"},
             },
-            "example": {"action": "archive", "memory_ids": [1, 2, 3]}
+            "example": {"action": "archive", "memory_ids": [1, 2, 3]},
         },
         SecondaryCommand.SUMMARIZE_CONVERSATION.value: {
             "description": "将对话历史摘要为记忆，生成关键要点和完整报告",
             "parameters": {
-                "conversation_id": {"type": "str", "required": True, "description": "对话ID/会话ID"},
-                "max_points": {"type": "int", "required": False, "default": 5, "description": "最大要点数"},
-                "save_as_memory": {"type": "bool", "required": False, "default": True, "description": "是否保存为记忆"}
+                "conversation_id": {
+                    "type": "str",
+                    "required": True,
+                    "description": "对话ID/会话ID",
+                },
+                "max_points": {
+                    "type": "int",
+                    "required": False,
+                    "default": 5,
+                    "description": "最大要点数",
+                },
+                "save_as_memory": {
+                    "type": "bool",
+                    "required": False,
+                    "default": True,
+                    "description": "是否保存为记忆",
+                },
             },
-            "example": {"conversation_id": "session_123", "max_points": 5, "save_as_memory": True}
+            "example": {"conversation_id": "session_123", "max_points": 5, "save_as_memory": True},
         },
         SecondaryCommand.EXTRACT_KEY_POINTS.value: {
             "description": "从文本中提取关键信息点",
             "parameters": {
                 "text": {"type": "str", "required": True, "description": "输入文本"},
-                "max_points": {"type": "int", "required": False, "default": 5, "description": "最大要点数"}
+                "max_points": {
+                    "type": "int",
+                    "required": False,
+                    "default": 5,
+                    "description": "最大要点数",
+                },
             },
-            "example": {"text": "用户说...", "max_points": 5}
+            "example": {"text": "用户说...", "max_points": 5},
         },
         SecondaryCommand.GENERATE_MEMORY_REPORT.value: {
             "description": "生成记忆系统报告",
             "parameters": {
-                "report_type": {"type": "str", "required": False, "default": "summary", "description": "报告类型 (summary, detailed, trends)"},
-                "time_range": {"type": "str", "required": False, "description": "时间范围"}
+                "report_type": {
+                    "type": "str",
+                    "required": False,
+                    "default": "summary",
+                    "description": "报告类型 (summary, detailed, trends)",
+                },
+                "time_range": {"type": "str", "required": False, "description": "时间范围"},
             },
-            "example": {"report_type": "trends", "time_range": "30d"}
-        }
+            "example": {"report_type": "trends", "time_range": "30d"},
+        },
     }
 
     PROHIBITED_COMMANDS = [
         "add_permanent_memory",
         "delete_permanent_memory",
         "update_permanent_memory",
-        "get_permanent_memories"
+        "get_permanent_memories",
     ]
 
     def __init__(self, memory_manager, llm_client=None, model_router=None, context_manager=None):
@@ -173,9 +230,7 @@ class SecondaryModelRouter:
         return True
 
     async def execute_command(
-        self,
-        instruction: SecondaryInstruction,
-        is_from_main: bool = True
+        self, instruction: SecondaryInstruction, is_from_main: bool = True
     ) -> SecondaryResult:
         """执行副模型指令"""
         start_time = datetime.now()
@@ -186,19 +241,21 @@ class SecondaryModelRouter:
                 command=instruction.command,
                 output={"error": "Permission denied"},
                 execution_time_ms=0.0,
-                suggestions=["请使用主模型执行此操作"]
+                suggestions=["请使用主模型执行此操作"],
             )
 
         try:
             result = await self._execute_command_impl(instruction)
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
 
-            self._execution_history.append({
-                "command": instruction.command,
-                "status": result.status,
-                "execution_time_ms": execution_time,
-                "timestamp": datetime.now().isoformat()
-            })
+            self._execution_history.append(
+                {
+                    "command": instruction.command,
+                    "status": result.status,
+                    "execution_time_ms": execution_time,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
 
             result.execution_time_ms = execution_time
             return result
@@ -211,7 +268,7 @@ class SecondaryModelRouter:
                 command=instruction.command,
                 output={"error": str(e)},
                 execution_time_ms=execution_time,
-                suggestions=["检查参数是否正确", "查看命令文档"]
+                suggestions=["检查参数是否正确", "查看命令文档"],
             )
 
     async def _execute_command_impl(self, instruction: SecondaryInstruction) -> SecondaryResult:
@@ -246,7 +303,7 @@ class SecondaryModelRouter:
                 status="error",
                 command=command,
                 output={"error": f"Unknown command: {command}"},
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
 
     def _get_summary_client(self):
@@ -268,7 +325,7 @@ class SecondaryModelRouter:
                 status="error",
                 command="summarize_memory",
                 output={"error": "Memory not found"},
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
 
         content = memory.get("content", "")
@@ -277,7 +334,7 @@ class SecondaryModelRouter:
                 status="error",
                 command="summarize_memory",
                 output={"error": "Memory content is empty"},
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
 
         # 使用摘要模型生成智能摘要
@@ -294,11 +351,10 @@ class SecondaryModelRouter:
 3. 直接返回摘要文本，不要添加额外说明"""
 
                 response = await summary_client.chat(
-                    messages=[{"role": "user", "content": prompt}],
-                    stream=False
+                    messages=[{"role": "user", "content": prompt}], stream=False
                 )
-                
-                if hasattr(response, 'content') and response.content:
+
+                if hasattr(response, "content") and response.content:
                     summary = response.content.strip()
                 elif isinstance(response, dict) and response.get("content"):
                     summary = response["content"].strip()
@@ -313,7 +369,7 @@ class SecondaryModelRouter:
         # 更新记忆的摘要
         self.memory_manager.update_memory(
             memory_id=memory_id,
-            new_metadata={"summary": summary, "summarized_at": datetime.now().isoformat()}
+            new_metadata={"summary": summary, "summarized_at": datetime.now().isoformat()},
         )
 
         return SecondaryResult(
@@ -323,9 +379,9 @@ class SecondaryModelRouter:
                 "memory_id": memory_id,
                 "original_length": len(content),
                 "summary": summary,
-                "summary_length": len(summary)
+                "summary_length": len(summary),
             },
-            execution_time_ms=0.0
+            execution_time_ms=0.0,
         )
 
     async def _archive_memory(self, params: Dict) -> SecondaryResult:
@@ -335,7 +391,11 @@ class SecondaryModelRouter:
 
         success = self.memory_manager.update_memory(
             memory_id=memory_id,
-            new_metadata={"archived": True, "archive_reason": reason, "archived_at": datetime.now().isoformat()}
+            new_metadata={
+                "archived": True,
+                "archive_reason": reason,
+                "archived_at": datetime.now().isoformat(),
+            },
         )
 
         if success:
@@ -343,14 +403,14 @@ class SecondaryModelRouter:
                 status="success",
                 command="archive_memory",
                 output={"memory_id": memory_id, "archived": True},
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
         else:
             return SecondaryResult(
                 status="error",
                 command="archive_memory",
                 output={"error": "Failed to archive memory"},
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
 
     async def _cleanup_memories(self, params: Dict) -> SecondaryResult:
@@ -359,14 +419,10 @@ class SecondaryModelRouter:
         max_count = params.get("max_count", 100)
 
         memories = self.memory_manager.search_memories(limit=max_count)
-        low_value_ids = [
-            m["id"] for m in memories
-            if m.get("importance_score", 0.0) < threshold
-        ]
+        low_value_ids = [m["id"] for m in memories if m.get("importance_score", 0.0) < threshold]
 
         result = self.memory_manager.batch_delete_memories(
-            memory_ids=low_value_ids,
-            soft_delete=True
+            memory_ids=low_value_ids, soft_delete=True
         )
 
         return SecondaryResult(
@@ -375,9 +431,9 @@ class SecondaryModelRouter:
             output={
                 "threshold": threshold,
                 "deleted_count": result["success"],
-                "failed_count": result["failed"]
+                "failed_count": result["failed"],
             },
-            execution_time_ms=0.0
+            execution_time_ms=0.0,
         )
 
     async def _analyze_importance(self, params: Dict) -> SecondaryResult:
@@ -391,7 +447,7 @@ class SecondaryModelRouter:
                 status="error",
                 command="analyze_importance",
                 output={"error": "Memory not found"},
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
 
         content = memory.get("content", "")
@@ -422,18 +478,17 @@ class SecondaryModelRouter:
 }}"""
 
                 response = await summary_client.chat(
-                    messages=[{"role": "user", "content": prompt}],
-                    stream=False
+                    messages=[{"role": "user", "content": prompt}], stream=False
                 )
-                
+
                 try:
-                    if hasattr(response, 'content'):
+                    if hasattr(response, "content"):
                         result_text = response.content
                     elif isinstance(response, dict):
                         result_text = response.get("content", "")
                     else:
                         result_text = str(response)
-                    
+
                     result = json.loads(result_text)
                     suggested_score = result.get("score", current_importance_level)
                     reason = result.get("reason", "")
@@ -460,14 +515,11 @@ class SecondaryModelRouter:
             "suggested_level": suggested_score,
             "reason": reason,
             "suggested_tags": suggested_tags,
-            "context": context
+            "context": context,
         }
 
         return SecondaryResult(
-            status="success",
-            command="analyze_importance",
-            output=analysis,
-            execution_time_ms=0.0
+            status="success", command="analyze_importance", output=analysis, execution_time_ms=0.0
         )
 
     async def _decay_memories(self, params: Dict) -> SecondaryResult:
@@ -479,12 +531,8 @@ class SecondaryModelRouter:
             return SecondaryResult(
                 status="success",
                 command="decay_memories",
-                output={
-                    "dry_run": True,
-                    "statistics": stats,
-                    "message": "预览模式，未实际更新"
-                },
-                execution_time_ms=0.0
+                output={"dry_run": True, "statistics": stats, "message": "预览模式，未实际更新"},
+                execution_time_ms=0.0,
             )
         else:
             result = self.memory_manager.sync_decay_values()
@@ -495,9 +543,9 @@ class SecondaryModelRouter:
                     "dry_run": False,
                     "updated": result["updated"],
                     "failed": result["failed"],
-                    "total": result["total"]
+                    "total": result["total"],
                 },
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
 
     async def _get_memory_insights(self, params: Dict) -> SecondaryResult:
@@ -511,7 +559,7 @@ class SecondaryModelRouter:
         insights = {
             "time_range": time_range,
             "basic_statistics": basic_stats,
-            "decay_statistics": stats
+            "decay_statistics": stats,
         }
 
         if "importance_distribution" in metrics:
@@ -520,10 +568,7 @@ class SecondaryModelRouter:
             insights["reactivation_stats"] = stats.get("reactivation_stats", {})
 
         return SecondaryResult(
-            status="success",
-            command="get_memory_insights",
-            output=insights,
-            execution_time_ms=0.0
+            status="success", command="get_memory_insights", output=insights, execution_time_ms=0.0
         )
 
     async def _batch_process(self, params: Dict) -> SecondaryResult:
@@ -533,8 +578,7 @@ class SecondaryModelRouter:
 
         if action == "delete":
             result = self.memory_manager.batch_delete_memories(
-                memory_ids=memory_ids,
-                soft_delete=True
+                memory_ids=memory_ids, soft_delete=True
             )
             return SecondaryResult(
                 status="success",
@@ -542,9 +586,9 @@ class SecondaryModelRouter:
                 output={
                     "action": action,
                     "deleted_count": result["success"],
-                    "failed_count": result["failed"]
+                    "failed_count": result["failed"],
                 },
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
         elif action == "summarize":
             # 批量摘要
@@ -561,16 +605,16 @@ class SecondaryModelRouter:
                 output={
                     "action": action,
                     "summarized_count": summarized_count,
-                    "total": len(memory_ids)
+                    "total": len(memory_ids),
                 },
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
         else:
             return SecondaryResult(
                 status="error",
                 command="batch_process",
                 output={"error": f"Unsupported action: {action}"},
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
 
     async def _summarize_conversation(self, params: Dict) -> SecondaryResult:
@@ -584,7 +628,7 @@ class SecondaryModelRouter:
                 status="error",
                 command="summarize_conversation",
                 output={"error": "Context manager not available"},
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
 
         # 获取对话消息
@@ -594,7 +638,7 @@ class SecondaryModelRouter:
                 status="error",
                 command="summarize_conversation",
                 output={"error": "Conversation not found or empty"},
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
 
         # 格式化对话内容
@@ -608,7 +652,7 @@ class SecondaryModelRouter:
                 status="error",
                 command="summarize_conversation",
                 output={"error": "Summary model not available"},
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
 
         try:
@@ -658,14 +702,12 @@ class SecondaryModelRouter:
 }}"""
 
             response = await summary_client.chat(
-                messages=[{"role": "user", "content": prompt}],
-                stream=False,
-                max_tokens=2048
+                messages=[{"role": "user", "content": prompt}], stream=False, max_tokens=2048
             )
 
             # 解析模型响应
             try:
-                if hasattr(response, 'content'):
+                if hasattr(response, "content"):
                     result_text = response.content
                 elif isinstance(response, dict):
                     result_text = response.get("content", "")
@@ -673,10 +715,10 @@ class SecondaryModelRouter:
                     result_text = str(response)
 
                 # 尝试提取JSON部分
-                json_start = result_text.find('{')
-                json_end = result_text.rfind('}')
+                json_start = result_text.find("{")
+                json_end = result_text.rfind("}")
                 if json_start != -1 and json_end != -1:
-                    result_text = result_text[json_start:json_end+1]
+                    result_text = result_text[json_start : json_end + 1]
 
                 result = json.loads(result_text)
                 key_points = result.get("key_points", [])
@@ -689,7 +731,7 @@ class SecondaryModelRouter:
                     "participants": ["user", "assistant"],
                     "message_count": message_count,
                     "main_discussion": conversation_text[:300],
-                    "sentiment": "neutral"
+                    "sentiment": "neutral",
                 }
 
         except Exception as e:
@@ -698,7 +740,7 @@ class SecondaryModelRouter:
                 status="error",
                 command="summarize_conversation",
                 output={"error": f"Model call failed: {str(e)}"},
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
 
         # 生成摘要文本
@@ -721,18 +763,15 @@ class SecondaryModelRouter:
                         "key_points": key_points,
                         "report": report,
                         "message_count": message_count,
-                        "summarized_at": datetime.now().isoformat()
-                    }
+                        "summarized_at": datetime.now().isoformat(),
+                    },
                 )
             except Exception as e:
                 logger.error(f"保存摘要记忆失败: {e}")
 
         # 更新会话摘要
         try:
-            self.context_manager.update_session(
-                conversation_id,
-                summary=summary_text[:500]
-            )
+            self.context_manager.update_session(conversation_id, summary=summary_text[:500])
         except Exception as e:
             logger.error(f"更新会话摘要失败: {e}")
 
@@ -747,10 +786,10 @@ class SecondaryModelRouter:
                 "metadata": {
                     "original_message_count": message_count,
                     "summary_generated_at": datetime.now().isoformat(),
-                    "model_used": "summary"
-                }
+                    "model_used": "summary",
+                },
             },
-            execution_time_ms=0.0
+            execution_time_ms=0.0,
         )
 
     async def _extract_key_points(self, params: Dict) -> SecondaryResult:
@@ -763,7 +802,7 @@ class SecondaryModelRouter:
                 status="error",
                 command="extract_key_points",
                 output={"error": "Text is empty"},
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
 
         summary_client = self._get_summary_client()
@@ -782,12 +821,11 @@ class SecondaryModelRouter:
 ["要点1", "要点2", "要点3"]"""
 
                 response = await summary_client.chat(
-                    messages=[{"role": "user", "content": prompt}],
-                    stream=False
+                    messages=[{"role": "user", "content": prompt}], stream=False
                 )
 
                 try:
-                    if hasattr(response, 'content'):
+                    if hasattr(response, "content"):
                         result_text = response.content
                     elif isinstance(response, dict):
                         result_text = response.get("content", "")
@@ -795,10 +833,10 @@ class SecondaryModelRouter:
                         result_text = str(response)
 
                     # 尝试提取JSON数组
-                    json_start = result_text.find('[')
-                    json_end = result_text.rfind(']')
+                    json_start = result_text.find("[")
+                    json_end = result_text.rfind("]")
                     if json_start != -1 and json_end != -1:
-                        result_text = result_text[json_start:json_end+1]
+                        result_text = result_text[json_start : json_end + 1]
 
                     key_points = json.loads(result_text)
                     if not isinstance(key_points, list):
@@ -819,9 +857,9 @@ class SecondaryModelRouter:
             output={
                 "text_length": len(text),
                 "key_points": key_points,
-                "point_count": len(key_points)
+                "point_count": len(key_points),
             },
-            execution_time_ms=0.0
+            execution_time_ms=0.0,
         )
 
     async def _generate_memory_report(self, params: Dict) -> SecondaryResult:
@@ -839,8 +877,8 @@ class SecondaryModelRouter:
             "statistics": {
                 "total_memories": basic_stats.get("total", 0),
                 "by_type": basic_stats.get("by_type", {}),
-                "decay_stats": stats
-            }
+                "decay_stats": stats,
+            },
         }
 
         # 使用模型生成分析报告
@@ -867,22 +905,21 @@ class SecondaryModelRouter:
 }}"""
 
                 response = await summary_client.chat(
-                    messages=[{"role": "user", "content": prompt}],
-                    stream=False
+                    messages=[{"role": "user", "content": prompt}], stream=False
                 )
 
                 try:
-                    if hasattr(response, 'content'):
+                    if hasattr(response, "content"):
                         result_text = response.content
                     elif isinstance(response, dict):
                         result_text = response.get("content", "")
                     else:
                         result_text = str(response)
 
-                    json_start = result_text.find('{')
-                    json_end = result_text.rfind('}')
+                    json_start = result_text.find("{")
+                    json_end = result_text.rfind("}")
                     if json_start != -1 and json_end != -1:
-                        result_text = result_text[json_start:json_end+1]
+                        result_text = result_text[json_start : json_end + 1]
 
                     analysis = json.loads(result_text)
                     report["analysis"] = analysis
@@ -892,10 +929,7 @@ class SecondaryModelRouter:
                 logger.error(f"报告生成模型调用失败: {e}")
 
         return SecondaryResult(
-            status="success",
-            command="generate_memory_report",
-            output=report,
-            execution_time_ms=0.0
+            status="success", command="generate_memory_report", output=report, execution_time_ms=0.0
         )
 
     def get_execution_history(self, limit: int = 10) -> List[Dict]:
@@ -905,26 +939,28 @@ class SecondaryModelRouter:
     async def _custom_command(self, params: Dict) -> SecondaryResult:
         """处理自定义命令，将用户消息转发给记忆管理模型"""
         user_message = params.get("user_message", "")
-        
+
         if not user_message:
             return SecondaryResult(
                 status="error",
                 command="custom",
                 output={"error": "user_message is required"},
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
-        
+
         # 使用记忆管理模型处理用户消息
-        memory_client = self.model_router.get_client("memory") if self.model_router else self.llm_client
-        
+        memory_client = (
+            self.model_router.get_client("memory") if self.model_router else self.llm_client
+        )
+
         if not memory_client:
             return SecondaryResult(
                 status="error",
                 command="custom",
                 output={"error": "Memory model not available"},
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
-        
+
         try:
             # 构建系统提示词
             system_prompt = """你是记忆管理助手，专门负责帮助用户管理和维护记忆库。你可以通过自然语言理解用户的需求，并调用相应的工具来执行记忆管理操作。
@@ -953,29 +989,26 @@ class SecondaryModelRouter:
             response = await memory_client.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message}
+                    {"role": "user", "content": user_message},
                 ],
-                stream=False
+                stream=False,
             )
-            
-            if hasattr(response, 'content'):
+
+            if hasattr(response, "content"):
                 response_text = response.content
             elif isinstance(response, dict):
                 response_text = response.get("content", "")
             else:
                 response_text = str(response)
-            
+
             return SecondaryResult(
                 status="success",
                 command="custom",
                 output={"response": response_text},
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
         except Exception as e:
             logger.error(f"自定义命令执行失败: {e}")
             return SecondaryResult(
-                status="error",
-                command="custom",
-                output={"error": str(e)},
-                execution_time_ms=0.0
+                status="error", command="custom", output={"error": str(e)}, execution_time_ms=0.0
             )

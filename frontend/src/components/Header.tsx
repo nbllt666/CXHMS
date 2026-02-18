@@ -1,9 +1,9 @@
-import { useLocation, useNavigate } from 'react-router-dom'
-import { Heart, Database } from 'lucide-react'
-import { cn } from '../lib/utils'
-import { LanguageSwitcher } from './LanguageSwitcher'
-import { useTranslation } from 'react-i18next'
-import type { TFunction } from 'i18next'
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Heart, Database } from 'lucide-react';
+import { cn } from '../lib/utils';
+import { LanguageSwitcher } from './LanguageSwitcher';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 
 const getPageTitles = (t: TFunction): Record<string, string> => ({
   '/': t('nav.chat'),
@@ -14,15 +14,15 @@ const getPageTitles = (t: TFunction): Record<string, string> => ({
   '/tools': t('tools.title'),
   '/settings': t('settings.title'),
   '/memory-agent': '记忆管理助手',
-})
+});
 
 export function Header() {
-  const { t } = useTranslation()
-  const location = useLocation()
-  const navigate = useNavigate()
-  const pageTitles = getPageTitles(t)
-  const title = pageTitles[location.pathname] || 'CXHMS'
-  const isMemoryAgentPage = location.pathname === '/memory-agent'
+  const { t } = useTranslation();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const pageTitles = getPageTitles(t);
+  const title = pageTitles[location.pathname] || 'CXHMS';
+  const isMemoryAgentPage = location.pathname === '/memory-agent';
 
   return (
     <header className="h-16 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-6">
@@ -33,10 +33,10 @@ export function Header() {
         <button
           onClick={() => navigate('/memory-agent')}
           className={cn(
-            "p-2 rounded-lg transition-colors relative group",
-            isMemoryAgentPage 
-              ? "bg-primary text-primary-foreground" 
-              : "hover:bg-accent text-muted-foreground hover:text-foreground"
+            'p-2 rounded-lg transition-colors relative group',
+            isMemoryAgentPage
+              ? 'bg-primary text-primary-foreground'
+              : 'hover:bg-accent text-muted-foreground hover:text-foreground'
           )}
           title="记忆管理助手"
         >
@@ -61,10 +61,8 @@ export function Header() {
             支持开发者
           </span>
         </a>
-        <span className="text-sm text-muted-foreground">
-          CXHMS v1.0
-        </span>
+        <span className="text-sm text-muted-foreground">CXHMS v1.0</span>
       </div>
     </header>
-  )
+  );
 }

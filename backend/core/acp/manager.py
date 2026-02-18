@@ -1,10 +1,12 @@
-from typing import Dict, List, Optional, Any
+import asyncio
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
-import json
-import asyncio
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 import aiofiles
+
 from backend.core.exceptions import ACPError
 from backend.core.logging_config import get_contextual_logger
 
@@ -33,7 +35,7 @@ class ACPAgentInfo:
             "version": self.version,
             "capabilities": self.capabilities,
             "last_seen": self.last_seen,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
 
@@ -65,7 +67,7 @@ class ACPConnectionInfo:
             "last_activity": self.last_activity,
             "messages_sent": self.messages_sent,
             "messages_received": self.messages_received,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
 
@@ -95,7 +97,7 @@ class ACPGroupInfo:
             "is_active": self.is_active,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
 
@@ -125,15 +127,15 @@ class ACPMessageInfo:
             "timestamp": self.timestamp,
             "is_read": self.is_read,
             "is_sent": self.is_sent,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
 
 class ACPManager:
     """ACP管理器
-    
+
     负责管理Agents、连接、群组和消息
-    
+
     Attributes:
         data_dir: 数据目录路径
         agents: Agent字典
@@ -143,10 +145,10 @@ class ACPManager:
         _local_agent_id: 本地Agent ID
         _local_agent_name: 本地Agent名称
     """
-    
+
     def __init__(self, data_dir: str = "data/acp") -> None:
         """初始化ACP管理器
-        
+
         Args:
             data_dir: 数据目录路径
         """
@@ -172,7 +174,7 @@ class ACPManager:
 
     def initialize(self, agent_id: str, agent_name: str) -> None:
         """初始化本地Agent信息
-        
+
         Args:
             agent_id: Agent ID
             agent_name: Agent名称
@@ -184,21 +186,21 @@ class ACPManager:
     async def start(self) -> None:
         """启动ACP管理器"""
         self._load_data()
-        
+
         from backend.core.acp.discover import ACPLanDiscovery
         from config.settings import settings
-        
+
         if settings.config.acp.discovery.enabled:
             self._discovery = ACPLanDiscovery(
                 acp_manager=self,
                 broadcast_port=settings.config.acp.discovery.broadcast_port,
                 discovery_port=settings.config.acp.discovery.discovery_port,
                 broadcast_address=settings.config.acp.discovery.broadcast_address,
-                interval=settings.config.acp.discovery.interval
+                interval=settings.config.acp.discovery.interval,
             )
             await self._discovery.start()
             logger.info("ACP Discovery服务已启动")
-        
+
         logger.info("ACP管理器已启动")
 
     async def stop(self) -> None:
@@ -206,7 +208,7 @@ class ACPManager:
         if self._discovery:
             await self._discovery.stop()
             logger.info("ACP Discovery服务已停止")
-        
+
         self._save_data()
         logger.info("ACP管理器已停止")
 
@@ -218,7 +220,8 @@ class ACPManager:
         if agents_file.exists():
             try:
                 import yaml
-                with open(agents_file, 'r', encoding='utf-8') as f:
+
+                with open(agents_file, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f)
                     for agent_data in data.get("agents", []):
                         agent = ACPAgentInfo(**agent_data)
@@ -229,7 +232,8 @@ class ACPManager:
         if connections_file.exists():
             try:
                 import yaml
-                with open(connections_file, 'r', encoding='utf-8') as f:
+
+                with open(connections_file, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f)
                     for conn_data in data.get("connections", []):
                         conn = ACPConnectionInfo(**conn_data)
@@ -240,7 +244,8 @@ class ACPManager:
         if groups_file.exists():
             try:
                 import yaml
-                with open(groups_file, 'r', encoding='utf-8') as f:
+
+                with open(groups_file, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f)
                     for group_data in data.get("groups", []):
                         group = ACPGroupInfo(**group_data)
@@ -248,7 +253,9 @@ class ACPManager:
             except Exception as e:
                 logger.warning(f"加载Groups失败: {e}")
 
-        logger.info(f"ACP数据加载完成: agents={len(self.agents)}, connections={len(self.connections)}, groups={len(self.groups)}")
+        logger.info(
+            f"ACP数据加载完成: agents={len(self.agents)}, connections={len(self.connections)}, groups={len(self.groups)}"
+        )
 
     def _save_data(self):
         import yaml
@@ -257,14 +264,22 @@ class ACPManager:
         connections_file = self.data_dir / "connections.yaml"
         groups_file = self.data_dir / "groups.yaml"
 
-        with open(agents_file, 'w', encoding='utf-8') as f:
-            yaml.dump({"agents": [a.to_dict() for a in self.agents.values()]}, f, allow_unicode=True)
+        with open(agents_file, "w", encoding="utf-8") as f:
+            yaml.dump(
+                {"agents": [a.to_dict() for a in self.agents.values()]}, f, allow_unicode=True
+            )
 
-        with open(connections_file, 'w', encoding='utf-8') as f:
-            yaml.dump({"connections": [c.to_dict() for c in self.connections.values()]}, f, allow_unicode=True)
+        with open(connections_file, "w", encoding="utf-8") as f:
+            yaml.dump(
+                {"connections": [c.to_dict() for c in self.connections.values()]},
+                f,
+                allow_unicode=True,
+            )
 
-        with open(groups_file, 'w', encoding='utf-8') as f:
-            yaml.dump({"groups": [g.to_dict() for g in self.groups.values()]}, f, allow_unicode=True)
+        with open(groups_file, "w", encoding="utf-8") as f:
+            yaml.dump(
+                {"groups": [g.to_dict() for g in self.groups.values()]}, f, allow_unicode=True
+            )
 
         logger.info("ACP数据已保存")
 
@@ -409,11 +424,7 @@ class ACPManager:
             return message
 
     async def get_messages(
-        self,
-        target_id: str,
-        group_id: str = None,
-        limit: int = 50,
-        unread_only: bool = False
+        self, target_id: str, group_id: str = None, limit: int = 50, unread_only: bool = False
     ) -> List[Dict]:
         async with self._lock:
             key = group_id or target_id
@@ -439,10 +450,11 @@ class ACPManager:
     async def get_statistics(self) -> Dict:
         async with self._lock:
             online_agents = sum(1 for a in self.agents.values() if a.status == "online")
-            active_connections = sum(1 for c in self.connections.values() if c.status == "connected")
+            active_connections = sum(
+                1 for c in self.connections.values() if c.status == "connected"
+            )
             total_unread = sum(
-                len([m for m in msgs if not m.is_read])
-                for msgs in self.messages.values()
+                len([m for m in msgs if not m.is_read]) for msgs in self.messages.values()
             )
 
             return {
@@ -454,5 +466,5 @@ class ACPManager:
                 "total_messages": sum(len(msgs) for msgs in self.messages.values()),
                 "unread_messages": total_unread,
                 "local_agent_id": self._local_agent_id,
-                "local_agent_name": self._local_agent_name
+                "local_agent_name": self._local_agent_name,
             }

@@ -2,15 +2,16 @@
 环境变量支持模块
 支持从环境变量加载配置，优先级高于配置文件
 """
+
 import os
-from typing import Any, Dict, List, Optional, Type, get_type_hints
 from dataclasses import fields, is_dataclass
 from functools import lru_cache
+from typing import Any, Dict, List, Optional, Type, get_type_hints
 
 
 class EnvConfig:
     PREFIX = "CXHMS_"
-    
+
     ENV_MAPPINGS: Dict[str, str] = {
         "CXHMS_HOST": "server.host",
         "CXHMS_PORT": "server.port",
@@ -44,15 +45,13 @@ class EnvConfig:
         "CXHMS_RATE_LIMIT_REQUESTS": "security.rate_limit_requests",
         "CXHMS_CORS_ORIGINS": "cors.origins",
     }
-    
-    SECRET_FIELDS = {
-        "apiKey", "api_key", "password", "secret", "token"
-    }
-    
+
+    SECRET_FIELDS = {"apiKey", "api_key", "password", "secret", "token"}
+
     @classmethod
     def get_env_value(cls, env_key: str) -> Optional[str]:
         return os.environ.get(env_key)
-    
+
     @classmethod
     def parse_value(cls, value: str, target_type: Type) -> Any:
         if target_type == bool:
@@ -70,7 +69,7 @@ class EnvConfig:
                 inner_type = target_type.__args__[0]
                 return cls.parse_value(value, inner_type)
         return value
-    
+
     @classmethod
     def set_nested_value(cls, config_dict: Dict, path: str, value: Any) -> None:
         keys = path.split(".")
@@ -80,29 +79,29 @@ class EnvConfig:
                 current[key] = {}
             current = current[key]
         current[keys[-1]] = value
-    
+
     @classmethod
     def load_from_env(cls) -> Dict[str, Any]:
         env_config: Dict[str, Any] = {}
-        
+
         for env_key, config_path in cls.ENV_MAPPINGS.items():
             value = cls.get_env_value(env_key)
             if value is not None:
                 cls.set_nested_value(env_config, config_path, value)
-        
+
         for key, value in os.environ.items():
             if key.startswith(cls.PREFIX) and key not in cls.ENV_MAPPINGS:
-                config_key = key[len(cls.PREFIX):].lower()
+                config_key = key[len(cls.PREFIX) :].lower()
                 parts = config_key.split("_")
                 config_path = ".".join(parts)
                 cls.set_nested_value(env_config, config_path, value)
-        
+
         return env_config
-    
+
     @classmethod
     def is_secret_field(cls, field_name: str) -> bool:
         return any(secret in field_name.lower() for secret in cls.SECRET_FIELDS)
-    
+
     @classmethod
     def mask_secrets(cls, config_dict: Dict[str, Any]) -> Dict[str, Any]:
         masked = {}

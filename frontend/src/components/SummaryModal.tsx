@@ -1,32 +1,107 @@
-import { useState, useRef, useEffect } from 'react'
-import { X, Send, Sparkles, Trash2 } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { api } from '../api/client'
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { X, Send, Sparkles, Trash2 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { api } from '../api/client';
 
 interface SummaryMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  timestamp: string
-  isStreaming?: boolean
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  isStreaming?: boolean;
 }
 
 interface SummaryModalProps {
-  isOpen: boolean
-  onClose: () => void
-  contextText: string
-  agentId: string
-  sessionId?: string
-  autoStart?: boolean
+  isOpen: boolean;
+  onClose: () => void;
+  contextText: string;
+  agentId: string;
+  sessionId?: string;
+  autoStart?: boolean;
 }
 
-export function SummaryModal({ isOpen, onClose, contextText, agentId, autoStart = false }: SummaryModalProps) {
-  const [messages, setMessages] = useState<SummaryMessage[]>([])
-  const [input, setInput] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const autoStartedRef = useRef(false)
+export function SummaryModal({
+  isOpen,
+  onClose,
+  contextText,
+  agentId,
+  autoStart = false,
+}: SummaryModalProps) {
+  const [messages, setMessages] = useState<SummaryMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const autoStartedRef = useRef(false);
+
+  const handleAutoSummary = useCallback(async () => {
+    if (isLoading) return;
+
+    const userMessage: SummaryMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: '请自动摘要当前对话',
+      timestamp: new Date().toISOString(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setIsLoading(true);
+
+    const assistantMsg: SummaryMessage = {
+      id: (Date.now() + 1).toString(),
+      role: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString(),
+      isStreaming: true,
+    };
+    setMessages((prev) => [...prev, assistantMsg]);
+
+    try {
+      const fullPrompt = `请对以下对话进行自动摘要，生成多条记忆。每条记忆应包含：
+1. 内容（简洁明了）
+2. 重要性（1-10，10为最重要）
+3. 时间（格式：yyyymmddhhmm，如202602112235）
+
+对话内容：
+${contextText}
+
+请使用 save_summary_memory 工具保存每条记忆。你可以保存多条记忆。`;
+
+      await api.sendMessageStream(
+        fullPrompt,
+        (chunk: { type: string; content?: string; done?: boolean; error?: string }) => {
+          setMessages((prev) => {
+            const lastMsg = prev[prev.length - 1];
+            if (lastMsg.role === 'assistant' && lastMsg.isStreaming) {
+              return [
+                ...prev.slice(0, -1),
+                {
+                  ...lastMsg,
+                  content: lastMsg.content + (chunk.content || ''),
+                  isStreaming: !chunk.done,
+                },
+              ];
+            }
+            return prev;
+          });
+        },
+        agentId
+      );
+    } catch (error) {
+      console.error('自动摘要失败:', error);
+      setMessages((prev) => [
+        ...prev.slice(0, -1),
+        {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: '抱歉，自动摘要失败，请重试。',
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isLoading, contextText, agentId]);
 
   // 初始系统消息
   useEffect(() => {
@@ -35,44 +110,44 @@ export function SummaryModal({ isOpen, onClose, contextText, agentId, autoStart 
         id: 'system-1',
         role: 'assistant',
         content: `我是摘要助手。我会分析这段对话并生成摘要记忆。\n\n你可以：\n1. 直接让我自动摘要\n2. 告诉我需要关注哪些方面\n3. 指定每条记忆的重要性和时间\n\n我会将摘要保存为多条记忆，每条包含：内容、重要性(1-10)、时间(yyyymmddhhmm格式)。`,
-        timestamp: new Date().toISOString()
-      }
-      setMessages([systemMsg])
-      autoStartedRef.current = false
+        timestamp: new Date().toISOString(),
+      };
+      setMessages([systemMsg]);
+      autoStartedRef.current = false;
     }
-  }, [isOpen, messages.length])
+  }, [isOpen, messages.length]);
 
   // 自动开始摘要
   useEffect(() => {
     if (isOpen && autoStart && !autoStartedRef.current && messages.length > 0) {
-      autoStartedRef.current = true
+      autoStartedRef.current = true;
       setTimeout(() => {
-        handleAutoSummary()
-      }, 100)
+        handleAutoSummary();
+      }, 100);
     }
-  }, [isOpen, autoStart, messages.length])
+  }, [isOpen, autoStart, messages.length, handleAutoSummary]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+    scrollToBottom();
+  }, [messages]);
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return
+    if (!input.trim() || isLoading) return;
 
     const userMessage: SummaryMessage = {
       id: Date.now().toString(),
       role: 'user',
       content: input,
-      timestamp: new Date().toISOString()
-    }
+      timestamp: new Date().toISOString(),
+    };
 
-    setMessages(prev => [...prev, userMessage])
-    setInput('')
-    setIsLoading(true)
+    setMessages((prev) => [...prev, userMessage]);
+    setInput('');
+    setIsLoading(true);
 
     // 添加助手消息占位
     const assistantMsg: SummaryMessage = {
@@ -80,9 +155,9 @@ export function SummaryModal({ isOpen, onClose, contextText, agentId, autoStart 
       role: 'assistant',
       content: '',
       timestamp: new Date().toISOString(),
-      isStreaming: true
-    }
-    setMessages(prev => [...prev, assistantMsg])
+      isStreaming: true,
+    };
+    setMessages((prev) => [...prev, assistantMsg]);
 
     try {
       // 构建完整提示词
@@ -96,134 +171,74 @@ ${contextText}
 
 用户指令：${input}
 
-请使用 save_summary_memory 工具保存每条记忆。你可以保存多条记忆。`
+请使用 save_summary_memory 工具保存每条记忆。你可以保存多条记忆。`;
 
       await api.sendMessageStream(
         fullPrompt,
-        (chunk: { type: string; content?: string; done?: boolean; error?: string; session_id?: string; tool_call?: Record<string, unknown>; tool_name?: string; result?: unknown }) => {
-          setMessages(prev => {
-            const lastMsg = prev[prev.length - 1]
+        (chunk: {
+          type: string;
+          content?: string;
+          done?: boolean;
+          error?: string;
+          session_id?: string;
+          tool_call?: Record<string, unknown>;
+          tool_name?: string;
+          result?: unknown;
+        }) => {
+          setMessages((prev) => {
+            const lastMsg = prev[prev.length - 1];
             if (lastMsg.role === 'assistant' && lastMsg.isStreaming) {
               return [
                 ...prev.slice(0, -1),
                 {
                   ...lastMsg,
                   content: lastMsg.content + (chunk.content || ''),
-                  isStreaming: !chunk.done
-                }
-              ]
+                  isStreaming: !chunk.done,
+                },
+              ];
             }
-            return prev
-          })
+            return prev;
+          });
         },
         agentId
-      )
+      );
     } catch (error) {
-      console.error('摘要生成失败:', error)
-      setMessages(prev => [
+      console.error('摘要生成失败:', error);
+      setMessages((prev) => [
         ...prev.slice(0, -1),
         {
           id: Date.now().toString(),
           role: 'assistant',
           content: '抱歉，摘要生成失败，请重试。',
-          timestamp: new Date().toISOString()
-        }
-      ])
+          timestamp: new Date().toISOString(),
+        },
+      ]);
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const handleClearContext = async () => {
-    if (!confirm('确定要清空当前对话的所有上下文吗？')) return
-    
+    if (!confirm('确定要清空当前对话的所有上下文吗？')) return;
+
     try {
-      const summarySessionId = `summary-${agentId}`
-      await api.deleteSession(summarySessionId)
-      setMessages([])
+      const summarySessionId = `summary-${agentId}`;
+      await api.deleteSession(summarySessionId);
+      setMessages([]);
       const systemMsg: SummaryMessage = {
         id: 'system-1',
         role: 'assistant',
         content: `我是摘要助手。我会分析这段对话并生成摘要记忆。\n\n你可以：\n1. 直接让我自动摘要\n2. 告诉我需要关注哪些方面\n3. 指定每条记忆的重要性和时间\n\n我会将摘要保存为多条记忆，每条包含：内容、重要性(1-10)、时间(yyyymmddhhmm格式)。`,
-        timestamp: new Date().toISOString()
-      }
-      setMessages([systemMsg])
+        timestamp: new Date().toISOString(),
+      };
+      setMessages([systemMsg]);
     } catch (error) {
-      console.error('清空上下文失败:', error)
-      alert('清空上下文失败')
+      console.error('清空上下文失败:', error);
+      alert('清空上下文失败');
     }
-  }
+  };
 
-  const handleAutoSummary = async () => {
-    if (isLoading) return
-
-    const userMessage: SummaryMessage = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: '请自动摘要当前对话',
-      timestamp: new Date().toISOString()
-    }
-
-    setMessages(prev => [...prev, userMessage])
-    setIsLoading(true)
-
-    const assistantMsg: SummaryMessage = {
-      id: (Date.now() + 1).toString(),
-      role: 'assistant',
-      content: '',
-      timestamp: new Date().toISOString(),
-      isStreaming: true
-    }
-    setMessages(prev => [...prev, assistantMsg])
-
-    try {
-      const fullPrompt = `请对以下对话进行自动摘要，生成多条记忆。每条记忆应包含：
-1. 内容（简洁明了）
-2. 重要性（1-10，10为最重要）
-3. 时间（格式：yyyymmddhhmm，如202602112235）
-
-对话内容：
-${contextText}
-
-请使用 save_summary_memory 工具保存每条记忆。你可以保存多条记忆。`
-
-      await api.sendMessageStream(
-        fullPrompt,
-        (chunk: { type: string; content?: string; done?: boolean; error?: string }) => {
-          setMessages(prev => {
-            const lastMsg = prev[prev.length - 1]
-            if (lastMsg.role === 'assistant' && lastMsg.isStreaming) {
-              return [
-                ...prev.slice(0, -1),
-                {
-                  ...lastMsg,
-                  content: lastMsg.content + (chunk.content || ''),
-                  isStreaming: !chunk.done
-                }
-              ]
-            }
-            return prev
-          })
-        },
-        agentId
-      )
-    } catch (error) {
-      console.error('自动摘要失败:', error)
-      setMessages(prev => [
-        ...prev.slice(0, -1),
-        {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: '抱歉，自动摘要失败，请重试。',
-          timestamp: new Date().toISOString()
-        }
-      ])
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  if (!isOpen) return null
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -243,10 +258,7 @@ ${contextText}
               <Trash2 className="w-4 h-4" />
               清空上下文
             </button>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-accent rounded-lg transition-colors"
-            >
+            <button onClick={onClose} className="p-2 hover:bg-accent rounded-lg transition-colors">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -261,9 +273,7 @@ ${contextText}
             >
               <div
                 className={`max-w-[80%] rounded-2xl px-4 py-2 ${
-                  message.role === 'user'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted'
+                  message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'
                 }`}
               >
                 <ReactMarkdown
@@ -308,5 +318,5 @@ ${contextText}
         </div>
       </div>
     </div>
-  )
+  );
 }

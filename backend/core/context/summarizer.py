@@ -1,5 +1,6 @@
-from typing import Optional, List, Dict
 import json
+from typing import Dict, List, Optional
+
 from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
@@ -13,17 +14,10 @@ class ContextSummarizer:
         self.llm_client = llm_client
 
     async def summarize(
-        self,
-        messages: List[Dict],
-        max_length: int = 500,
-        style: str = "concise"
+        self, messages: List[Dict], max_length: int = 500, style: str = "concise"
     ) -> Dict[str, any]:
         if not messages:
-            return {
-                "summary": "",
-                "key_points": [],
-                "success": True
-            }
+            return {"summary": "", "key_points": [], "success": True}
 
         if self.llm_client is None:
             return self._rule_based_summary(messages, max_length, style)
@@ -48,17 +42,17 @@ class ContextSummarizer:
 """
 
             response = await self.llm_client.chat(
-                messages=[{"role": "user", "content": prompt}],
-                stream=False
+                messages=[{"role": "user", "content": prompt}], stream=False
             )
 
             import json as json_parser
+
             result = json_parser.loads(response)
 
             return {
                 "summary": result.get("summary", ""),
                 "key_points": result.get("key_points", []),
-                "success": True
+                "success": True,
             }
 
         except Exception as e:
@@ -66,10 +60,7 @@ class ContextSummarizer:
             return self._rule_based_summary(messages, max_length, style)
 
     def _rule_based_summary(
-        self,
-        messages: List[Dict],
-        max_length: int = 500,
-        style: str = "concise"
+        self, messages: List[Dict], max_length: int = 500, style: str = "concise"
     ) -> Dict[str, any]:
         if not messages:
             return {"summary": "", "key_points": [], "success": True}
@@ -98,13 +89,9 @@ class ContextSummarizer:
             summary += f" 讨论的话题包括：{'; '.join(key_points[:3])}。"
 
         if len(summary) > max_length:
-            summary = summary[:max_length - 3] + "..."
+            summary = summary[: max_length - 3] + "..."
 
-        return {
-            "summary": summary,
-            "key_points": key_points,
-            "success": True
-        }
+        return {"summary": summary, "key_points": key_points, "success": True}
 
     def _format_conversation(self, messages: List[Dict]) -> str:
         lines = []
@@ -133,11 +120,11 @@ class ContextSummarizer:
 """
 
             response = await self.llm_client.chat(
-                messages=[{"role": "user", "content": prompt}],
-                stream=False
+                messages=[{"role": "user", "content": prompt}], stream=False
             )
 
             import json as json_parser
+
             key_points = json_parser.loads(response)
 
             if isinstance(key_points, list):

@@ -1,12 +1,14 @@
 """线程安全和并发测试"""
-import pytest
+
+import os
+import sys
 import threading
 import time
 from pathlib import Path
-import sys
-import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from backend.core.context.manager import ContextManager
 from backend.core.memory.manager import MemoryManager
@@ -58,9 +60,7 @@ class TestThreadSafety:
         def add_message(index):
             try:
                 message_id = manager.add_message(
-                    session_id=session_id,
-                    role="user",
-                    content=f"消息{index}"
+                    session_id=session_id, role="user", content=f"消息{index}"
                 )
                 message_ids.append(message_id)
             except Exception as e:
@@ -95,10 +95,7 @@ class TestThreadSafety:
         def write_memory(index):
             try:
                 memory_id = manager.write_memory(
-                    content=f"记忆内容{index}",
-                    memory_type="long_term",
-                    importance=3,
-                    tags=["test"]
+                    content=f"记忆内容{index}", memory_type="long_term", importance=3, tags=["test"]
                 )
                 memory_ids.append(memory_id)
             except Exception as e:
@@ -134,11 +131,7 @@ class TestThreadSafety:
                 session_ids.append(session_id)
 
                 for i in range(5):
-                    manager.add_message(
-                        session_id=session_id,
-                        role="user",
-                        content=f"消息{i}"
-                    )
+                    manager.add_message(session_id=session_id, role="user", content=f"消息{i}")
             except Exception as e:
                 errors.append(e)
 

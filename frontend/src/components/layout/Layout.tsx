@@ -40,16 +40,17 @@ export const Layout: React.FC<LayoutProps> = ({ children, sidebar, header }) => 
               sidebarCollapsed ? 'w-[var(--sidebar-collapsed-width)]' : 'w-[var(--sidebar-width)]'
             )}
           >
-            <div className="h-full overflow-y-auto">
-              {renderSidebar()}
-            </div>
+            <div className="h-full overflow-y-auto">{renderSidebar()}</div>
           </aside>
         )}
         <main
           className={cn(
             'flex-1 min-h-[calc(100vh-var(--header-height))]',
             'transition-all duration-[var(--transition-normal)]',
-            sidebar && (sidebarCollapsed ? 'ml-[var(--sidebar-collapsed-width)]' : 'ml-[var(--sidebar-width)]')
+            sidebar &&
+              (sidebarCollapsed
+                ? 'ml-[var(--sidebar-collapsed-width)]'
+                : 'ml-[var(--sidebar-width)]')
           )}
         >
           {children}

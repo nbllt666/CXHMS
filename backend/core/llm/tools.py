@@ -1,4 +1,5 @@
-from typing import Dict, List, Any
+from typing import Any, Dict, List
+
 from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
@@ -11,14 +12,16 @@ class LLMTools:
     def format_tools_for_llm(self, tools: List[Dict]) -> List[Dict]:
         formatted = []
         for tool in tools:
-            formatted.append({
-                "type": "function",
-                "function": {
-                    "name": tool.get("name"),
-                    "description": tool.get("description"),
-                    "parameters": tool.get("parameters", {})
+            formatted.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.get("name"),
+                        "description": tool.get("description"),
+                        "parameters": tool.get("parameters", {}),
+                    },
                 }
-            })
+            )
         return formatted
 
     def parse_tool_calls(self, response_message: Dict) -> List[Dict]:
@@ -27,35 +30,23 @@ class LLMTools:
 
         for tool_call in tool_calls:
             if isinstance(tool_call, dict):
-                parsed.append({
-                    "id": tool_call.get("id", ""),
-                    "type": tool_call.get("type", "function"),
-                    "function": {
-                        "name": tool_call.get("function", {}).get("name", ""),
-                        "arguments": tool_call.get("function", {}).get("arguments", {})
+                parsed.append(
+                    {
+                        "id": tool_call.get("id", ""),
+                        "type": tool_call.get("type", "function"),
+                        "function": {
+                            "name": tool_call.get("function", {}).get("name", ""),
+                            "arguments": tool_call.get("function", {}).get("arguments", {}),
+                        },
                     }
-                })
+                )
 
         return parsed
 
-    def create_tool_result_message(
-        self,
-        tool_call_id: str,
-        tool_name: str,
-        result: str
-    ) -> Dict:
-        return {
-            "role": "tool",
-            "content": result,
-            "tool_call_id": tool_call_id,
-            "name": tool_name
-        }
+    def create_tool_result_message(self, tool_call_id: str, tool_name: str, result: str) -> Dict:
+        return {"role": "tool", "content": result, "tool_call_id": tool_call_id, "name": tool_name}
 
-    async def execute_tools(
-        self,
-        tool_calls: List[Dict],
-        tool_registry
-    ) -> List[Dict]:
+    async def execute_tools(self, tool_calls: List[Dict], tool_registry) -> List[Dict]:
         results = []
 
         for tool_call in tool_calls:
@@ -68,7 +59,7 @@ class LLMTools:
             message = self.create_tool_result_message(
                 tool_call_id=tool_call_id,
                 tool_name=tool_name,
-                result=json.dumps(result, ensure_ascii=False)
+                result=json.dumps(result, ensure_ascii=False),
             )
 
             results.append(message)
@@ -76,19 +67,16 @@ class LLMTools:
         return results
 
     async def chat_with_tools(
-        self,
-        messages: List[Dict],
-        tools: List[Dict],
-        tool_registry,
-        max_iterations: int = 5
+        self, messages: List[Dict], tools: List[Dict], tool_registry, max_iterations: int = 5
     ) -> Dict:
         current_messages = messages.copy()
         iterations = 0
 
         while iterations < max_iterations:
             response = await self.client.chat(
-                messages=current_messages + [{"role": "system", "content": "请在适当时使用工具调用。"}],
-                tools=self.format_tools_for_llm(tools) if tools else None
+                messages=current_messages
+                + [{"role": "system", "content": "请在适当时使用工具调用。"}],
+                tools=self.format_tools_for_llm(tools) if tools else None,
             )
 
             if response.finish_reason == "error":
@@ -111,7 +99,7 @@ class LLMTools:
         return {
             "content": response.content,
             "tool_calls": tool_calls,
-            "warning": "达到最大迭代次数"
+            "warning": "达到最大迭代次数",
         }
 
 

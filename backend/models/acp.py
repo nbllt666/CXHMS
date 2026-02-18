@@ -1,8 +1,8 @@
-from typing import Optional, List, Dict, Any
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-import uuid
+from typing import Any, Dict, List, Optional
 
 
 class AgentStatus(str, Enum):
@@ -45,7 +45,7 @@ class ACPAgent:
             "version": self.version,
             "capabilities": self.capabilities,
             "last_seen": self.last_seen,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
     @classmethod
@@ -59,7 +59,7 @@ class ACPAgent:
             version=data.get("version", "1.0.0"),
             capabilities=data.get("capabilities", []),
             last_seen=data.get("last_seen", datetime.now().isoformat()),
-            metadata=data.get("metadata", {})
+            metadata=data.get("metadata", {}),
         )
 
 
@@ -91,7 +91,7 @@ class ACPConnection:
             "last_activity": self.last_activity,
             "messages_sent": self.messages_sent,
             "messages_received": self.messages_received,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
     @classmethod
@@ -108,7 +108,7 @@ class ACPConnection:
             last_activity=data.get("last_activity"),
             messages_sent=data.get("messages_sent", 0),
             messages_received=data.get("messages_received", 0),
-            metadata=data.get("metadata", {})
+            metadata=data.get("metadata", {}),
         )
 
 
@@ -126,7 +126,7 @@ class ACPGroupMember:
             "agent_name": self.agent_name,
             "role": self.role,
             "joined_at": self.joined_at,
-            "last_active": self.last_active
+            "last_active": self.last_active,
         }
 
     @classmethod
@@ -136,7 +136,7 @@ class ACPGroupMember:
             agent_name=data.get("agent_name", ""),
             role=data.get("role", "member"),
             joined_at=data.get("joined_at", datetime.now().isoformat()),
-            last_active=data.get("last_active", datetime.now().isoformat())
+            last_active=data.get("last_active", datetime.now().isoformat()),
         )
 
 
@@ -166,7 +166,7 @@ class ACPGroup:
             "is_active": self.is_active,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
     @classmethod
@@ -182,7 +182,7 @@ class ACPGroup:
             is_active=data.get("is_active", True),
             created_at=data.get("created_at", datetime.now().isoformat()),
             updated_at=data.get("updated_at", datetime.now().isoformat()),
-            metadata=data.get("metadata", {})
+            metadata=data.get("metadata", {}),
         )
 
 
@@ -203,7 +203,9 @@ class ACPMessage:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
-            "type": self.msg_type.value if isinstance(self.msg_type, MessageType) else self.msg_type,
+            "type": (
+                self.msg_type.value if isinstance(self.msg_type, MessageType) else self.msg_type
+            ),
             "from_agent_id": self.from_agent_id,
             "from_agent_name": self.from_agent_name,
             "to_agent_id": self.to_agent_id,
@@ -212,7 +214,7 @@ class ACPMessage:
             "timestamp": self.timestamp,
             "is_read": self.is_read,
             "is_sent": self.is_sent,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
     @classmethod
@@ -228,7 +230,7 @@ class ACPMessage:
             timestamp=data.get("timestamp", datetime.now().isoformat()),
             is_read=data.get("is_read", False),
             is_sent=data.get("is_sent", False),
-            metadata=data.get("metadata", {})
+            metadata=data.get("metadata", {}),
         )
 
 

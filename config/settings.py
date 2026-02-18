@@ -2,17 +2,18 @@
 配置管理模块
 支持YAML配置文件、环境变量覆盖和配置验证
 """
+
+import logging
 import os
-from pathlib import Path
-from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 import yaml
-import logging
 
 from .env import EnvConfig, get_env_config
-from .validation import validate_config, ValidationResult
-
+from .validation import ValidationResult, validate_config
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ class ModelConfig:
             temperature=data.get("temperature", 0.7),
             max_tokens=data.get("max_tokens", 0),
             timeout=data.get("timeout", 60),
-            api_key=data.get("api_key") or data.get("apiKey")
+            api_key=data.get("api_key") or data.get("apiKey"),
         )
 
 
@@ -91,37 +92,31 @@ class ModelsConfig:
     main: ModelConfig = field(default_factory=ModelConfig)
     summary: ModelConfig = field(default_factory=lambda: ModelConfig(max_tokens=131072))
     memory: ModelConfig = field(default_factory=lambda: ModelConfig(max_tokens=131072))
-    defaults: Dict[str, str] = field(default_factory=lambda: {
-        "summary": "main",
-        "memory": "main"
-    })
+    defaults: Dict[str, str] = field(default_factory=lambda: {"summary": "main", "memory": "main"})
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ModelsConfig":
         models_data = data.get("models", {})
-        defaults_data = data.get("model_defaults", {
-            "summary": "main",
-            "memory": "main"
-        })
-        
+        defaults_data = data.get("model_defaults", {"summary": "main", "memory": "main"})
+
         summary_config = ModelConfig.from_dict(models_data.get("summary", {}))
         if summary_config.max_tokens == 0:
             summary_config.max_tokens = 131072
-            
+
         memory_config = ModelConfig.from_dict(models_data.get("memory", {}))
         if memory_config.max_tokens == 0:
             memory_config.max_tokens = 131072
-        
+
         return cls(
             main=ModelConfig.from_dict(models_data.get("main", {})),
             summary=summary_config,
             memory=memory_config,
-            defaults=defaults_data
+            defaults=defaults_data,
         )
 
     def get_model_config(self, model_type: str) -> ModelConfig:
         model_type = model_type.lower()
-        
+
         if model_type in self.defaults:
             target = self.defaults[model_type]
             if target == "main":
@@ -130,7 +125,7 @@ class ModelsConfig:
                 return self.summary
             elif target == "memory":
                 return self.memory
-        
+
         if model_type == "main":
             return self.main
         elif model_type == "summary":
@@ -160,7 +155,7 @@ class LLMConfig:
             temperature=data.get("temperature", 0.7),
             max_tokens=data.get("max_tokens", 4096),
             stream=data.get("stream", True),
-            api_key=data.get("api_key")
+            api_key=data.get("api_key"),
         )
 
 
@@ -183,7 +178,7 @@ class VectorConfig:
             collection_name=data.get("collection_name", "cxhms_memories"),
             embedding_model=data.get("embedding_model", "nomic-embed-text"),
             embedding_dimension=data.get("embedding_dimension", 768),
-            api_key=data.get("api_key")
+            api_key=data.get("api_key"),
         )
 
 
@@ -202,7 +197,7 @@ class ACPDiscoveryConfig:
             discovery_port=data.get("discovery_port", 9999),
             broadcast_port=data.get("broadcast_port", 9998),
             broadcast_address=data.get("broadcast_address", "255.255.255.255"),
-            interval=data.get("interval", 30)
+            interval=data.get("interval", 30),
         )
 
 
@@ -217,7 +212,7 @@ class ACPConnectionConfig:
         return cls(
             port=data.get("port", 10000),
             heartbeat_interval=data.get("heartbeat_interval", 10),
-            timeout=data.get("timeout", 30)
+            timeout=data.get("timeout", 30),
         )
 
 
@@ -228,10 +223,7 @@ class ACPGroupConfig:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ACPGroupConfig":
-        return cls(
-            port=data.get("port", 10001),
-            max_members=data.get("max_members", 50)
-        )
+        return cls(port=data.get("port", 10001), max_members=data.get("max_members", 50))
 
 
 @dataclass
@@ -251,7 +243,7 @@ class ACPConfig:
             agent_name=data.get("agent_name", "CXHMS Agent"),
             discovery=ACPDiscoveryConfig.from_dict(data.get("discovery", {})),
             connection=ACPConnectionConfig.from_dict(data.get("connection", {})),
-            group=ACPGroupConfig.from_dict(data.get("group", {}))
+            group=ACPGroupConfig.from_dict(data.get("group", {})),
         )
 
 
@@ -276,7 +268,7 @@ class DatabaseConfig:
             sessions_db=data.get("sessions_db", "data/sessions.db"),
             acp_db=data.get("acp_db", "data/acp"),
             pool_size=data.get("pool_size", 10),
-            max_overflow=data.get("max_overflow", 20)
+            max_overflow=data.get("max_overflow", 20),
         )
 
 
@@ -289,7 +281,7 @@ class MilvusLiteConfig:
     def from_dict(cls, data: Dict[str, Any]) -> "MilvusLiteConfig":
         return cls(
             db_path=data.get("db_path", "data/milvus_lite.db"),
-            vector_size=data.get("vector_size", 768)
+            vector_size=data.get("vector_size", 768),
         )
 
 
@@ -304,7 +296,7 @@ class QdrantConfig:
         return cls(
             host=data.get("host", "localhost"),
             port=data.get("port", 6333),
-            vector_size=data.get("vector_size", 768)
+            vector_size=data.get("vector_size", 768),
         )
 
 
@@ -327,7 +319,7 @@ class WeaviateConfig:
             embedded=data.get("embedded", False),
             vector_size=data.get("vector_size", 768),
             schema_class=data.get("schema_class", "CXHMSMemory"),
-            api_key=data.get("api_key")
+            api_key=data.get("api_key"),
         )
 
 
@@ -362,7 +354,7 @@ class MemoryConfig:
             weaviate=WeaviateConfig.from_dict(data.get("weaviate", {})),
             archive_enabled=data.get("archive_enabled", True),
             dedup_threshold=data.get("dedup_threshold", 0.85),
-            archive_compression_enabled=data.get("archive_compression_enabled", True)
+            archive_compression_enabled=data.get("archive_compression_enabled", True),
         )
 
 
@@ -379,7 +371,7 @@ class ContextConfig:
             max_messages=data.get("max_messages", 100),
             summary_threshold=data.get("summary_threshold", 20),
             window_size=data.get("window_size", 10),
-            enable_summary=data.get("enable_summary", True)
+            enable_summary=data.get("enable_summary", True),
         )
 
 
@@ -389,9 +381,7 @@ class RateLimitConfig:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RateLimitConfig":
-        return cls(
-            enabled=data.get("enabled", True)
-        )
+        return cls(enabled=data.get("enabled", True))
 
 
 @dataclass
@@ -405,7 +395,7 @@ class CORSConfig:
         return cls(
             enabled=data.get("enabled", True),
             origins=data.get("origins", ["*"]),
-            allow_credentials=data.get("allow_credentials", True)
+            allow_credentials=data.get("allow_credentials", True),
         )
 
 
@@ -424,7 +414,7 @@ class SystemConfig:
             port=data.get("port", 8000),
             debug=data.get("debug", False),
             log_level=data.get("log_level", "INFO"),
-            workers=data.get("workers", 1)
+            workers=data.get("workers", 1),
         )
 
 
@@ -454,7 +444,7 @@ class CXHMSConfig:
             context=ContextConfig.from_dict(data.get("context", {})),
             rate_limit=RateLimitConfig.from_dict(data.get("rate_limit", {})),
             cors=CORSConfig.from_dict(data.get("cors", {})),
-            system=SystemConfig.from_dict(server_data)
+            system=SystemConfig.from_dict(server_data),
         )
 
 
@@ -472,7 +462,7 @@ class Settings:
     def __init__(self):
         if self._config is None:
             self._config = self.load_config()
-    
+
     @classmethod
     def reset(cls):
         cls._instance = None
@@ -491,27 +481,27 @@ class Settings:
     def load_config(self, config_path: Optional[str] = None) -> CXHMSConfig:
         if config_path is None:
             config_path = os.getenv("CXHMS_CONFIG_PATH", "config/default.yaml")
-        
+
         self._config_path = config_path
         config_file = Path(config_path)
-        
+
         file_config: Dict[str, Any] = {}
         if config_file.exists():
             with open(config_file, "r", encoding="utf-8") as f:
                 file_config = yaml.safe_load(f) or {}
-        
+
         env_config = get_env_config()
-        
+
         merged_config = deep_merge(file_config, env_config)
-        
+
         self._validation_result = validate_config(merged_config)
         if not self._validation_result.is_valid:
             for error in self._validation_result.errors:
                 logger.error(f"配置验证失败: {error}")
-        
+
         for field, message in self._validation_result.warnings:
             logger.warning(f"配置警告 [{field}]: {message}")
-        
+
         return CXHMSConfig.from_dict(merged_config)
 
     def reload_config(self, config_path: Optional[str] = None):
@@ -549,9 +539,9 @@ class Settings:
         if config_path is None:
             config_path = self._config_path or "config/default.yaml"
         config_dict = self._config_to_dict(self._config)
-        
+
         masked_config = EnvConfig.mask_secrets(config_dict)
-        
+
         with open(config_path, "w", encoding="utf-8") as f:
             yaml.dump(masked_config, f, allow_unicode=True, indent=2)
 
@@ -559,7 +549,11 @@ class Settings:
         if isinstance(config, dict):
             return {k: self._config_to_dict(v) for k, v in config.items()}
         elif hasattr(config, "__dict__"):
-            return {k: self._config_to_dict(v) for k, v in config.__dict__.items() if not k.startswith("_")}
+            return {
+                k: self._config_to_dict(v)
+                for k, v in config.__dict__.items()
+                if not k.startswith("_")
+            }
         elif isinstance(config, (list, tuple)):
             return [self._config_to_dict(item) for item in config]
         else:
@@ -570,7 +564,11 @@ class Settings:
             "config_path": self._config_path,
             "validation": {
                 "is_valid": self._validation_result.is_valid if self._validation_result else None,
-                "errors": [str(e) for e in self._validation_result.errors] if self._validation_result else [],
+                "errors": (
+                    [str(e) for e in self._validation_result.errors]
+                    if self._validation_result
+                    else []
+                ),
                 "warnings": self._validation_result.warnings if self._validation_result else [],
             },
             "env_overrides": list(EnvConfig.ENV_MAPPINGS.keys()),

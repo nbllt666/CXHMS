@@ -1,20 +1,21 @@
+import asyncio
+import logging
+import os
 import sqlite3
-import uuid
+import sys
 import threading
 import time
-import asyncio
-import sys
-import logging
+import uuid
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, asdict
-import os
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class _SilentHandler(logging.NullHandler):
     """A handler that silently ignores all log records."""
+
     def emit(self, record):
         pass
 
@@ -68,10 +69,13 @@ class AlarmManager:
         self._ensure_db()
 
     def _ensure_db(self):
-        os.makedirs(os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else ".", exist_ok=True)
+        os.makedirs(
+            os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else ".", exist_ok=True
+        )
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS alarms (
                 id TEXT PRIMARY KEY,
                 agent_id TEXT NOT NULL,
@@ -81,7 +85,8 @@ class AlarmManager:
                 status TEXT DEFAULT 'pending',
                 triggered_at TEXT
             )
-        """)
+        """
+        )
         conn.commit()
         conn.close()
 
@@ -104,21 +109,32 @@ class AlarmManager:
             message=message,
             trigger_time=trigger_time,
             created_at=now,
-            status="pending"
+            status="pending",
         )
 
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO alarms (id, agent_id, message, trigger_time, created_at, status)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (alarm.id, alarm.agent_id, alarm.message, 
-              alarm.trigger_time.isoformat(), alarm.created_at.isoformat(), alarm.status))
+        """,
+            (
+                alarm.id,
+                alarm.agent_id,
+                alarm.message,
+                alarm.trigger_time.isoformat(),
+                alarm.created_at.isoformat(),
+                alarm.status,
+            ),
+        )
         conn.commit()
         conn.close()
 
         self._schedule_alarm(alarm)
-        _safe_log(logging.INFO, f"创建提醒: {alarm_id}, agent={agent_id}, trigger_at={trigger_time}")
+        _safe_log(
+            logging.INFO, f"创建提醒: {alarm_id}, agent={agent_id}, trigger_at={trigger_time}"
+        )
         return alarm_id
 
     def get_alarm(self, alarm_id: str) -> Optional[Dict]:
@@ -127,7 +143,7 @@ class AlarmManager:
         cursor.execute("SELECT * FROM alarms WHERE id = ?", (alarm_id,))
         row = cursor.fetchone()
         conn.close()
-        
+
         if row:
             return dict(row)
         return None
@@ -135,18 +151,17 @@ class AlarmManager:
     def get_alarms_by_agent(self, agent_id: str, include_triggered: bool = False) -> List[Dict]:
         conn = self._get_connection()
         cursor = conn.cursor()
-        
+
         if include_triggered:
             cursor.execute(
-                "SELECT * FROM alarms WHERE agent_id = ? ORDER BY trigger_time DESC",
-                (agent_id,)
+                "SELECT * FROM alarms WHERE agent_id = ? ORDER BY trigger_time DESC", (agent_id,)
             )
         else:
             cursor.execute(
                 "SELECT * FROM alarms WHERE agent_id = ? AND status = 'pending' ORDER BY trigger_time",
-                (agent_id,)
+                (agent_id,),
             )
-        
+
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
@@ -161,7 +176,7 @@ class AlarmManager:
         cursor = conn.cursor()
         cursor.execute(
             "UPDATE alarms SET status = 'cancelled' WHERE id = ? AND status = 'pending'",
-            (alarm_id,)
+            (alarm_id,),
         )
         affected = cursor.rowcount
         conn.commit()
@@ -178,7 +193,7 @@ class AlarmManager:
         cursor = conn.cursor()
         cursor.execute(
             "UPDATE alarms SET status = 'triggered', triggered_at = ? WHERE id = ?",
-            (now.isoformat(), alarm_id)
+            (now.isoformat(), alarm_id),
         )
         affected = cursor.rowcount
         conn.commit()
@@ -193,9 +208,7 @@ class AlarmManager:
     def get_pending_alarms(self) -> List[Dict]:
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT * FROM alarms WHERE status = 'pending' ORDER BY trigger_time"
-        )
+        cursor.execute("SELECT * FROM alarms WHERE status = 'pending' ORDER BY trigger_time")
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
@@ -220,7 +233,9 @@ class AlarmManager:
         if self._shutdown:
             return
         self.mark_triggered(alarm.id)
-        _safe_log(logging.INFO, f"提醒触发: {alarm.id}, agent={alarm.agent_id}, message={alarm.message}")
+        _safe_log(
+            logging.INFO, f"提醒触发: {alarm.id}, agent={alarm.agent_id}, message={alarm.message}"
+        )
 
         if self._on_trigger_callback and not self._shutdown:
             try:
@@ -232,7 +247,7 @@ class AlarmManager:
     def restore_pending_alarms(self):
         pending = self.get_pending_alarms()
         now = datetime.now()
-        
+
         for alarm_data in pending:
             trigger_time = datetime.fromisoformat(alarm_data["trigger_time"])
             alarm = Alarm(
@@ -241,7 +256,7 @@ class AlarmManager:
                 message=alarm_data["message"],
                 trigger_time=trigger_time,
                 created_at=datetime.fromisoformat(alarm_data["created_at"]),
-                status=alarm_data["status"]
+                status=alarm_data["status"],
             )
 
             if trigger_time <= now:

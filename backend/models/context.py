@@ -1,7 +1,7 @@
-from typing import Optional, List, Dict, Any
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-import uuid
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -28,7 +28,7 @@ class Session:
             "message_count": self.message_count,
             "summary": self.summary,
             "metadata": self.metadata,
-            "is_active": self.is_active
+            "is_active": self.is_active,
         }
 
     @classmethod
@@ -43,7 +43,7 @@ class Session:
             message_count=data.get("message_count", 0),
             summary=data.get("summary"),
             metadata=data.get("metadata", {}),
-            is_active=data.get("is_active", True)
+            is_active=data.get("is_active", True),
         )
 
 
@@ -69,7 +69,7 @@ class Message:
             "metadata": self.metadata,
             "tokens": self.tokens,
             "created_at": self.created_at,
-            "is_deleted": self.is_deleted
+            "is_deleted": self.is_deleted,
         }
 
     @classmethod
@@ -83,7 +83,7 @@ class Message:
             metadata=data.get("metadata", {}),
             tokens=data.get("tokens", 0),
             created_at=data.get("created_at", datetime.now().isoformat()),
-            is_deleted=data.get("is_deleted", False)
+            is_deleted=data.get("is_deleted", False),
         )
 
 

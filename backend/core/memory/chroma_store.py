@@ -1,8 +1,9 @@
-from typing import List, Dict, Optional, Any
+import os
+import threading
 from dataclasses import dataclass
 from datetime import datetime
-import threading
-import os
+from typing import Any, Dict, List, Optional
+
 from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
@@ -19,6 +20,7 @@ class SyncResult:
 
 class ChromaVectorStore:
     """Chroma向量存储实现 - 支持Windows/Linux/macOS"""
+
     COLLECTION_NAME = "memory_vectors"
 
     def __init__(
@@ -27,7 +29,7 @@ class ChromaVectorStore:
         vector_size: int = 768,
         collection_name: str = None,
         embedding_model=None,
-        persistent: bool = True
+        persistent: bool = True,
     ):
         self.db_path = db_path
         self.vector_size = vector_size
@@ -46,13 +48,16 @@ class ChromaVectorStore:
 
             os.environ["ANONYMIZED_TELEMETRY"] = "False"
             os.environ["CHROMA_TELEMETRY"] = "False"
-            
+
             if self.persistent:
-                os.makedirs(os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else ".", exist_ok=True)
+                os.makedirs(
+                    os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else ".",
+                    exist_ok=True,
+                )
                 self._client = chromadb.PersistentClient(path=self.db_path)
             else:
                 self._client = chromadb.EphemeralClient()
-            
+
             self._ensure_collection()
             mode = "持久化" if self.persistent else "内存"
             logger.info(f"Chroma向量存储初始化完成 ({mode}模式): {self.collection_name}")
@@ -69,8 +74,7 @@ class ChromaVectorStore:
 
         try:
             self._collection = self._client.get_or_create_collection(
-                name=self.collection_name,
-                metadata={"hnsw:space": "cosine"}
+                name=self.collection_name, metadata={"hnsw:space": "cosine"}
             )
             logger.info(f"Chroma集合已就绪: {self.collection_name}")
         except Exception as e:
@@ -80,11 +84,7 @@ class ChromaVectorStore:
         return self._client is not None and self._collection is not None
 
     async def add_memory_vector(
-        self,
-        memory_id: int,
-        content: str,
-        embedding: List[float],
-        metadata: Dict = None
+        self, memory_id: int, content: str, embedding: List[float], metadata: Dict = None
     ) -> bool:
         if not self._collection:
             return False
@@ -94,11 +94,13 @@ class ChromaVectorStore:
                 ids=[str(memory_id)],
                 embeddings=[embedding],
                 documents=[content],
-                metadatas=[{
-                    "memory_id": memory_id,
-                    "created_at": datetime.now().isoformat(),
-                    **(metadata or {})
-                }]
+                metadatas=[
+                    {
+                        "memory_id": memory_id,
+                        "created_at": datetime.now().isoformat(),
+                        **(metadata or {}),
+                    }
+                ],
             )
             logger.debug(f"向量已添加: memory_id={memory_id}")
             return True
@@ -111,7 +113,7 @@ class ChromaVectorStore:
         query_embedding: List[float],
         limit: int = 10,
         memory_type: str = None,
-        min_score: float = 0.5
+        min_score: float = 0.5,
     ) -> List[Dict]:
         if not self._collection:
             return []
@@ -125,7 +127,7 @@ class ChromaVectorStore:
                 query_embeddings=[query_embedding],
                 n_results=limit,
                 where=where_filter,
-                include=["documents", "metadatas", "distances"]
+                include=["documents", "metadatas", "distances"],
             )
 
             if not results or not results.get("ids") or not results["ids"][0]:
@@ -135,16 +137,18 @@ class ChromaVectorStore:
             for i, doc_id in enumerate(results["ids"][0]):
                 distance = results["distances"][0][i] if results.get("distances") else 0
                 similarity = 1 - distance
-                
+
                 if similarity < min_score:
                     continue
 
-                formatted_results.append({
-                    "id": int(doc_id),
-                    "score": similarity,
-                    "content": results["documents"][0][i] if results.get("documents") else "",
-                    "metadata": results["metadatas"][0][i] if results.get("metadatas") else {}
-                })
+                formatted_results.append(
+                    {
+                        "id": int(doc_id),
+                        "score": similarity,
+                        "content": results["documents"][0][i] if results.get("documents") else "",
+                        "metadata": results["metadatas"][0][i] if results.get("metadatas") else {},
+                    }
+                )
 
             return formatted_results
         except Exception as e:
@@ -169,8 +173,7 @@ class ChromaVectorStore:
 
         try:
             results = self._collection.get(
-                ids=[str(memory_id)],
-                include=["documents", "metadatas", "embeddings"]
+                ids=[str(memory_id)], include=["documents", "metadatas", "embeddings"]
             )
 
             if not results or not results.get("ids"):
@@ -180,7 +183,7 @@ class ChromaVectorStore:
                 "id": int(results["ids"][0]),
                 "content": results["documents"][0] if results.get("documents") else "",
                 "metadata": results["metadatas"][0] if results.get("metadatas") else {},
-                "embedding": results["embeddings"][0] if results.get("embeddings") else None
+                "embedding": results["embeddings"][0] if results.get("embeddings") else None,
             }
         except Exception as e:
             logger.error(f"获取向量失败: {e}")
@@ -199,7 +202,7 @@ class ChromaVectorStore:
 
     async def sync_with_sqlite(self, sqlite_manager, last_sync_time: str = None) -> SyncResult:
         result = SyncResult()
-        
+
         if not self._collection or not sqlite_manager:
             return result
 
@@ -208,25 +211,27 @@ class ChromaVectorStore:
                 logger.info(f"开始增量同步 (since {last_sync_time})...")
             else:
                 logger.info("开始SQLite与Chroma全量数据同步...")
-            
+
             memories = sqlite_manager.search_memories(
-                memory_type=None,
-                limit=10000,
-                include_deleted=False
+                memory_type=None, limit=10000, include_deleted=False
             )
-            
+
             if last_sync_time:
-                memories = [m for m in memories if m.get("updated_at") and m.get("updated_at") > last_sync_time]
+                memories = [
+                    m
+                    for m in memories
+                    if m.get("updated_at") and m.get("updated_at") > last_sync_time
+                ]
                 logger.info(f"增量同步: 筛选出 {len(memories)} 条需要同步的记忆")
-            
+
             for memory in memories:
                 memory_id = memory.get("id")
                 content = memory.get("content", "")
-                
+
                 result.total_checked += 1
-                
+
                 exists = await self.check_exists(memory_id)
-                
+
                 if not exists and content:
                     if self.embedding_model:
                         embedding = await self.embedding_model.get_embedding(content)
@@ -235,7 +240,10 @@ class ChromaVectorStore:
                                 memory_id=memory_id,
                                 content=content,
                                 embedding=embedding,
-                                metadata={"type": memory.get("type"), "importance": memory.get("importance")}
+                                metadata={
+                                    "type": memory.get("type"),
+                                    "importance": memory.get("importance"),
+                                },
                             )
                             if success:
                                 result.synced += 1
@@ -259,14 +267,19 @@ class ChromaVectorStore:
                                     memory_id=memory_id,
                                     content=content,
                                     embedding=embedding,
-                                    metadata={"type": memory.get("type"), "importance": memory.get("importance")}
+                                    metadata={
+                                        "type": memory.get("type"),
+                                        "importance": memory.get("importance"),
+                                    },
                                 )
                                 if success:
                                     result.synced += 1
                                 else:
                                     result.errors += 1
 
-            logger.info(f"同步完成: checked={result.total_checked}, synced={result.synced}, errors={result.errors}")
+            logger.info(
+                f"同步完成: checked={result.total_checked}, synced={result.synced}, errors={result.errors}"
+            )
             return result
         except Exception as e:
             logger.error(f"同步失败: {e}")
@@ -283,7 +296,7 @@ class ChromaVectorStore:
                 "status": "available",
                 "name": self.collection_name,
                 "count": count,
-                "db_path": self.db_path
+                "db_path": self.db_path,
             }
         except Exception as e:
             return {"status": "error", "error": str(e)}
@@ -295,8 +308,7 @@ class ChromaVectorStore:
         try:
             self._client.delete_collection(name=self.collection_name)
             self._collection = self._client.get_or_create_collection(
-                name=self.collection_name,
-                metadata={"hnsw:space": "cosine"}
+                name=self.collection_name, metadata={"hnsw:space": "cosine"}
             )
             logger.info(f"集合已清空: {self.collection_name}")
             return True

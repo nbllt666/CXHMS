@@ -1,8 +1,9 @@
-from typing import List, Dict, Optional, Any
+import os
+import threading
 from dataclasses import dataclass
 from datetime import datetime
-import threading
-import os
+from typing import Any, Dict, List, Optional
+
 from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
@@ -25,7 +26,7 @@ class MilvusLiteVectorStore:
         db_path: str = "data/milvus_lite.db",
         vector_size: int = 768,
         collection_name: str = None,
-        embedding_model=None
+        embedding_model=None,
     ):
         self.db_path = db_path
         self.vector_size = vector_size
@@ -41,8 +42,11 @@ class MilvusLiteVectorStore:
         try:
             from pymilvus import MilvusClient
 
-            os.makedirs(os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else ".", exist_ok=True)
-            
+            os.makedirs(
+                os.path.dirname(self.db_path) if os.path.dirname(self.db_path) else ".",
+                exist_ok=True,
+            )
+
             self._client = MilvusClient(self.db_path)
             self._ensure_collection()
             logger.info(f"Milvus Lite向量存储初始化完成: {self.db_path}")
@@ -64,7 +68,7 @@ class MilvusLiteVectorStore:
                 self._client.create_collection(
                     collection_name=self.collection_name,
                     dimension=self.vector_size,
-                    metric_type="COSINE"
+                    metric_type="COSINE",
                 )
                 logger.info(f"创建Milvus Lite集合: {self.collection_name}")
         except Exception as e:
@@ -74,29 +78,24 @@ class MilvusLiteVectorStore:
         return self._client is not None
 
     async def add_memory_vector(
-        self,
-        memory_id: int,
-        content: str,
-        embedding: List[float],
-        metadata: Dict = None
+        self, memory_id: int, content: str, embedding: List[float], metadata: Dict = None
     ) -> bool:
         if not self._client:
             return False
 
         try:
-            data = [{
-                "id": memory_id,
-                "vector": embedding,
-                "content": content,
-                "memory_id": memory_id,
-                "created_at": datetime.now().isoformat(),
-                **(metadata or {})
-            }]
+            data = [
+                {
+                    "id": memory_id,
+                    "vector": embedding,
+                    "content": content,
+                    "memory_id": memory_id,
+                    "created_at": datetime.now().isoformat(),
+                    **(metadata or {}),
+                }
+            ]
 
-            self._client.insert(
-                collection_name=self.collection_name,
-                data=data
-            )
+            self._client.insert(collection_name=self.collection_name, data=data)
             logger.debug(f"向量已添加: memory_id={memory_id}")
             return True
         except Exception as e:
@@ -108,7 +107,7 @@ class MilvusLiteVectorStore:
         query_embedding: List[float],
         limit: int = 10,
         memory_type: str = None,
-        min_score: float = 0.5
+        min_score: float = 0.5,
     ) -> List[Dict]:
         if not self._client:
             return []
@@ -118,21 +117,23 @@ class MilvusLiteVectorStore:
                 collection_name=self.collection_name,
                 data=[query_embedding],
                 limit=limit,
-                output_fields=["content", "memory_id", "created_at"]
+                output_fields=["content", "memory_id", "created_at"],
             )
 
             filtered_results = []
             for result in results[0]:
                 # Milvus返回的是距离，距离越小越相似，所以需要转换为相似度分数
                 # 使用 1/(1+distance) 转换为相似度分数，这样分数越大越相似
-                similarity_score = 1 / (1 + result['distance'])  # 将距离转换为相似度
+                similarity_score = 1 / (1 + result["distance"])  # 将距离转换为相似度
                 if similarity_score >= min_score:
-                    filtered_results.append({
-                        "memory_id": result['id'],
-                        "score": similarity_score,
-                        "content": result['entity'].get("content"),
-                        "metadata": result['entity']
-                    })
+                    filtered_results.append(
+                        {
+                            "memory_id": result["id"],
+                            "score": similarity_score,
+                            "content": result["entity"].get("content"),
+                            "metadata": result["entity"],
+                        }
+                    )
 
             return filtered_results
         except Exception as e:
@@ -144,10 +145,7 @@ class MilvusLiteVectorStore:
             return False
 
         try:
-            self._client.delete(
-                collection_name=self.collection_name,
-                ids=[memory_id]
-            )
+            self._client.delete(collection_name=self.collection_name, ids=[memory_id])
             return True
         except Exception as e:
             logger.error(f"删除向量失败: {e}")
@@ -165,16 +163,12 @@ class MilvusLiteVectorStore:
             results = self._client.query(
                 collection_name=self.collection_name,
                 filter=f"memory_id == {memory_id}",
-                output_fields=["content", "memory_id", "created_at"]
+                output_fields=["content", "memory_id", "created_at"],
             )
 
             if results:
                 r = results[0]
-                return {
-                    "memory_id": r['id'],
-                    "content": r.get("content"),
-                    "metadata": r
-                }
+                return {"memory_id": r["id"], "content": r.get("content"), "metadata": r}
             return None
         except Exception as e:
             logger.error(f"获取向量失败: {e}")
@@ -197,13 +191,15 @@ class MilvusLiteVectorStore:
                 logger.info("开始SQLite与Milvus Lite全量数据同步...")
 
             memories = sqlite_manager.search_memories(
-                memory_type=None,
-                limit=10000,
-                include_deleted=False
+                memory_type=None, limit=10000, include_deleted=False
             )
 
             if last_sync_time:
-                memories = [m for m in memories if m.get("updated_at") and m.get("updated_at") > last_sync_time]
+                memories = [
+                    m
+                    for m in memories
+                    if m.get("updated_at") and m.get("updated_at") > last_sync_time
+                ]
                 logger.info(f"增量同步: 筛选出 {len(memories)} 条需要同步的记忆")
 
             milvus_ids = set()
@@ -225,7 +221,7 @@ class MilvusLiteVectorStore:
                                 memory_id=memory_id,
                                 content=content,
                                 embedding=embedding,
-                                metadata=memory
+                                metadata=memory,
                             )
                             result.synced += 1
                             result.details.append(f"创建: {memory_id}")
@@ -238,7 +234,7 @@ class MilvusLiteVectorStore:
                                 memory_id=memory_id,
                                 content=content,
                                 embedding=embedding,
-                                metadata=memory
+                                metadata=memory,
                             )
                             result.synced += 1
                             result.details.append(f"更新: {memory_id}")
@@ -247,7 +243,9 @@ class MilvusLiteVectorStore:
                     result.errors += 1
                     logger.error(f"同步记忆失败: {memory_id}, {e}")
 
-            logger.info(f"同步完成: checked={result.total_checked}, synced={result.synced}, errors={result.errors}")
+            logger.info(
+                f"同步完成: checked={result.total_checked}, synced={result.synced}, errors={result.errors}"
+            )
 
         except Exception as e:
             result.errors += 1
@@ -266,7 +264,7 @@ class MilvusLiteVectorStore:
                 "row_count": info.get("row_count", 0),
                 "status": "active",
                 "collection_name": self.collection_name,
-                "dimension": self.vector_size
+                "dimension": self.vector_size,
             }
         except Exception as e:
             return {"error": str(e)}

@@ -1,9 +1,11 @@
 """Test hybrid search fallback behavior."""
-import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
 
-from backend.core.memory.manager import MemoryManager
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from backend.core.memory.hybrid_search import HybridSearch, HybridSearchOptions, SearchResult
+from backend.core.memory.manager import MemoryManager
 
 
 class TestHybridSearchFallback:
@@ -36,9 +38,9 @@ class TestHybridSearchFallback:
         import asyncio
 
         mock_hybrid_search = MagicMock()
-        mock_hybrid_search.search = AsyncMock(return_value=[
-            SearchResult(memory_id=1, content="Test", score=0.9, source="vector")
-        ])
+        mock_hybrid_search.search = AsyncMock(
+            return_value=[SearchResult(memory_id=1, content="Test", score=0.9, source="vector")]
+        )
 
         memory_manager._hybrid_search = mock_hybrid_search
         memory_manager._vector_store = MagicMock()
@@ -87,11 +89,7 @@ class TestHybridSearchOptions:
     def test_custom_options(self):
         """Test custom HybridSearchOptions values."""
         options = HybridSearchOptions(
-            query="test",
-            memory_type="long_term",
-            limit=20,
-            vector_weight=0.8,
-            keyword_weight=0.2
+            query="test", memory_type="long_term", limit=20, vector_weight=0.8, keyword_weight=0.2
         )
         assert options.memory_type == "long_term"
         assert options.limit == 20
@@ -109,7 +107,7 @@ class TestSearchResult:
             content="Test content",
             score=0.95,
             source="vector",
-            metadata={"type": "long_term"}
+            metadata={"type": "long_term"},
         )
         assert result.memory_id == 1
         assert result.content == "Test content"
@@ -119,10 +117,5 @@ class TestSearchResult:
 
     def test_search_result_default_metadata(self):
         """Test SearchResult with default metadata."""
-        result = SearchResult(
-            memory_id=1,
-            content="Test",
-            score=0.5,
-            source="keyword"
-        )
+        result = SearchResult(memory_id=1, content="Test", score=0.5, source="keyword")
         assert result.metadata is None

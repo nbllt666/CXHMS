@@ -1,7 +1,8 @@
-from abc import ABC, abstractmethod
-from typing import List, Optional, Dict
 import os
 import threading
+from abc import ABC, abstractmethod
+from typing import Dict, List, Optional
+
 from backend.core.logging_config import get_contextual_logger
 
 os.environ["HF_HUB_DOWNLOAD_PROGRESS"] = "1"
@@ -30,25 +31,21 @@ class EmbeddingModel(ABC):
 
 
 class OllamaEmbedding(EmbeddingModel):
-    def __init__(
-        self,
-        host: str = "http://localhost:11434",
-        model: str = "nomic-embed-text"
-    ):
-        self.host = host.rstrip('/')
+    def __init__(self, host: str = "http://localhost:11434", model: str = "nomic-embed-text"):
+        self.host = host.rstrip("/")
         self.model = model
         self._client = None
 
     def _get_client(self):
         import httpx
+
         return httpx.AsyncClient(timeout=60.0)
 
     async def get_embedding(self, text: str) -> List[float]:
         try:
             async with self._get_client() as client:
                 response = await client.post(
-                    f"{self.host}/api/embeddings",
-                    json={"model": self.model, "prompt": text}
+                    f"{self.host}/api/embeddings", json={"model": self.model, "prompt": text}
                 )
                 if response.status_code == 200:
                     result = response.json()
@@ -81,13 +78,12 @@ class OllamaEmbedding(EmbeddingModel):
 
 
 class SentenceTransformersEmbedding(EmbeddingModel):
-    def __init__(
-        self,
-        model_name: str = "paraphrase-multilingual-MiniLM-L12-v2"
-    ):
+    def __init__(self, model_name: str = "paraphrase-multilingual-MiniLM-L12-v2"):
         try:
-            from sentence_transformers import SentenceTransformer
             import sys
+
+            from sentence_transformers import SentenceTransformer
+
             print(f"\n正在加载 SentenceTransformers 模型: {model_name}", file=sys.stderr)
             print("这可能需要几分钟时间下载模型...", file=sys.stderr)
             sys.stderr.flush()
@@ -103,20 +99,16 @@ class SentenceTransformersEmbedding(EmbeddingModel):
 
     async def get_embedding(self, text: str) -> List[float]:
         import asyncio
+
         loop = asyncio.get_event_loop()
-        embedding = await loop.run_in_executor(
-            None,
-            lambda: self.model.encode(text).tolist()
-        )
+        embedding = await loop.run_in_executor(None, lambda: self.model.encode(text).tolist())
         return embedding
 
     async def get_embeddings(self, texts: List[str]) -> List[List[float]]:
         import asyncio
+
         loop = asyncio.get_event_loop()
-        embeddings = await loop.run_in_executor(
-            None,
-            lambda: self.model.encode(texts).tolist()
-        )
+        embeddings = await loop.run_in_executor(None, lambda: self.model.encode(texts).tolist())
         return embeddings
 
     @property
@@ -133,11 +125,7 @@ class EmbeddingFactory:
     _lock = threading.Lock()
 
     @classmethod
-    def create(
-        cls,
-        provider: str = "ollama",
-        **kwargs
-    ) -> EmbeddingModel:
+    def create(cls, provider: str = "ollama", **kwargs) -> EmbeddingModel:
         key = f"{provider}:{kwargs.get('model', 'default')}"
 
         with cls._lock:

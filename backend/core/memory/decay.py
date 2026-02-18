@@ -1,8 +1,10 @@
-from typing import Dict, Optional, Tuple, List
+import math
 from dataclasses import dataclass
 from datetime import datetime
-import math
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
+
 from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
@@ -33,43 +35,43 @@ class DecayCalculator:
             decay_type="zero",
             params={"alpha": 0.0, "lambda1": 0.0, "lambda2": 0.0},
             permanent=True,
-            retention_180d=1.0
+            retention_180d=1.0,
         ),
         0.92: ImportanceLevel(
             score_range=(0.85, 0.99),
             decay_type="exponential",
             params={"alpha": 0.2, "lambda1": 0.01, "lambda2": 0.001},
             permanent=False,
-            retention_180d=0.95
+            retention_180d=0.95,
         ),
         0.77: ImportanceLevel(
             score_range=(0.70, 0.84),
             decay_type="exponential",
             params={"alpha": 0.35, "lambda1": 0.08, "lambda2": 0.015},
             permanent=False,
-            retention_180d=0.80
+            retention_180d=0.80,
         ),
         0.60: ImportanceLevel(
             score_range=(0.50, 0.69),
             decay_type="exponential",
             params={"alpha": 0.6, "lambda1": 0.25, "lambda2": 0.04},
             permanent=False,
-            retention_180d=0.50
+            retention_180d=0.50,
         ),
         0.40: ImportanceLevel(
             score_range=(0.30, 0.49),
             decay_type="exponential",
             params={"alpha": 0.75, "lambda1": 0.45, "lambda2": 0.08},
             permanent=False,
-            retention_180d=0.25
+            retention_180d=0.25,
         ),
         0.15: ImportanceLevel(
             score_range=(0.0, 0.29),
             decay_type="exponential",
             params={"alpha": 0.9, "lambda1": 0.8, "lambda2": 0.15},
             permanent=False,
-            retention_180d=0.05
-        )
+            retention_180d=0.05,
+        ),
     }
 
     def __init__(self):
@@ -107,7 +109,7 @@ class DecayCalculator:
         days_elapsed: float,
         alpha: float = 0.6,
         lambda1: float = 0.25,
-        lambda2: float = 0.04
+        lambda2: float = 0.04,
     ) -> float:
         """
         双阶段指数衰减函数（主模型默认）
@@ -127,19 +129,14 @@ class DecayCalculator:
         if days_elapsed <= 0:
             return importance
 
-        decay_factor = (
-            alpha * math.exp(-lambda1 * days_elapsed) +
-            (1 - alpha) * math.exp(-lambda2 * days_elapsed)
+        decay_factor = alpha * math.exp(-lambda1 * days_elapsed) + (1 - alpha) * math.exp(
+            -lambda2 * days_elapsed
         )
 
         return min(importance * decay_factor, 1.0)
 
     def calculate_ebbinghaus_decay(
-        self,
-        importance: float,
-        days_elapsed: float,
-        t50: float = 30.0,
-        k: float = 2.0
+        self, importance: float, days_elapsed: float, t50: float = 30.0, k: float = 2.0
     ) -> float:
         """
         艾宾浩斯优化版衰减函数（备选模型）
@@ -174,7 +171,7 @@ class DecayCalculator:
         created_at: str,
         decay_type: str = "exponential",
         decay_params: Optional[Dict] = None,
-        permanent: bool = False
+        permanent: bool = False,
     ) -> float:
         days_elapsed = self.calculate_days_elapsed(created_at)
 
@@ -187,7 +184,7 @@ class DecayCalculator:
                 importance=importance,
                 days_elapsed=days_elapsed,
                 t50=decay_params.get("t50", 30.0) if decay_params else 30.0,
-                k=decay_params.get("k", 2.0) if decay_params else 2.0
+                k=decay_params.get("k", 2.0) if decay_params else 2.0,
             )
 
         # 双阶段指数衰减（默认）
@@ -197,7 +194,7 @@ class DecayCalculator:
                 days_elapsed=days_elapsed,
                 alpha=decay_params.get("alpha", 0.6),
                 lambda1=decay_params.get("lambda1", 0.25),
-                lambda2=decay_params.get("lambda2", 0.04)
+                lambda2=decay_params.get("lambda2", 0.04),
             )
 
         level = self.get_level_from_importance(importance)
@@ -206,14 +203,11 @@ class DecayCalculator:
             days_elapsed=days_elapsed,
             alpha=level.params["alpha"],
             lambda1=level.params["lambda1"],
-            lambda2=level.params["lambda2"]
+            lambda2=level.params["lambda2"],
         )
 
     def calculate_reactivation_score(
-        self,
-        base_score: float,
-        reactivation_count: int,
-        emotion_intensity: float = 0.0
+        self, base_score: float, reactivation_count: int, emotion_intensity: float = 0.0
     ) -> float:
         if reactivation_count <= 0:
             return base_score
@@ -225,10 +219,7 @@ class DecayCalculator:
         return min(enhanced, 1.0)
 
     def calculate_network_effect(
-        self,
-        base_score: float,
-        active_memory_count: int,
-        association_threshold: float = 0.6
+        self, base_score: float, active_memory_count: int, association_threshold: float = 0.6
     ) -> float:
         """
         计算网络效应增强
@@ -259,7 +250,7 @@ class DecayCalculator:
         memory: Dict,
         query_embedding: Optional[List[float]] = None,
         context_score: float = 0.0,
-        keyword_match_count: int = 0
+        keyword_match_count: int = 0,
     ) -> float:
         """
         计算相关性维度分数
@@ -299,10 +290,7 @@ class DecayCalculator:
         return min(relevance_score, 1.0)
 
     def calculate_time_score(
-        self,
-        memory: Dict,
-        apply_reactivation: bool = True,
-        apply_network: bool = False
+        self, memory: Dict, apply_reactivation: bool = True, apply_network: bool = False
     ) -> float:
         """计算时间分数（基于当前时间实时计算）"""
         importance = memory.get("importance_score", memory.get("importance", 3) / 5.0)
@@ -320,7 +308,7 @@ class DecayCalculator:
             importance=importance,
             created_at=created_at,
             decay_type=decay_type,
-            decay_params=decay_params
+            decay_params=decay_params,
         )
 
         if apply_reactivation:
@@ -329,7 +317,7 @@ class DecayCalculator:
             time_score = self.calculate_reactivation_score(
                 base_score=time_score,
                 reactivation_count=reactivation_count,
-                emotion_intensity=emotion_score
+                emotion_intensity=emotion_score,
             )
 
         return max(time_score, 0.0)
@@ -342,10 +330,10 @@ class DecayCalculator:
         decay_params: Optional[Dict] = None,
         permanent: bool = False,
         reactivation_count: int = 0,
-        emotion_score: float = 0.0
+        emotion_score: float = 0.0,
     ) -> float:
         """实时计算时间分数（纯函数，不依赖内存状态）
-        
+
         Args:
             importance: 重要性分数 (0-1)
             created_at: 创建时间 (ISO格式)
@@ -354,7 +342,7 @@ class DecayCalculator:
             permanent: 是否永久记忆
             reactivation_count: 再激活次数
             emotion_score: 情感分数
-            
+
         Returns:
             实时计算的时间分数 (0-1)
         """
@@ -366,7 +354,7 @@ class DecayCalculator:
             importance=importance,
             created_at=created_at,
             decay_type=decay_type,
-            decay_params=decay_params
+            decay_params=decay_params,
         )
 
         # 应用再激活加成
@@ -374,7 +362,7 @@ class DecayCalculator:
             time_score = self.calculate_reactivation_score(
                 base_score=time_score,
                 reactivation_count=reactivation_count,
-                emotion_intensity=emotion_score
+                emotion_intensity=emotion_score,
             )
 
         return max(time_score, 0.0)
@@ -388,24 +376,20 @@ class DecayCalculator:
         query_embedding=None,
         weights: Tuple[float, float, float] = (0.35, 0.25, 0.4),
         apply_reactivation: bool = True,
-        apply_network: bool = False
+        apply_network: bool = False,
     ) -> float:
         importance_w, time_w, relevance_w = weights
 
         importance_score = self.calculate_importance_score(memory)
 
         time_score = self.calculate_time_score(
-            memory=memory,
-            apply_reactivation=apply_reactivation,
-            apply_network=apply_network
+            memory=memory, apply_reactivation=apply_reactivation, apply_network=apply_network
         )
 
         relevance_score = memory.get("score", 0.5)
 
         base_score = (
-            importance_score * importance_w +
-            time_score * time_w +
-            relevance_score * relevance_w
+            importance_score * importance_w + time_score * time_w + relevance_score * relevance_w
         )
 
         permanent = memory.get("permanent", False)

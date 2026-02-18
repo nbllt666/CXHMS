@@ -47,9 +47,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             </div>
           )}
         </div>
-        {error && (
-          <p className="mt-1.5 text-sm text-[var(--color-error)]">{error}</p>
-        )}
+        {error && <p className="mt-1.5 text-sm text-[var(--color-error)]">{error}</p>}
       </div>
     );
   }
@@ -87,9 +85,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           )}
           {...props}
         />
-        {error && (
-          <p className="mt-1.5 text-sm text-[var(--color-error)]">{error}</p>
-        )}
+        {error && <p className="mt-1.5 text-sm text-[var(--color-error)]">{error}</p>}
       </div>
     );
   }

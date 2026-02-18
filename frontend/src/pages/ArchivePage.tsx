@@ -1,86 +1,90 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { 
-  Archive, 
-  Merge, 
-  Search, 
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import {
+  Archive,
+  Merge,
+  Search,
   Settings,
   BarChart3,
   Layers,
   AlertCircle,
-  CheckCircle2
-} from 'lucide-react'
-import { api } from '../api/client'
-import { cn } from '../lib/utils'
+  CheckCircle2,
+} from 'lucide-react';
+import { api } from '../api/client';
+import { cn } from '../lib/utils';
 
 interface ArchiveStats {
-  archive_level_counts: Record<number, number>
-  total_archived: number
-  merge_count: number
-  duplicate_count: number
+  archive_level_counts: Record<number, number>;
+  total_archived: number;
+  merge_count: number;
+  duplicate_count: number;
 }
 
 interface DuplicateGroup {
-  group_id: string
-  memory_ids: number[]
-  canonical_id: number
-  similarity_matrix: Record<string, number>
+  group_id: string;
+  memory_ids: number[];
+  canonical_id: number;
+  similarity_matrix: Record<string, number>;
 }
 
 export function ArchivePage() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'duplicates' | 'settings'>('overview')
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [processResult, setProcessResult] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'overview' | 'duplicates' | 'settings'>('overview');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processResult, setProcessResult] = useState<string | null>(null);
 
   const { data: stats, refetch: refetchStats } = useQuery<ArchiveStats>({
     queryKey: ['archiveStats'],
     queryFn: () => api.getArchiveStats(),
-    refetchInterval: 10000
-  })
+    refetchInterval: 10000,
+  });
 
-  const { data: duplicates, refetch: refetchDuplicates } = useQuery<{ duplicate_groups: DuplicateGroup[] }>({
+  const { data: duplicates, refetch: refetchDuplicates } = useQuery<{
+    duplicate_groups: DuplicateGroup[];
+  }>({
     queryKey: ['duplicates'],
     queryFn: () => api.detectDuplicates(),
-    enabled: activeTab === 'duplicates'
-  })
+    enabled: activeTab === 'duplicates',
+  });
 
   const handleAutoArchive = async () => {
-    setIsProcessing(true)
-    setProcessResult(null)
+    setIsProcessing(true);
+    setProcessResult(null);
     try {
-      const result = await api.autoArchiveProcess()
-      setProcessResult(`归档完成：归档 ${result.results.archived.length} 条，合并 ${result.results.merged.length} 条`)
-      refetchStats()
+      const result = await api.autoArchiveProcess();
+      setProcessResult(
+        `归档完成：归档 ${result.results.archived.length} 条，合并 ${result.results.merged.length} 条`
+      );
+      refetchStats();
     } catch {
-      setProcessResult('归档处理失败')
+      setProcessResult('归档处理失败');
     } finally {
-      setIsProcessing(false)
+      setIsProcessing(false);
     }
-  }
+  };
 
   const handleDetectDuplicates = async () => {
-    setIsProcessing(true)
+    setIsProcessing(true);
     try {
-      await refetchDuplicates()
+      await refetchDuplicates();
     } finally {
-      setIsProcessing(false)
+      setIsProcessing(false);
     }
-  }
+  };
 
   const handleMergeGroup = async (group: DuplicateGroup) => {
-    if (!confirm(`确定要合并这 ${group.memory_ids.length} 个记忆吗？`)) return
-    
-    setIsProcessing(true)
+    if (!confirm(`确定要合并这 ${group.memory_ids.length} 个记忆吗？`)) return;
+
+    setIsProcessing(true);
     try {
-      await api.mergeMemories(group.memory_ids)
-      refetchDuplicates()
-      refetchStats()
+      await api.mergeMemories(group.memory_ids);
+      refetchDuplicates();
+      refetchStats();
     } catch (error) {
-      console.error('合并失败:', error)
+      console.error('合并失败:', error);
     } finally {
-      setIsProcessing(false)
+      setIsProcessing(false);
     }
-  }
+  };
 
   return (
     <div className="h-full flex flex-col">
@@ -167,20 +171,21 @@ export function ArchivePage() {
           <div className="bg-card border border-border rounded-xl p-6">
             <h3 className="font-semibold mb-4">归档层级分布</h3>
             <div className="space-y-3">
-              {stats?.archive_level_counts && Object.entries(stats.archive_level_counts).map(([level, count]) => (
-                <div key={level} className="flex items-center gap-4">
-                  <span className="w-16 text-sm font-medium">级别 {level}</span>
-                  <div className="flex-1 h-6 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary rounded-full transition-all"
-                      style={{
-                        width: `${(count / (stats.total_archived || 1)) * 100}%`
-                      }}
-                    />
+              {stats?.archive_level_counts &&
+                Object.entries(stats.archive_level_counts).map(([level, count]) => (
+                  <div key={level} className="flex items-center gap-4">
+                    <span className="w-16 text-sm font-medium">级别 {level}</span>
+                    <div className="flex-1 h-6 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all"
+                        style={{
+                          width: `${(count / (stats.total_archived || 1)) * 100}%`,
+                        }}
+                      />
+                    </div>
+                    <span className="w-12 text-sm text-muted-foreground text-right">{count}</span>
                   </div>
-                  <span className="w-12 text-sm text-muted-foreground text-right">{count}</span>
-                </div>
-              ))}
+                ))}
               {!stats?.archive_level_counts && (
                 <p className="text-muted-foreground text-center py-4">暂无归档数据</p>
               )}
@@ -266,8 +271,8 @@ export function ArchivePage() {
                       <div
                         key={id}
                         className={cn(
-                          "flex items-center gap-3 p-2 rounded-lg",
-                          id === group.canonical_id && "bg-primary/5 border border-primary/20"
+                          'flex items-center gap-3 p-2 rounded-lg',
+                          id === group.canonical_id && 'bg-primary/5 border border-primary/20'
                         )}
                       >
                         <span className="text-sm font-medium">ID: {id}</span>
@@ -285,10 +290,7 @@ export function ArchivePage() {
                       <p className="text-xs text-muted-foreground mb-2">相似度矩阵</p>
                       <div className="flex flex-wrap gap-2">
                         {Object.entries(group.similarity_matrix).map(([pair, score]) => (
-                          <span
-                            key={pair}
-                            className="text-xs px-2 py-1 bg-muted rounded-full"
-                          >
+                          <span key={pair} className="text-xs px-2 py-1 bg-muted rounded-full">
                             {pair}: {(score * 100).toFixed(1)}%
                           </span>
                         ))}
@@ -307,7 +309,7 @@ export function ArchivePage() {
         <div className="max-w-2xl">
           <div className="bg-card border border-border rounded-xl p-6 space-y-6">
             <h3 className="font-semibold">归档设置</h3>
-            
+
             <div>
               <label className="text-sm font-medium mb-2 block">去重相似度阈值</label>
               <p className="text-xs text-muted-foreground mb-3">
@@ -330,9 +332,7 @@ export function ArchivePage() {
 
             <div>
               <label className="text-sm font-medium mb-2 block">自动归档天数</label>
-              <p className="text-xs text-muted-foreground mb-3">
-                超过此天数的未使用记忆将自动归档
-              </p>
+              <p className="text-xs text-muted-foreground mb-3">超过此天数的未使用记忆将自动归档</p>
               <select className="w-full px-3 py-2 bg-muted rounded-lg">
                 <option value="30">30 天</option>
                 <option value="60">60 天</option>
@@ -350,5 +350,5 @@ export function ArchivePage() {
         </div>
       )}
     </div>
-  )
+  );
 }

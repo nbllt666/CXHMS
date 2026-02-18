@@ -1,15 +1,15 @@
-import { Routes, Route } from 'react-router-dom'
-import { AppLayout } from './components/AppLayout'
-import { DashboardPage } from './pages/DashboardPage'
-import { ChatPage } from './pages/ChatPage'
-import { MemoriesPage } from './pages/MemoriesPage'
-import { ArchivePage } from './pages/ArchivePage'
-import { SettingsPage } from './pages/SettingsPage'
-import { AcpPage } from './pages/AcpPage'
-import { ToolsPage } from './pages/ToolsPage'
-import { AgentsPage } from './pages/AgentsPage'
-import { MemoryAgentPage } from './pages/MemoryAgentPage'
-import { ErrorBoundary } from './components/ErrorBoundary'
+import { Routes, Route } from 'react-router-dom';
+import { AppLayout } from './components/AppLayout';
+import { DashboardPage } from './pages/DashboardPage';
+import { ChatPage } from './pages/ChatPage';
+import { MemoriesPage } from './pages/MemoriesPage';
+import { ArchivePage } from './pages/ArchivePage';
+import { SettingsPage } from './pages/SettingsPage';
+import { AcpPage } from './pages/AcpPage';
+import { ToolsPage } from './pages/ToolsPage';
+import { AgentsPage } from './pages/AgentsPage';
+import { MemoryAgentPage } from './pages/MemoryAgentPage';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 function App() {
   return (
@@ -28,7 +28,7 @@ function App() {
         </Route>
       </Routes>
     </ErrorBoundary>
-  )
+  );
 }
 
-export default App
+export default App;

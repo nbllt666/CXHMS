@@ -1,6 +1,6 @@
-from .manager import ACPManager, ACPAgentInfo, ACPConnectionInfo, ACPGroupInfo, ACPMessageInfo
 from .discover import ACPLanDiscovery
 from .group import ACPGroupManager
+from .manager import ACPAgentInfo, ACPConnectionInfo, ACPGroupInfo, ACPManager, ACPMessageInfo
 
 __all__ = [
     "ACPManager",
@@ -9,5 +9,5 @@ __all__ = [
     "ACPGroupInfo",
     "ACPMessageInfo",
     "ACPLanDiscovery",
-    "ACPGroupManager"
+    "ACPGroupManager",
 ]

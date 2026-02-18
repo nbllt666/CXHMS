@@ -1,4 +1,5 @@
 """Chat API endpoint tests."""
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -8,34 +9,19 @@ class TestChatEndpoints:
 
     def test_send_message_validation(self, client: TestClient):
         """Test sending a message without message field returns 422."""
-        response = client.post(
-            "/api/chat",
-            json={
-                "agent_id": "default"
-            }
-        )
+        response = client.post("/api/chat", json={"agent_id": "default"})
         assert response.status_code == 422
 
     def test_send_message_with_message(self, client: TestClient):
         """Test sending a message with message field."""
-        response = client.post(
-            "/api/chat",
-            json={
-                "message": "Hello",
-                "agent_id": "default"
-            }
-        )
+        response = client.post("/api/chat", json={"message": "Hello", "agent_id": "default"})
         assert response.status_code in [200, 503]
 
     def test_send_message_with_session(self, client: TestClient):
         """Test sending a message with session_id."""
         response = client.post(
             "/api/chat",
-            json={
-                "message": "Hello",
-                "session_id": "test-session",
-                "agent_id": "default"
-            }
+            json={"message": "Hello", "session_id": "test-session", "agent_id": "default"},
         )
         assert response.status_code in [200, 503]
 
@@ -46,8 +32,8 @@ class TestChatEndpoints:
             json={
                 "message": "Hello, how are you?",
                 "session_id": "test-session-123",
-                "agent_id": "default"
-            }
+                "agent_id": "default",
+            },
         )
         assert response.status_code in [200, 503]
 
@@ -65,23 +51,14 @@ class TestChatEndpoints:
 
     def test_stream_chat_validation(self, client: TestClient):
         """Test streaming chat endpoint validation."""
-        response = client.post(
-            "/api/chat/stream",
-            json={
-                "agent_id": "default"
-            }
-        )
+        response = client.post("/api/chat/stream", json={"agent_id": "default"})
         assert response.status_code == 422
 
     def test_stream_chat_with_message(self, client: TestClient):
         """Test streaming chat with message."""
         response = client.post(
             "/api/chat/stream",
-            json={
-                "message": "Hello",
-                "session_id": "test-session",
-                "agent_id": "default"
-            }
+            json={"message": "Hello", "session_id": "test-session", "agent_id": "default"},
         )
         assert response.status_code in [200, 503]
 
@@ -103,18 +80,12 @@ class TestChatSessionEndpoints:
 
     def test_create_session(self, client: TestClient):
         """Test creating a new session."""
-        response = client.post(
-            "/api/context/sessions",
-            json={"title": "New Chat"}
-        )
+        response = client.post("/api/context/sessions", json={"title": "New Chat"})
         assert response.status_code in [200, 201, 503]
 
     def test_create_session_minimal(self, client: TestClient):
         """Test creating a session with minimal data."""
-        response = client.post(
-            "/api/context/sessions",
-            json={}
-        )
+        response = client.post("/api/context/sessions", json={})
         assert response.status_code in [200, 201, 503]
 
     def test_delete_session(self, client: TestClient):
@@ -128,10 +99,7 @@ class TestChatEndpointsContentType:
 
     def test_send_message_content_type(self, client: TestClient):
         """Test content type for send message."""
-        response = client.post(
-            "/api/chat",
-            json={"message": "Hello"}
-        )
+        response = client.post("/api/chat", json={"message": "Hello"})
         if response.status_code == 200:
             assert "application/json" in response.headers.get("content-type", "")
 
@@ -147,25 +115,16 @@ class TestChatValidation:
 
     def test_send_message_empty_message(self, client: TestClient):
         """Test sending empty message."""
-        response = client.post(
-            "/api/chat",
-            json={"message": ""}
-        )
+        response = client.post("/api/chat", json={"message": ""})
         assert response.status_code in [422, 200, 503]
 
     def test_send_message_very_long_message(self, client: TestClient):
         """Test sending very long message."""
         long_message = "a" * 10000
-        response = client.post(
-            "/api/chat",
-            json={"message": long_message}
-        )
+        response = client.post("/api/chat", json={"message": long_message})
         assert response.status_code in [200, 413, 503]
 
     def test_send_message_special_characters(self, client: TestClient):
         """Test sending message with special characters."""
-        response = client.post(
-            "/api/chat",
-            json={"message": "Hello! @#$%^&*() 你好 🎉"}
-        )
+        response = client.post("/api/chat", json={"message": "Hello! @#$%^&*() 你好 🎉"})
         assert response.status_code in [200, 503]

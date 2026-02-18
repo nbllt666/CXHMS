@@ -1,8 +1,8 @@
-from enum import Enum
-from typing import Optional, List, Dict, Any
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-import uuid
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 
 class MemoryType(str, Enum):
@@ -55,7 +55,7 @@ class Memory:
             "archived_at": self.archived_at,
             "is_deleted": self.is_deleted,
             "source": self.source,
-            "workspace_id": self.workspace_id
+            "workspace_id": self.workspace_id,
         }
 
     @classmethod
@@ -80,7 +80,7 @@ class Memory:
             archived_at=data.get("archived_at"),
             is_deleted=data.get("is_deleted", False),
             source=data.get("source", "user"),
-            workspace_id=data.get("workspace_id", "default")
+            workspace_id=data.get("workspace_id", "default"),
         )
 
 

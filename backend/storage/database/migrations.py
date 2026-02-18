@@ -1,6 +1,6 @@
-from typing import Dict, Any
-import logging
 import asyncio
+import logging
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -9,6 +9,7 @@ async def run_migrations(db_path: str = "data/memories.db"):
     logger.info("开始执行数据库迁移...")
 
     import aiosqlite
+
     conn = await aiosqlite.connect(db_path)
     cursor = await conn.cursor()
 
@@ -181,7 +182,7 @@ async def run_migrations(db_path: str = "data/memories.db"):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP
         )
-        """
+        """,
     ]
 
     for i, migration in enumerate(migrations):
@@ -212,7 +213,7 @@ async def run_migrations(db_path: str = "data/memories.db"):
         "CREATE INDEX IF NOT EXISTS idx_permanent_memories_importance_score ON permanent_memories(importance_score)",
         "CREATE INDEX IF NOT EXISTS idx_agent_contexts_agent_id ON agent_contexts(agent_id)",
         "CREATE INDEX IF NOT EXISTS idx_agent_context_messages_agent_id ON agent_context_messages(agent_id)",
-        "CREATE INDEX IF NOT EXISTS idx_agent_memory_tables_agent_id ON agent_memory_tables(agent_id)"
+        "CREATE INDEX IF NOT EXISTS idx_agent_memory_tables_agent_id ON agent_memory_tables(agent_id)",
     ]
 
     for idx_sql in indexes:

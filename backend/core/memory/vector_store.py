@@ -1,7 +1,8 @@
-from typing import List, Dict, Optional, Any
+import threading
 from dataclasses import dataclass
 from datetime import datetime
-import threading
+from typing import Any, Dict, List, Optional
+
 from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
@@ -18,17 +19,13 @@ class SyncResult:
 
 class VectorStoreBase:
     """向量存储基类"""
-    
+
     def is_available(self) -> bool:
         """检查向量存储是否可用"""
         raise NotImplementedError
 
     async def add_memory_vector(
-        self,
-        memory_id: int,
-        content: str,
-        embedding: List[float],
-        metadata: Dict = None
+        self, memory_id: int, content: str, embedding: List[float], metadata: Dict = None
     ) -> bool:
         """添加记忆向量"""
         raise NotImplementedError
@@ -38,7 +35,7 @@ class VectorStoreBase:
         query_embedding: List[float],
         limit: int = 10,
         memory_type: str = None,
-        min_score: float = 0.5
+        min_score: float = 0.5,
     ) -> List[Dict]:
         """搜索相似向量"""
         raise NotImplementedError
@@ -57,7 +54,7 @@ class VectorStoreBase:
 
     async def sync_with_sqlite(self, sqlite_manager, last_sync_time: str = None) -> SyncResult:
         """与SQLite同步数据
-        
+
         Args:
             sqlite_manager: SQLite管理器实例
             last_sync_time: 上次同步时间，用于增量同步
@@ -79,6 +76,7 @@ class VectorStoreBase:
 
 class QdrantVectorStore(VectorStoreBase):
     """Qdrant向量存储实现"""
+
     COLLECTION_NAME = "memory_vectors"
 
     def __init__(
@@ -87,7 +85,7 @@ class QdrantVectorStore(VectorStoreBase):
         port: int = 6333,
         vector_size: int = 768,
         collection_name: str = None,
-        embedding_model=None
+        embedding_model=None,
     ):
         self.host = host
         self.port = port
@@ -102,7 +100,7 @@ class QdrantVectorStore(VectorStoreBase):
     def _initialize_client(self):
         try:
             from qdrant_client import QdrantClient
-            from qdrant_client.models import VectorParams, Distance, PointStruct
+            from qdrant_client.models import Distance, PointStruct, VectorParams
 
             self._client = QdrantClient(host=self.host, port=self.port)
             self._ensure_collection()
@@ -116,7 +114,7 @@ class QdrantVectorStore(VectorStoreBase):
             return
 
         try:
-            from qdrant_client.models import VectorParams, Distance
+            from qdrant_client.models import Distance, VectorParams
 
             collections = self._client.get_collections().collections
             collection_names = [c.name for c in collections]
@@ -124,10 +122,7 @@ class QdrantVectorStore(VectorStoreBase):
             if self.collection_name not in collection_names:
                 self._client.create_collection(
                     collection_name=self.collection_name,
-                    vectors_config=VectorParams(
-                        size=self.vector_size,
-                        distance=Distance.COSINE
-                    )
+                    vectors_config=VectorParams(size=self.vector_size, distance=Distance.COSINE),
                 )
                 logger.info(f"创建Qdrant集合: {self.collection_name}")
         except Exception as e:
@@ -137,11 +132,7 @@ class QdrantVectorStore(VectorStoreBase):
         return self._client is not None
 
     async def add_memory_vector(
-        self,
-        memory_id: int,
-        content: str,
-        embedding: List[float],
-        metadata: Dict = None
+        self, memory_id: int, content: str, embedding: List[float], metadata: Dict = None
     ):
         if not self._client:
             return False
@@ -156,13 +147,10 @@ class QdrantVectorStore(VectorStoreBase):
                     "content": content,
                     "memory_id": memory_id,
                     "created_at": datetime.now().isoformat(),
-                    **(metadata or {})
-                }
+                    **(metadata or {}),
+                },
             )
-            self._client.upsert(
-                collection_name=self.collection_name,
-                points=[point]
-            )
+            self._client.upsert(collection_name=self.collection_name, points=[point])
             logger.debug(f"向量已添加: memory_id={memory_id}")
             return True
         except Exception as e:
@@ -174,30 +162,25 @@ class QdrantVectorStore(VectorStoreBase):
         query_embedding: List[float],
         limit: int = 10,
         memory_type: str = None,
-        min_score: float = 0.5
+        min_score: float = 0.5,
     ) -> List[Dict]:
         if not self._client:
             return []
 
         try:
-            from qdrant_client.models import Filter, FieldCondition, MatchValue
+            from qdrant_client.models import FieldCondition, Filter, MatchValue
 
             search_filter = None
             if memory_type:
                 search_filter = Filter(
-                    must=[
-                        FieldCondition(
-                            key="type",
-                            match=MatchValue(value=memory_type)
-                        )
-                    ]
+                    must=[FieldCondition(key="type", match=MatchValue(value=memory_type))]
                 )
 
             results = self._client.search(
                 collection_name=self.collection_name,
                 query_vector=query_embedding,
                 limit=limit,
-                query_filter=search_filter
+                query_filter=search_filter,
             )
 
             # Qdrant返回的是距离，距离越小越相似，所以需要转换为相似度分数
@@ -206,12 +189,14 @@ class QdrantVectorStore(VectorStoreBase):
             for r in results:
                 similarity_score = 1 / (1 + r.score)  # 将距离转换为相似度
                 if similarity_score >= min_score:
-                    filtered_results.append({
-                        "memory_id": r.id,
-                        "score": similarity_score,
-                        "content": r.payload.get("content"),
-                        "metadata": r.payload
-                    })
+                    filtered_results.append(
+                        {
+                            "memory_id": r.id,
+                            "score": similarity_score,
+                            "content": r.payload.get("content"),
+                            "metadata": r.payload,
+                        }
+                    )
 
             return filtered_results
         except Exception as e:
@@ -223,10 +208,7 @@ class QdrantVectorStore(VectorStoreBase):
             return False
 
         try:
-            self._client.delete_points(
-                collection_name=self.collection_name,
-                points=[memory_id]
-            )
+            self._client.delete_points(collection_name=self.collection_name, points=[memory_id])
             return True
         except Exception as e:
             logger.error(f"删除向量失败: {e}")
@@ -237,20 +219,15 @@ class QdrantVectorStore(VectorStoreBase):
             return None
 
         try:
-            from qdrant_client.models import Filter, FieldCondition, MatchValue
+            from qdrant_client.models import FieldCondition, Filter, MatchValue
 
             results = self._client.search(
                 collection_name=self.collection_name,
                 query_vector=[0.0] * self.vector_size,
                 limit=1,
                 query_filter=Filter(
-                    must=[
-                        FieldCondition(
-                            key="memory_id",
-                            match=MatchValue(value=memory_id)
-                        )
-                    ]
-                )
+                    must=[FieldCondition(key="memory_id", match=MatchValue(value=memory_id))]
+                ),
             )
 
             if results:
@@ -258,7 +235,7 @@ class QdrantVectorStore(VectorStoreBase):
                 return {
                     "memory_id": r.id,
                     "content": r.payload.get("content"),
-                    "metadata": r.payload
+                    "metadata": r.payload,
                 }
             return None
         except Exception as e:
@@ -282,13 +259,15 @@ class QdrantVectorStore(VectorStoreBase):
                 logger.info("开始SQLite与Qdrant全量数据同步...")
 
             memories = sqlite_manager.search_memories(
-                memory_type=None,
-                limit=10000,
-                include_deleted=False
+                memory_type=None, limit=10000, include_deleted=False
             )
 
             if last_sync_time:
-                memories = [m for m in memories if m.get("updated_at") and m.get("updated_at") > last_sync_time]
+                memories = [
+                    m
+                    for m in memories
+                    if m.get("updated_at") and m.get("updated_at") > last_sync_time
+                ]
                 logger.info(f"增量同步: 筛选出 {len(memories)} 条需要同步的记忆")
 
             qdrant_ids = set()
@@ -310,7 +289,7 @@ class QdrantVectorStore(VectorStoreBase):
                                 memory_id=memory_id,
                                 content=content,
                                 embedding=embedding,
-                                metadata=memory
+                                metadata=memory,
                             )
                             result.synced += 1
                             result.details.append(f"创建: {memory_id}")
@@ -323,7 +302,7 @@ class QdrantVectorStore(VectorStoreBase):
                                 memory_id=memory_id,
                                 content=content,
                                 embedding=embedding,
-                                metadata=memory
+                                metadata=memory,
                             )
                             result.synced += 1
                             result.details.append(f"更新: {memory_id}")
@@ -332,7 +311,9 @@ class QdrantVectorStore(VectorStoreBase):
                     result.errors += 1
                     logger.error(f"同步记忆失败: {memory_id}, {e}")
 
-            logger.info(f"同步完成: checked={result.total_checked}, synced={result.synced}, errors={result.errors}")
+            logger.info(
+                f"同步完成: checked={result.total_checked}, synced={result.synced}, errors={result.errors}"
+            )
 
         except Exception as e:
             result.errors += 1
@@ -351,7 +332,7 @@ class QdrantVectorStore(VectorStoreBase):
                 "vectors_count": info.vectors_count,
                 "indexed_vectors_count": info.indexed_vectors_count,
                 "status": info.status,
-                "collection_name": self.collection_name
+                "collection_name": self.collection_name,
             }
         except Exception as e:
             return {"error": str(e)}
@@ -363,10 +344,7 @@ class QdrantVectorStore(VectorStoreBase):
         try:
             from qdrant_client.models import Filter
 
-            self._client.delete_points(
-                collection_name=self.collection_name,
-                points=Filter()
-            )
+            self._client.delete_points(collection_name=self.collection_name, points=Filter())
             logger.info(f"集合已清空: {self.collection_name}")
             return True
         except Exception as e:
@@ -381,35 +359,37 @@ class QdrantVectorStore(VectorStoreBase):
                 logger.warning(f"关闭Qdrant客户端失败: {e}")
 
 
-def create_vector_store(
-    backend: str = "milvus_lite",
-    **kwargs
-) -> VectorStoreBase:
+def create_vector_store(backend: str = "milvus_lite", **kwargs) -> VectorStoreBase:
     """
     创建向量存储实例
-    
+
     Args:
         backend: 向量存储后端类型 ("milvus_lite", "chroma", "qdrant", "weaviate", "weaviate_embedded")
         **kwargs: 向量存储配置参数
-    
+
     Returns:
         VectorStoreBase: 向量存储实例
     """
     if backend == "milvus_lite":
         from .milvus_lite_store import MilvusLiteVectorStore
+
         return MilvusLiteVectorStore(**kwargs)
     elif backend == "chroma":
         from .chroma_store import ChromaVectorStore
+
         return ChromaVectorStore(**kwargs)
     elif backend == "qdrant":
         return QdrantVectorStore(**kwargs)
     elif backend == "weaviate":
         from .weaviate_store import WeaviateVectorStore
+
         return WeaviateVectorStore(embedded=False, **kwargs)
     elif backend == "weaviate_embedded":
         from .weaviate_store import WeaviateVectorStore
+
         return WeaviateVectorStore(embedded=True, **kwargs)
     else:
         logger.warning(f"未知的向量存储后端: {backend}, 使用Chroma")
         from .chroma_store import ChromaVectorStore
+
         return ChromaVectorStore(**kwargs)

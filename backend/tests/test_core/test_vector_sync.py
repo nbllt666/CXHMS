@@ -1,8 +1,10 @@
 """Test vector sync functionality."""
-import pytest
+
 import asyncio
-from unittest.mock import Mock, MagicMock, AsyncMock, patch
 from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
+import pytest
 
 from backend.core.memory.manager import MemoryManager
 
@@ -44,8 +46,7 @@ class TestAutoVectorSync:
         memory_manager._embedding_model = mock_embedding_model
 
         memory_id = memory_manager.write_memory(
-            content="Test memory for vector sync",
-            memory_type="long_term"
+            content="Test memory for vector sync", memory_type="long_term"
         )
 
         assert memory_id is not None
@@ -58,8 +59,7 @@ class TestAutoVectorSync:
         memory_manager._embedding_model = None
 
         memory_id = memory_manager.write_memory(
-            content="Test memory without vector store",
-            memory_type="long_term"
+            content="Test memory without vector store", memory_type="long_term"
         )
 
         assert memory_id is not None
@@ -73,8 +73,7 @@ class TestAutoVectorSync:
         memory_manager._embedding_model = mock_embedding_model
 
         memory_id = memory_manager.write_memory(
-            content="Test memory with sync failure",
-            memory_type="long_term"
+            content="Test memory with sync failure", memory_type="long_term"
         )
 
         assert memory_id is not None
@@ -89,18 +88,12 @@ class TestAutoVectorSync:
         memory_manager._vector_store = mock_vector_store
         memory_manager._embedding_model = mock_embedding_model
 
-        memory_id = memory_manager.write_memory(
-            content="Original content",
-            memory_type="long_term"
-        )
+        memory_id = memory_manager.write_memory(content="Original content", memory_type="long_term")
 
         mock_vector_store.reset_mock()
         mock_embedding_model.reset_mock()
 
-        result = memory_manager.update_memory(
-            memory_id,
-            new_content="Updated content"
-        )
+        result = memory_manager.update_memory(memory_id, new_content="Updated content")
 
         assert result is True
         mock_embedding_model.get_embedding.assert_called_once_with("Updated content")
@@ -114,18 +107,12 @@ class TestAutoVectorSync:
         memory_manager._vector_store = mock_vector_store
         memory_manager._embedding_model = mock_embedding_model
 
-        memory_id = memory_manager.write_memory(
-            content="Original content",
-            memory_type="long_term"
-        )
+        memory_id = memory_manager.write_memory(content="Original content", memory_type="long_term")
 
         mock_vector_store.reset_mock()
         mock_embedding_model.reset_mock()
 
-        result = memory_manager.update_memory(
-            memory_id,
-            new_importance=5
-        )
+        result = memory_manager.update_memory(memory_id, new_importance=5)
 
         assert result is True
         mock_embedding_model.get_embedding.assert_not_called()
@@ -138,10 +125,7 @@ class TestAutoVectorSync:
         memory_manager._vector_store = mock_vector_store
         memory_manager._embedding_model = mock_embedding_model
 
-        memory_id = memory_manager.write_memory(
-            content="Memory to delete",
-            memory_type="long_term"
-        )
+        memory_id = memory_manager.write_memory(content="Memory to delete", memory_type="long_term")
 
         mock_vector_store.reset_mock()
 
@@ -159,8 +143,7 @@ class TestAutoVectorSync:
         memory_manager._embedding_model = mock_embedding_model
 
         memory_id = memory_manager.write_memory(
-            content="Memory to delete with failure",
-            memory_type="long_term"
+            content="Memory to delete with failure", memory_type="long_term"
         )
 
         result = memory_manager.delete_memory(memory_id)
@@ -183,6 +166,7 @@ class TestVectorSyncHelpers:
 
     def test_run_async_sync_with_no_running_loop(self, memory_manager):
         """Test _run_async_sync when no event loop is running."""
+
         async def async_func():
             return "async_result"
 
@@ -210,7 +194,7 @@ class TestVectorSyncHelpers:
         mock_store = MagicMock()
         mock_store.add_memory_vector = AsyncMock(return_value=True)
         mock_store.delete_by_memory_id = AsyncMock(return_value=True)
-        
+
         mock_embedding = MagicMock()
         mock_embedding.get_embedding = AsyncMock(return_value=[0.1] * 768)
 

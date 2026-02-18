@@ -1,21 +1,19 @@
 import asyncio
-import aiosqlite
-from typing import Optional, List, Dict, Any
-from contextlib import asynccontextmanager
 import os
+import sqlite3
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import aiosqlite
+
 from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
 
 
 class AsyncConnectionPool:
-    def __init__(
-        self,
-        db_path: str = "data/memories.db",
-        min_size: int = 5,
-        max_size: int = 20
-    ):
+    def __init__(self, db_path: str = "data/memories.db", min_size: int = 5, max_size: int = 20):
         self.db_path = db_path
         self.min_size = min_size
         self.max_size = max_size
@@ -39,10 +37,7 @@ class AsyncConnectionPool:
 
     async def _create_connection(self) -> Optional[aiosqlite.Connection]:
         try:
-            conn = await aiosqlite.connect(
-                self.db_path,
-                timeout=20.0
-            )
+            conn = await aiosqlite.connect(self.db_path, timeout=20.0)
             conn.row_factory = aiosqlite.Row
             await conn.execute("PRAGMA journal_mode=WAL")
             await conn.execute("PRAGMA synchronous=NORMAL")
@@ -98,15 +93,12 @@ class AsyncConnectionPool:
 
 
 class SyncConnectionPool:
-    def __init__(
-        self,
-        db_path: str = "data/memories.db",
-        pool_size: int = 10
-    ):
+    def __init__(self, db_path: str = "data/memories.db", pool_size: int = 10):
         self.db_path = db_path
         self.pool_size = pool_size
-        self._connections: Dict[int, aiosqlite.Connection] = {}
+        self._connections: Dict[int, sqlite3.Connection] = {}
         import threading
+
         self._lock = threading.Lock()
         self._last_used: Dict[int, float] = {}
         self._initialized = False
@@ -121,6 +113,7 @@ class SyncConnectionPool:
             conn = self._create_connection()
             if conn:
                 import threading
+
                 thread_id = threading.get_ident()
                 self._connections[thread_id] = conn
                 self._last_used[thread_id] = 0
@@ -128,13 +121,9 @@ class SyncConnectionPool:
         self._initialized = True
         logger.info(f"同步连接池初始化完成: {len(self._connections)} 个连接")
 
-    def _create_connection(self) -> Optional[aiosqlite.Connection]:
+    def _create_connection(self) -> Optional[sqlite3.Connection]:
         try:
-            conn = sqlite3.connect(
-                self.db_path,
-                timeout=20.0,
-                check_same_thread=False
-            )
+            conn = sqlite3.connect(self.db_path, timeout=20.0, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
@@ -145,9 +134,10 @@ class SyncConnectionPool:
             logger.error(f"创建同步数据库连接失败: {e}")
             return None
 
-    def get_connection(self) -> aiosqlite.Connection:
+    def get_connection(self) -> sqlite3.Connection:
         import threading
         import time
+
         thread_id = threading.get_ident()
 
         if thread_id in self._connections:
@@ -173,6 +163,7 @@ class SyncConnectionPool:
 
     def close_connection(self):
         import threading
+
         thread_id = threading.get_ident()
 
         if thread_id in self._connections:
@@ -193,6 +184,3 @@ class SyncConnectionPool:
         self._last_used.clear()
         self._initialized = False
         logger.info("所有同步数据库连接已关闭")
-
-
-import sqlite3

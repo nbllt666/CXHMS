@@ -1,15 +1,20 @@
-import pytest
 import asyncio
-from datetime import datetime, timedelta
-import sys
 import os
+import sys
+from datetime import datetime, timedelta
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import pytest
 
-from backend.core.memory.manager import MemoryManager
-from backend.core.memory.decay import DecayCalculator
-from backend.core.memory.secondary_router import SecondaryModelRouter, SecondaryCommand, SecondaryInstruction
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 from backend.core.context.manager import ContextManager
+from backend.core.memory.decay import DecayCalculator
+from backend.core.memory.manager import MemoryManager
+from backend.core.memory.secondary_router import (
+    SecondaryCommand,
+    SecondaryInstruction,
+    SecondaryModelRouter,
+)
 
 
 class TestMemoryManagerBasics:
@@ -25,7 +30,7 @@ class TestMemoryManagerBasics:
             memory_type="long_term",
             importance=3,
             tags=["test", "unit"],
-            metadata={"source": "test"}
+            metadata={"source": "test"},
         )
 
         assert memory_id > 0, "记忆ID应该大于0"
@@ -41,16 +46,10 @@ class TestMemoryManagerBasics:
         db_path = tmp_path / "test_memories.db"
         manager = MemoryManager(str(db_path))
 
-        memory_id = manager.write_memory(
-            content="原始内容",
-            memory_type="long_term",
-            importance=2
-        )
+        memory_id = manager.write_memory(content="原始内容", memory_type="long_term", importance=2)
 
         success = manager.update_memory(
-            memory_id=memory_id,
-            new_content="更新后的内容",
-            new_importance=4
+            memory_id=memory_id, new_content="更新后的内容", new_importance=4
         )
 
         assert success is True, "更新应该成功"
@@ -66,10 +65,7 @@ class TestMemoryManagerBasics:
         db_path = tmp_path / "test_memories.db"
         manager = MemoryManager(str(db_path))
 
-        memory_id = manager.write_memory(
-            content="待删除的记忆",
-            memory_type="short_term"
-        )
+        memory_id = manager.write_memory(content="待删除的记忆", memory_type="short_term")
 
         success = manager.delete_memory(memory_id)
         assert success is True, "删除应该成功"
@@ -94,7 +90,7 @@ class TestPermanentMemories:
             metadata={"priority": "high"},
             emotion_score=0.8,
             source="user",
-            is_from_main=True
+            is_from_main=True,
         )
 
         assert memory_id > 0, "永久记忆ID应该大于0"
@@ -111,17 +107,9 @@ class TestPermanentMemories:
         db_path = tmp_path / "test_permanent2.db"
         manager = MemoryManager(str(db_path))
 
-        manager.write_permanent_memory(
-            content="永久记忆1",
-            tags=["test"],
-            source="user"
-        )
+        manager.write_permanent_memory(content="永久记忆1", tags=["test"], source="user")
 
-        manager.write_permanent_memory(
-            content="永久记忆2",
-            tags=["test"],
-            source="system"
-        )
+        manager.write_permanent_memory(content="永久记忆2", tags=["test"], source="system")
 
         memories = manager.get_permanent_memories()
         assert len(memories) >= 2, "应该至少有两条永久记忆"
@@ -133,15 +121,10 @@ class TestPermanentMemories:
         db_path = tmp_path / "test_permanent3.db"
         manager = MemoryManager(str(db_path))
 
-        memory_id = manager.write_permanent_memory(
-            content="原始永久记忆",
-            tags=["original"]
-        )
+        memory_id = manager.write_permanent_memory(content="原始永久记忆", tags=["original"])
 
         success = manager.update_permanent_memory(
-            memory_id=memory_id,
-            content="更新的永久记忆",
-            tags=["updated"]
+            memory_id=memory_id, content="更新的永久记忆", tags=["updated"]
         )
 
         assert success is True, "更新应该成功"
@@ -156,9 +139,7 @@ class TestPermanentMemories:
         db_path = tmp_path / "test_permanent4.db"
         manager = MemoryManager(str(db_path))
 
-        memory_id = manager.write_permanent_memory(
-            content="待删除的永久记忆"
-        )
+        memory_id = manager.write_permanent_memory(content="待删除的永久记忆")
 
         success = manager.delete_permanent_memory(memory_id, is_from_main=True)
         assert success is True, "主模型应该能删除永久记忆"
@@ -173,10 +154,7 @@ class TestPermanentMemories:
         db_path = tmp_path / "test_permanent5.db"
         manager = MemoryManager(str(db_path))
 
-        memory_id = manager.write_permanent_memory(
-            content="测试权限的记忆",
-            is_from_main=True
-        )
+        memory_id = manager.write_permanent_memory(content="测试权限的记忆", is_from_main=True)
 
         # 副模型不能删除永久记忆
         success = manager.delete_permanent_memory(memory_id, is_from_main=False)
@@ -195,22 +173,15 @@ class TestMemorySearch:
 
         # 写入测试记忆
         manager.write_memory(
-            content="关于Python编程的记忆",
-            memory_type="long_term",
-            tags=["python", "programming"]
+            content="关于Python编程的记忆", memory_type="long_term", tags=["python", "programming"]
         )
 
         manager.write_memory(
-            content="关于机器学习的记忆",
-            memory_type="long_term",
-            tags=["ml", "ai"]
+            content="关于机器学习的记忆", memory_type="long_term", tags=["ml", "ai"]
         )
 
         # 搜索
-        results = manager.search_memories(
-            query="Python",
-            memory_type="long_term"
-        )
+        results = manager.search_memories(query="Python", memory_type="long_term")
 
         assert isinstance(results, list), "搜索结果应该是列表"
 
@@ -226,16 +197,11 @@ class TestMemoryRecall:
         manager = MemoryManager(str(db_path))
 
         memory_id = manager.write_memory(
-            content="需要召回的记忆",
-            memory_type="long_term",
-            importance=5
+            content="需要召回的记忆", memory_type="long_term", importance=5
         )
 
         # 召回记忆
-        recalled = manager.recall_memory(
-            memory_id=memory_id,
-            emotion_intensity=0.8
-        )
+        recalled = manager.recall_memory(memory_id=memory_id, emotion_intensity=0.8)
 
         assert recalled is not None, "召回应该成功"
         assert recalled["reactivation_count"] > 0, "重激活计数应该增加"
@@ -254,7 +220,7 @@ class TestMemoryBatchOperations:
         memories = [
             {"content": "记忆1", "type": "short_term"},
             {"content": "记忆2", "type": "short_term"},
-            {"content": "记忆3", "type": "long_term"}
+            {"content": "记忆3", "type": "long_term"},
         ]
 
         result = manager.batch_write_memories(memories)
@@ -275,7 +241,7 @@ class TestMemoryBatchOperations:
         # 批量更新
         updates = [
             {"memory_id": id1, "new_content": "更新后的记忆1"},
-            {"memory_id": id2, "new_content": "更新后的记忆2"}
+            {"memory_id": id2, "new_content": "更新后的记忆2"},
         ]
 
         results = manager.batch_update_memories(updates)
@@ -311,10 +277,7 @@ class TestMemoryDecay:
         calculator = DecayCalculator()
 
         score = calculator.calculate_exponential_decay(
-            importance=0.8,
-            days_elapsed=30.0,
-            alpha=0.6,
-            lambda1=0.25
+            importance=0.8, days_elapsed=30.0, alpha=0.6, lambda1=0.25
         )
 
         assert 0 <= score <= 1, "衰减分数应该在0-1之间"
@@ -324,10 +287,7 @@ class TestMemoryDecay:
         calculator = DecayCalculator()
 
         score = calculator.calculate_ebbinghaus_decay(
-            importance=0.9,
-            days_elapsed=7.0,
-            t50=30.0,
-            k=2.0
+            importance=0.9, days_elapsed=7.0, t50=30.0, k=2.0
         )
 
         assert 0 <= score <= 1, "衰减分数应该在0-1之间"
@@ -336,10 +296,7 @@ class TestMemoryDecay:
         """测试网络效应计算"""
         calculator = DecayCalculator()
 
-        score = calculator.calculate_network_effect(
-            base_score=0.5,
-            active_memory_count=100
-        )
+        score = calculator.calculate_network_effect(base_score=0.5, active_memory_count=100)
 
         assert score > 0, "网络效应分数应该为正"
 
@@ -348,11 +305,7 @@ class TestMemoryDecay:
         db_path = tmp_path / "test_memories.db"
         manager = MemoryManager(str(db_path))
 
-        memory_id = manager.write_memory(
-            content="测试记忆",
-            memory_type="long_term",
-            importance=4
-        )
+        memory_id = manager.write_memory(content="测试记忆", memory_type="long_term", importance=4)
 
         memory = manager.get_memory(memory_id)
         calculator = DecayCalculator()
@@ -419,10 +372,7 @@ class TestContextManager:
         db_path = tmp_path / "test_context.db"
         manager = ContextManager(str(db_path))
 
-        session_id = manager.create_session(
-            workspace_id="default",
-            title="测试会话"
-        )
+        session_id = manager.create_session(workspace_id="default", title="测试会话")
 
         assert session_id is not None, "会话ID不应该为空"
         assert len(session_id) > 0, "会话ID应该有长度"
@@ -437,11 +387,7 @@ class TestContextManager:
 
         session_id = manager.create_session(workspace_id="default")
 
-        message_id = manager.add_message(
-            session_id=session_id,
-            role="user",
-            content="测试消息"
-        )
+        message_id = manager.add_message(session_id=session_id, role="user", content="测试消息")
 
         assert message_id is not None, "消息ID不应该为空"
 
@@ -460,11 +406,7 @@ class TestContextManager:
         session_id = manager.create_session(workspace_id="default")
 
         # add_mono_context 参数是 rounds 而不是 emotion_score
-        manager.add_mono_context(
-            session_id=session_id,
-            content="内心独白内容",
-            rounds=1
-        )
+        manager.add_mono_context(session_id=session_id, content="内心独白内容", rounds=1)
 
         # 验证独白已添加
         context = manager.get_mono_context(session_id)
@@ -496,9 +438,7 @@ class TestContextManager:
         manager = ContextManager(str(db_path))
 
         session_id = manager.create_session(
-            workspace_id="default",
-            title="测试会话标题",
-            user_id="user123"
+            workspace_id="default", title="测试会话标题", user_id="user123"
         )
 
         session = manager.get_session(session_id)
@@ -572,11 +512,7 @@ class TestContextManager:
 
         session_id = manager.create_session(workspace_id="default")
 
-        success = manager.update_session(
-            session_id,
-            summary="这是会话摘要",
-            is_active=False
-        )
+        success = manager.update_session(session_id, summary="这是会话摘要", is_active=False)
         assert success is True, "更新应该成功"
 
         session = manager.get_session(session_id)
@@ -723,7 +659,7 @@ class TestContextManager:
             content="测试消息",
             content_type="text",
             metadata={"key": "value"},
-            tokens=100
+            tokens=100,
         )
 
         messages = manager.get_messages(session_id)
@@ -795,9 +731,7 @@ class TestContextManager:
         manager = ContextManager(str(db_path))
 
         session_id = manager.create_session(
-            workspace_id="default",
-            title="测试会话标题",
-            user_id="user123"
+            workspace_id="default", title="测试会话标题", user_id="user123"
         )
 
         session = manager.get_session(session_id)
@@ -871,11 +805,7 @@ class TestContextManager:
 
         session_id = manager.create_session(workspace_id="default")
 
-        success = manager.update_session(
-            session_id,
-            summary="这是会话摘要",
-            is_active=False
-        )
+        success = manager.update_session(session_id, summary="这是会话摘要", is_active=False)
         assert success is True, "更新应该成功"
 
         session = manager.get_session(session_id)
@@ -1022,7 +952,7 @@ class TestContextManager:
             content="测试消息",
             content_type="text",
             metadata={"key": "value"},
-            tokens=100
+            tokens=100,
         )
 
         messages = manager.get_messages(session_id)

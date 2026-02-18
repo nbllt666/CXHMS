@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException
 from typing import Dict, List, Optional
+
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
 from backend.core.exceptions import ToolError
 from backend.core.logging_config import get_contextual_logger
 
@@ -11,6 +13,7 @@ router = APIRouter()
 
 class ToolRegisterRequest(BaseModel):
     """工具注册请求"""
+
     name: str
     description: str
     parameters: Dict
@@ -27,12 +30,14 @@ class ToolRegisterRequest(BaseModel):
 
 class ToolCallRequest(BaseModel):
     """工具调用请求"""
+
     name: str
     arguments: Dict = {}
 
 
 class MCPServerAddRequest(BaseModel):
     """MCP服务器添加请求"""
+
     name: str
     command: str
     args: List[str] = []
@@ -41,16 +46,19 @@ class MCPServerAddRequest(BaseModel):
 
 class MCPServerStartRequest(BaseModel):
     """MCP服务器启动请求"""
+
     name: str
 
 
 class MCPServerStopRequest(BaseModel):
     """MCP服务器停止请求"""
+
     name: str
 
 
 class MCPToolCallRequest(BaseModel):
     """MCP工具调用请求"""
+
     server_name: str
     tool_name: str
     arguments: Dict = {}
@@ -58,20 +66,18 @@ class MCPToolCallRequest(BaseModel):
 
 @router.get("/tools")
 async def list_tools(
-    enabled_only: bool = True,
-    include_builtin: bool = False,
-    category: str = None
+    enabled_only: bool = True, include_builtin: bool = False, category: str = None
 ):
     """列出工具"""
-    from backend.core.tools.registry import tool_registry, BUILTIN_TOOL_NAMES
+    from backend.core.tools.registry import BUILTIN_TOOL_NAMES, tool_registry
 
     try:
         tools = tool_registry.list_tools_dict(enabled_only, include_builtin)
-        
+
         # 按 category 过滤
         if category:
             tools = {k: v for k, v in tools.items() if v.get("category") == category}
-        
+
         # 添加 type 字段（用于前端兼容）
         for name, tool in tools.items():
             if name in BUILTIN_TOOL_NAMES:
@@ -81,13 +87,9 @@ async def list_tools(
             else:
                 tool["type"] = "custom"
             tool["status"] = "active" if tool.get("enabled", True) else "inactive"
-        
+
         stats = tool_registry.get_tool_stats()
-        return {
-            "status": "success",
-            "tools": tools,
-            "statistics": stats
-        }
+        return {"status": "success", "tools": tools, "statistics": stats}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -104,9 +106,9 @@ async def register_tool(request: ToolRegisterRequest):
         category = request.category
         if request.type and request.type != request.category:
             # 如果提供了 type 且与 category 不同，使用 type 作为 category
-            if request.type in ['mcp', 'native', 'custom', 'builtin']:
+            if request.type in ["mcp", "native", "custom", "builtin"]:
                 category = request.type
-        
+
         tool_registry.register(
             name=request.name,
             description=request.description,
@@ -115,12 +117,9 @@ async def register_tool(request: ToolRegisterRequest):
             version=request.version,
             category=category,
             tags=request.tags,
-            examples=request.examples
+            examples=request.examples,
         )
-        return {
-            "status": "success",
-            "message": f"工具 {request.name} 注册成功"
-        }
+        return {"status": "success", "message": f"工具 {request.name} 注册成功"}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -130,11 +129,11 @@ async def register_tool(request: ToolRegisterRequest):
 
 @router.get("/tools/stats")
 async def get_tool_stats():
-    from backend.core.tools.registry import tool_registry, BUILTIN_TOOL_NAMES
+    from backend.core.tools.registry import BUILTIN_TOOL_NAMES, tool_registry
 
     try:
         stats = tool_registry.get_tool_stats()
-        
+
         # 计算 MCP 和原生工具数量
         mcp_tools = 0
         native_tools = 0
@@ -145,21 +144,19 @@ async def get_tool_stats():
                 native_tools += 1
             else:
                 native_tools += 1
-        
+
         # 添加前端需要的字段名
         stats["active_tools"] = stats.get("enabled_tools", 0)
         stats["mcp_tools"] = mcp_tools
         stats["native_tools"] = native_tools
-        
-        return {
-            "status": "success",
-            "statistics": stats
-        }
+
+        return {"status": "success", "statistics": stats}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"获取工具统计失败: {e}", exc_info=True)
         import traceback
+
         logger.error(f"详细堆栈: {traceback.format_exc()}")
         return {
             "status": "success",
@@ -172,8 +169,8 @@ async def get_tool_stats():
                 "native_tools": 0,
                 "total_calls": 0,
                 "by_category": {},
-                "top_tools": []
-            }
+                "top_tools": [],
+            },
         }
 
 
@@ -196,6 +193,7 @@ async def call_tool(request: ToolCallRequest):
 
 class ToolTestRequest(BaseModel):
     """工具测试请求"""
+
     arguments: Dict = {}
 
 
@@ -208,17 +206,17 @@ async def test_tool(name: str, request: ToolTestRequest):
         tool = tool_registry.get_tool(name)
         if not tool:
             raise HTTPException(status_code=404, detail=f"工具 {name} 不存在")
-        
+
         result = tool_registry.call_tool(name, request.arguments)
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result.get("error", "调用失败"))
-        
+
         return {
             "status": "success",
             "tool_name": name,
             "arguments": request.arguments,
             "result": result.get("result"),
-            "message": f"工具 {name} 测试成功"
+            "message": f"工具 {name} 测试成功",
         }
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -234,10 +232,7 @@ async def get_openai_functions(enabled_only: bool = True):
 
     try:
         functions = tool_registry.list_openai_functions(enabled_only)
-        return {
-            "status": "success",
-            "functions": functions
-        }
+        return {"status": "success", "functions": functions}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -251,11 +246,7 @@ async def export_tools():
 
     try:
         tools = tool_registry.export_tools()
-        return {
-            "status": "success",
-            "tools": tools,
-            "total": len(tools)
-        }
+        return {"status": "success", "tools": tools, "total": len(tools)}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -269,11 +260,7 @@ async def import_tools(tools: List[Dict]):
 
     try:
         count = tool_registry.import_tools(tools)
-        return {
-            "status": "success",
-            "message": f"成功导入 {count} 个工具",
-            "count": count
-        }
+        return {"status": "success", "message": f"成功导入 {count} 个工具", "count": count}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -289,11 +276,7 @@ async def get_mcp_servers():
         mcp_mgr = get_mcp_manager()
         servers = await mcp_mgr.list_servers()
         stats = mcp_mgr.get_stats()
-        return {
-            "status": "success",
-            "servers": servers,
-            "statistics": stats
-        }
+        return {"status": "success", "servers": servers, "statistics": stats}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -308,15 +291,12 @@ async def add_mcp_server(request: MCPServerAddRequest):
     try:
         mcp_mgr = get_mcp_manager()
         server = await mcp_mgr.add_server(
-            name=request.name,
-            command=request.command,
-            args=request.args,
-            env=request.env
+            name=request.name, command=request.command, args=request.args, env=request.env
         )
         return {
             "status": "success",
             "server": server,
-            "message": f"MCP服务器 {request.name} 已添加"
+            "message": f"MCP服务器 {request.name} 已添加",
         }
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -334,10 +314,7 @@ async def remove_mcp_server(name: str):
         success = await mcp_mgr.remove_server(name)
         if not success:
             raise HTTPException(status_code=404, detail="服务器不存在")
-        return {
-            "status": "success",
-            "message": f"MCP服务器 {name} 已删除"
-        }
+        return {"status": "success", "message": f"MCP服务器 {name} 已删除"}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -354,10 +331,7 @@ async def start_mcp_server(request: MCPServerStartRequest):
         success = await mcp_mgr.start_server(request.name)
         if not success:
             raise HTTPException(status_code=400, detail="启动失败")
-        return {
-            "status": "success",
-            "message": f"MCP服务器 {request.name} 已启动"
-        }
+        return {"status": "success", "message": f"MCP服务器 {request.name} 已启动"}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -374,10 +348,7 @@ async def stop_mcp_server(request: MCPServerStopRequest):
         success = await mcp_mgr.stop_server(request.name)
         if not success:
             raise HTTPException(status_code=400, detail="停止失败")
-        return {
-            "status": "success",
-            "message": f"MCP服务器 {request.name} 已停止"
-        }
+        return {"status": "success", "message": f"MCP服务器 {request.name} 已停止"}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -392,11 +363,7 @@ async def check_mcp_server_health(name: str):
     try:
         mcp_mgr = get_mcp_manager()
         health = await mcp_mgr.check_health(name)
-        return {
-            "status": "success",
-            "server": name,
-            "healthy": health
-        }
+        return {"status": "success", "server": name, "healthy": health}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -411,11 +378,7 @@ async def get_mcp_server_tools(name: str):
     try:
         mcp_mgr = get_mcp_manager()
         tools = await mcp_mgr.list_server_tools(name)
-        return {
-            "status": "success",
-            "server": name,
-            "tools": tools
-        }
+        return {"status": "success", "server": name, "tools": tools}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -432,12 +395,9 @@ async def call_mcp_tool(request: MCPToolCallRequest):
         result = await mcp_mgr.call_tool(
             server_name=request.server_name,
             tool_name=request.tool_name,
-            arguments=request.arguments
+            arguments=request.arguments,
         )
-        return {
-            "status": "success",
-            "result": result
-        }
+        return {"status": "success", "result": result}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -452,11 +412,7 @@ async def sync_mcp_tools():
     try:
         mcp_mgr = get_mcp_manager()
         count = await mcp_mgr.sync_all_tools()
-        return {
-            "status": "success",
-            "message": f"同步了 {count} 个MCP工具",
-            "count": count
-        }
+        return {"status": "success", "message": f"同步了 {count} 个MCP工具", "count": count}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -470,17 +426,13 @@ async def get_plugins():
 
     try:
         tools = tool_registry.list_tools_dict(enabled_only=False)
-        return {
-            "status": "success",
-            "plugins": tools,
-            "total": len(tools)
-        }
+        return {"status": "success", "plugins": tools, "total": len(tools)}
     except Exception as e:
         return {
             "status": "success",
             "plugins": [],
             "total": 0,
-            "message": f"插件功能暂不可用: {str(e)}"
+            "message": f"插件功能暂不可用: {str(e)}",
         }
 
 
@@ -494,10 +446,7 @@ async def get_tool(name: str):
         if not tool:
             raise HTTPException(status_code=404, detail="工具不存在")
 
-        return {
-            "status": "success",
-            "tool": tool.to_dict()
-        }
+        return {"status": "success", "tool": tool.to_dict()}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -514,10 +463,7 @@ async def delete_tool(name: str):
         if not success:
             raise HTTPException(status_code=404, detail="工具不存在")
 
-        return {
-            "status": "success",
-            "message": f"工具 {name} 已删除"
-        }
+        return {"status": "success", "message": f"工具 {name} 已删除"}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

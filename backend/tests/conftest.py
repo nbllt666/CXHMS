@@ -1,15 +1,15 @@
-import pytest
 import asyncio
+import atexit
 import os
 import shutil
-import atexit
 from typing import AsyncGenerator, Generator
-from httpx import AsyncClient
+
+import pytest
 from fastapi.testclient import TestClient
+from httpx import AsyncClient
 
 from backend.api.app import app
 from config.settings import settings
-
 
 AGENTS_CONFIG_PATH = "data/agents.json"
 AGENTS_BACKUP_PATH = "data/agents.json.backup"
@@ -32,6 +32,7 @@ def _cleanup_alarm_manager():
     """Cleanup alarm manager to prevent logging errors after tests."""
     try:
         from backend.core.alarm.manager import reset_alarm_manager
+
         reset_alarm_manager()
     except Exception:
         pass
@@ -53,13 +54,13 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
 def client() -> Generator[TestClient, None, None]:
     """Create a test client for the FastAPI app."""
     global _backup_created
-    
+
     os.makedirs("data", exist_ok=True)
-    
+
     if os.path.exists(AGENTS_CONFIG_PATH):
         shutil.copy2(AGENTS_CONFIG_PATH, AGENTS_BACKUP_PATH)
         _backup_created = True
-    
+
     try:
         with TestClient(app) as test_client:
             yield test_client
@@ -80,10 +81,7 @@ def mock_settings():
     return {
         "llm": {
             "main": {"model": "test-model", "api_key": "test-key"},
-            "embedding": {"model": "test-embedding", "api_key": "test-key"}
+            "embedding": {"model": "test-embedding", "api_key": "test-key"},
         },
-        "memory": {
-            "db_path": ":memory:",
-            "vector_store_type": "memory"
-        }
+        "memory": {"db_path": ":memory:", "vector_store_type": "memory"},
     }

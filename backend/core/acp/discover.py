@@ -1,10 +1,12 @@
 import asyncio
-import socket
 import json
-from typing import Dict, List, Optional, Any
+import socket
 from datetime import datetime
-from .manager import ACPAgentInfo, ACPManager
+from typing import Any, Dict, List, Optional
+
 from backend.core.logging_config import get_contextual_logger
+
+from .manager import ACPAgentInfo, ACPManager
 
 logger = get_contextual_logger(__name__)
 
@@ -16,7 +18,7 @@ class ACPLanDiscovery:
         broadcast_port: int = 9998,
         discovery_port: int = 9999,
         broadcast_address: str = "255.255.255.255",
-        interval: int = 30
+        interval: int = 30,
     ):
         self.acp_manager = acp_manager
         self.broadcast_port = broadcast_port
@@ -36,7 +38,9 @@ class ACPLanDiscovery:
         self._running = True
 
         try:
-            self._broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+            self._broadcast_socket = socket.socket(
+                socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP
+            )
             self._broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             self._broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self._broadcast_socket.settimeout(1)
@@ -47,7 +51,9 @@ class ACPLanDiscovery:
             self._discovery_socket.settimeout(1)
 
             self._task = asyncio.create_task(self._discovery_loop())
-            logger.info(f"局域网发现服务已启动: discovery_port={self.discovery_port}, broadcast_port={self.broadcast_port}")
+            logger.info(
+                f"局域网发现服务已启动: discovery_port={self.discovery_port}, broadcast_port={self.broadcast_port}"
+            )
         except Exception as e:
             logger.error(f"启动局域网发现服务失败: {e}")
             await self.stop()
@@ -95,12 +101,11 @@ class ACPLanDiscovery:
                 "timestamp": datetime.now().isoformat(),
                 "version": "1.0.0",
                 "capabilities": ["memory", "tools", "chat"],
-                "port": self.discovery_port
+                "port": self.discovery_port,
             }
 
             self._broadcast_socket.sendto(
-                json.dumps(message).encode(),
-                (self.broadcast_address, self.broadcast_port)
+                json.dumps(message).encode(), (self.broadcast_address, self.broadcast_port)
             )
         except Exception as e:
             logger.warning(f"广播失败: {e}")
@@ -127,7 +132,7 @@ class ACPLanDiscovery:
                         status="online",
                         version=message.get("version", "1.0.0"),
                         capabilities=message.get("capabilities", []),
-                        last_seen=message.get("timestamp", datetime.now().isoformat())
+                        last_seen=message.get("timestamp", datetime.now().isoformat()),
                     )
 
                     if agent.id and agent.id != self.acp_manager._local_agent_id:
@@ -167,7 +172,7 @@ class ACPLanDiscovery:
                             status="online",
                             version=message.get("version", "1.0.0"),
                             capabilities=message.get("capabilities", []),
-                            last_seen=message.get("timestamp", datetime.now().isoformat())
+                            last_seen=message.get("timestamp", datetime.now().isoformat()),
                         )
 
                         if agent.id and agent.id != self.acp_manager._local_agent_id:
@@ -200,5 +205,5 @@ class ACPLanDiscovery:
             "broadcast_port": self.broadcast_port,
             "discovery_port": self.discovery_port,
             "broadcast_address": self.broadcast_address,
-            "interval": self.interval
+            "interval": self.interval,
         }

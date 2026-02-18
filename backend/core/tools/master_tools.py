@@ -1,9 +1,10 @@
 """
 主模型工具 - 供主模型（main）调用的工具
 """
-from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
+
 import json
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
 from .registry import tool_registry
 
@@ -13,7 +14,9 @@ _CONTEXT_MANAGER = None
 _ACP_MANAGER = None
 
 
-def set_dependencies(memory_manager=None, secondary_router=None, context_manager=None, acp_manager=None):
+def set_dependencies(
+    memory_manager=None, secondary_router=None, context_manager=None, acp_manager=None
+):
     """设置依赖的组件"""
     global _MEMORY_MANAGER, _SECONDARY_ROUTER, _CONTEXT_MANAGER, _ACP_MANAGER
     _MEMORY_MANAGER = memory_manager
@@ -54,31 +57,27 @@ def register_master_tools():
             "properties": {
                 "content": {
                     "type": "string",
-                    "description": "要记忆的内容（用户的重要信息、偏好、事件等）"
+                    "description": "要记忆的内容（用户的重要信息、偏好、事件等）",
                 },
                 "importance": {
                     "type": "integer",
                     "enum": [1, 2, 3, 4, 5],
                     "description": "重要性等级（1-5），5为最重要",
-                    "default": 3
+                    "default": 3,
                 },
                 "tags": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "标签列表，用于后续检索",
-                    "default": []
-                }
+                    "default": [],
+                },
             },
-            "required": ["content"]
+            "required": ["content"],
         },
         function=write_long_term_memory,
         category="memory",
         tags=["memory", "long_term", "save"],
-        examples=[
-            "记住用户喜欢蓝色",
-            "保存这个重要的日期：2024年1月1日",
-            "记录用户的工作是程序员"
-        ]
+        examples=["记住用户喜欢蓝色", "保存这个重要的日期：2024年1月1日", "记录用户的工作是程序员"],
     )
 
     # 2. search_all_memories - 搜索所有记忆
@@ -88,39 +87,32 @@ def register_master_tools():
         parameters={
             "type": "object",
             "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "搜索查询（描述你想要找的信息）"
-                },
+                "query": {"type": "string", "description": "搜索查询（描述你想要找的信息）"},
                 "memory_type": {
                     "type": "string",
                     "enum": ["permanent", "long_term", "all"],
                     "description": "记忆类型筛选（permanent=永久记忆，long_term=长期记忆，all=全部）",
-                    "default": "all"
+                    "default": "all",
                 },
                 "time_range": {
                     "type": "string",
                     "description": "时间范围筛选（如 'last_week', 'last_month', 'today'）",
-                    "default": None
+                    "default": None,
                 },
                 "limit": {
                     "type": "integer",
                     "description": "返回结果数量限制",
                     "default": 10,
                     "minimum": 1,
-                    "maximum": 50
-                }
+                    "maximum": 50,
+                },
             },
-            "required": ["query"]
+            "required": ["query"],
         },
         function=search_all_memories,
         category="memory",
         tags=["memory", "search", "recall"],
-        examples=[
-            "用户之前说过喜欢什么颜色？",
-            "查找关于工作的记忆",
-            "搜索今天的对话内容"
-        ]
+        examples=["用户之前说过喜欢什么颜色？", "查找关于工作的记忆", "搜索今天的对话内容"],
     )
 
     # 3. call_assistant - 调用记忆管理模型
@@ -132,19 +124,15 @@ def register_master_tools():
             "properties": {
                 "message": {
                     "type": "string",
-                    "description": "给记忆管理模型的消息/指令，可以是自然语言描述你想要它做什么"
+                    "description": "给记忆管理模型的消息/指令，可以是自然语言描述你想要它做什么",
                 }
             },
-            "required": ["message"]
+            "required": ["message"],
         },
         function=call_assistant,
         category="system",
         tags=["assistant", "memory", "task"],
-        examples=[
-            "帮我总结今天的所有对话",
-            "分析这条记忆的重要性",
-            "提取这段文字的关键要点"
-        ]
+        examples=["帮我总结今天的所有对话", "分析这条记忆的重要性", "提取这段文字的关键要点"],
     )
 
     # 4. set_alarm - 设置提醒
@@ -156,28 +144,21 @@ def register_master_tools():
             "properties": {
                 "seconds": {
                     "type": "integer",
-                    "description": "多少秒后提醒（最小1秒，最大86400秒即24小时）"
+                    "description": "多少秒后提醒（最小1秒，最大86400秒即24小时）",
                 },
-                "message": {
-                    "type": "string",
-                    "description": "提醒消息内容"
-                },
+                "message": {"type": "string", "description": "提醒消息内容"},
                 "agent_id": {
                     "type": "string",
                     "description": "Agent ID（可选，默认为 'default'）",
-                    "default": "default"
-                }
+                    "default": "default",
+                },
             },
-            "required": ["seconds", "message"]
+            "required": ["seconds", "message"],
         },
         function=set_alarm,
         category="reminder",
         tags=["alarm", "reminder", "schedule"],
-        examples=[
-            "5分钟后提醒我喝水",
-            "1小时后提醒我开会",
-            "设置一个30秒后的测试提醒"
-        ]
+        examples=["5分钟后提醒我喝水", "1小时后提醒我开会", "设置一个30秒后的测试提醒"],
     )
 
     # 4.1 get_alarms - 获取提醒列表
@@ -190,23 +171,20 @@ def register_master_tools():
                 "agent_id": {
                     "type": "string",
                     "description": "Agent ID（可选，默认为 'default'）",
-                    "default": "default"
+                    "default": "default",
                 },
                 "include_triggered": {
                     "type": "boolean",
                     "description": "是否包含已触发的提醒",
-                    "default": False
-                }
+                    "default": False,
+                },
             },
-            "required": []
+            "required": [],
         },
         function=get_alarms,
         category="reminder",
         tags=["alarm", "reminder", "list"],
-        examples=[
-            "查看我的提醒列表",
-            "获取所有提醒（包括已触发的）"
-        ]
+        examples=["查看我的提醒列表", "获取所有提醒（包括已触发的）"],
     )
 
     # 4.2 cancel_alarm - 取消提醒
@@ -215,21 +193,13 @@ def register_master_tools():
         description="取消一个已设置的提醒。",
         parameters={
             "type": "object",
-            "properties": {
-                "alarm_id": {
-                    "type": "string",
-                    "description": "要取消的提醒 ID"
-                }
-            },
-            "required": ["alarm_id"]
+            "properties": {"alarm_id": {"type": "string", "description": "要取消的提醒 ID"}},
+            "required": ["alarm_id"],
         },
         function=cancel_alarm,
         category="reminder",
         tags=["alarm", "reminder", "cancel"],
-        examples=[
-            "取消提醒 abc123",
-            "删除刚才设置的提醒"
-        ]
+        examples=["取消提醒 abc123", "删除刚才设置的提醒"],
     )
 
     # 5. mono - 保持上下文
@@ -239,31 +209,25 @@ def register_master_tools():
         parameters={
             "type": "object",
             "properties": {
-                "content": {
-                    "type": "string",
-                    "description": "要保持在上下文中的信息"
-                },
+                "content": {"type": "string", "description": "要保持在上下文中的信息"},
                 "session_id": {
                     "type": "string",
-                    "description": "会话ID（可选，如果不提供则记录到当前对话）"
+                    "description": "会话ID（可选，如果不提供则记录到当前对话）",
                 },
                 "rounds": {
                     "type": "integer",
                     "description": "保持的对话轮数（默认1轮）",
                     "default": 1,
                     "minimum": 1,
-                    "maximum": 10
-                }
+                    "maximum": 10,
+                },
             },
-            "required": ["content"]
+            "required": ["content"],
         },
         function=mono,
         category="context",
         tags=["context", "mono", "remember"],
-        examples=[
-            "记住我们现在在讨论项目A",
-            "保持这个信息：在接下来的对话中用户叫张三"
-        ]
+        examples=["记住我们现在在讨论项目A", "保持这个信息：在接下来的对话中用户叫张三"],
     )
 
     # 6. write_permanent_memory - 写入永久记忆
@@ -275,16 +239,16 @@ def register_master_tools():
             "properties": {
                 "content": {
                     "type": "string",
-                    "description": "要永久记住的内容（用户的核心信念、重要事实、关键偏好等）"
+                    "description": "要永久记住的内容（用户的核心信念、重要事实、关键偏好等）",
                 },
                 "tags": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "标签列表，用于后续检索",
-                    "default": []
-                }
+                    "default": [],
+                },
             },
-            "required": ["content"]
+            "required": ["content"],
         },
         function=write_permanent_memory,
         category="memory",
@@ -292,8 +256,8 @@ def register_master_tools():
         examples=[
             "永久记住用户的名字叫张三",
             "记住用户是素食主义者",
-            "保存用户的核心理念：诚实是最重要的品质"
-        ]
+            "保存用户的核心理念：诚实是最重要的品质",
+        ],
     )
 
     # 7. acp_list_agents - 列出可用的远程 Agent
@@ -306,18 +270,15 @@ def register_master_tools():
                 "online_only": {
                     "type": "boolean",
                     "description": "是否只显示在线的 Agent",
-                    "default": True
+                    "default": True,
                 }
             },
-            "required": []
+            "required": [],
         },
         function=acp_list_agents,
         category="acp",
         tags=["acp", "agent", "network"],
-        examples=[
-            "列出所有在线的 Agent",
-            "查看网络中有哪些 Agent"
-        ]
+        examples=["列出所有在线的 Agent", "查看网络中有哪些 Agent"],
     )
 
     # 8. acp_connect - 连接到远程 Agent
@@ -327,28 +288,19 @@ def register_master_tools():
         parameters={
             "type": "object",
             "properties": {
-                "agent_id": {
-                    "type": "string",
-                    "description": "要连接的远程 Agent ID"
-                },
+                "agent_id": {"type": "string", "description": "要连接的远程 Agent ID"},
                 "host": {
                     "type": "string",
-                    "description": "远程 Agent 的主机地址（可选，如果 Agent 已注册则不需要）"
+                    "description": "远程 Agent 的主机地址（可选，如果 Agent 已注册则不需要）",
                 },
-                "port": {
-                    "type": "integer",
-                    "description": "远程 Agent 的端口（可选）"
-                }
+                "port": {"type": "integer", "description": "远程 Agent 的端口（可选）"},
             },
-            "required": ["agent_id"]
+            "required": ["agent_id"],
         },
         function=acp_connect,
         category="acp",
         tags=["acp", "connect", "network"],
-        examples=[
-            "连接到 Agent 'assistant-001'",
-            "连接到远程 Agent"
-        ]
+        examples=["连接到 Agent 'assistant-001'", "连接到远程 Agent"],
     )
 
     # 9. acp_disconnect - 断开与远程 Agent 的连接
@@ -357,20 +309,13 @@ def register_master_tools():
         description="断开与远程 Agent 的连接。",
         parameters={
             "type": "object",
-            "properties": {
-                "connection_id": {
-                    "type": "string",
-                    "description": "要断开的连接 ID"
-                }
-            },
-            "required": ["connection_id"]
+            "properties": {"connection_id": {"type": "string", "description": "要断开的连接 ID"}},
+            "required": ["connection_id"],
         },
         function=acp_disconnect,
         category="acp",
         tags=["acp", "disconnect", "network"],
-        examples=[
-            "断开与 Agent 的连接"
-        ]
+        examples=["断开与 Agent 的连接"],
     )
 
     # 10. acp_send_message - 向远程 Agent 发送消息
@@ -380,30 +325,21 @@ def register_master_tools():
         parameters={
             "type": "object",
             "properties": {
-                "agent_id": {
-                    "type": "string",
-                    "description": "目标 Agent ID"
-                },
-                "message": {
-                    "type": "string",
-                    "description": "要发送的消息内容"
-                },
+                "agent_id": {"type": "string", "description": "目标 Agent ID"},
+                "message": {"type": "string", "description": "要发送的消息内容"},
                 "message_type": {
                     "type": "string",
                     "enum": ["chat", "task", "query"],
                     "description": "消息类型",
-                    "default": "chat"
-                }
+                    "default": "chat",
+                },
             },
-            "required": ["agent_id", "message"]
+            "required": ["agent_id", "message"],
         },
         function=acp_send_message,
         category="acp",
         tags=["acp", "message", "network"],
-        examples=[
-            "向 Agent 发送消息",
-            "请求其他 Agent 帮助处理任务"
-        ]
+        examples=["向 Agent 发送消息", "请求其他 Agent 帮助处理任务"],
     )
 
     # 11. acp_create_group - 创建 Agent 群组
@@ -413,25 +349,15 @@ def register_master_tools():
         parameters={
             "type": "object",
             "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "群组名称"
-                },
-                "description": {
-                    "type": "string",
-                    "description": "群组描述",
-                    "default": ""
-                }
+                "name": {"type": "string", "description": "群组名称"},
+                "description": {"type": "string", "description": "群组描述", "default": ""},
             },
-            "required": ["name"]
+            "required": ["name"],
         },
         function=acp_create_group,
         category="acp",
         tags=["acp", "group", "network"],
-        examples=[
-            "创建一个项目协作群组",
-            "创建讨论组"
-        ]
+        examples=["创建一个项目协作群组", "创建讨论组"],
     )
 
     # 12. acp_join_group - 加入群组
@@ -440,20 +366,13 @@ def register_master_tools():
         description="加入一个已存在的 Agent 群组。",
         parameters={
             "type": "object",
-            "properties": {
-                "group_id": {
-                    "type": "string",
-                    "description": "要加入的群组 ID"
-                }
-            },
-            "required": ["group_id"]
+            "properties": {"group_id": {"type": "string", "description": "要加入的群组 ID"}},
+            "required": ["group_id"],
         },
         function=acp_join_group,
         category="acp",
         tags=["acp", "group", "network"],
-        examples=[
-            "加入协作群组"
-        ]
+        examples=["加入协作群组"],
     )
 
     # 13. acp_leave_group - 离开群组
@@ -462,20 +381,13 @@ def register_master_tools():
         description="离开一个 Agent 群组。",
         parameters={
             "type": "object",
-            "properties": {
-                "group_id": {
-                    "type": "string",
-                    "description": "要离开的群组 ID"
-                }
-            },
-            "required": ["group_id"]
+            "properties": {"group_id": {"type": "string", "description": "要离开的群组 ID"}},
+            "required": ["group_id"],
         },
         function=acp_leave_group,
         category="acp",
         tags=["acp", "group", "network"],
-        examples=[
-            "离开协作群组"
-        ]
+        examples=["离开协作群组"],
     )
 
 
@@ -486,7 +398,7 @@ def write_long_term_memory(
     # 别名参数（兼容模型不同调用方式）
     message: str = None,
     priority: int = None,
-    tag: str = None
+    tag: str = None,
 ) -> Dict[str, Any]:
     """写入长期记忆"""
     # 参数别名映射
@@ -495,48 +407,42 @@ def write_long_term_memory(
         importance = priority
     if tag and not tags:
         tags = [tag]
-    
+
     if not content:
         return {"error": "内容不能为空"}
-    
+
     mm = get_memory_manager()
     if not mm:
         return {"error": "记忆管理器不可用"}
-    
+
     try:
         memory_id = mm.write_memory(
-            content=content,
-            memory_type="long_term",
-            importance=importance,
-            tags=tags or []
+            content=content, memory_type="long_term", importance=importance, tags=tags or []
         )
         return {
             "status": "success",
             "message": f"记忆已保存",
             "memory_id": memory_id,
-            "content_preview": content[:100] + "..." if len(content) > 100 else content
+            "content_preview": content[:100] + "..." if len(content) > 100 else content,
         }
     except Exception as e:
         return {"error": f"保存记忆失败: {str(e)}"}
 
 
 def search_all_memories(
-    query: str,
-    memory_type: str = "all",
-    time_range: str = None,
-    limit: int = 10
+    query: str, memory_type: str = "all", time_range: str = None, limit: int = 10
 ) -> Dict[str, Any]:
     """搜索所有记忆"""
     mm = get_memory_manager()
     if not mm:
         return {"error": "记忆管理器不可用"}
-    
+
     try:
         memories = mm.search_memories(
             query=query,
             memory_type=memory_type if memory_type != "all" else None,
             time_range=time_range,
-            limit=limit
+            limit=limit,
         )
         return {
             "status": "success",
@@ -547,10 +453,10 @@ def search_all_memories(
                     "id": m.get("id"),
                     "content": m.get("content", "")[:200],
                     "importance": m.get("importance"),
-                    "created_at": m.get("created_at")
+                    "created_at": m.get("created_at"),
                 }
                 for m in memories
-            ]
+            ],
         }
     except Exception as e:
         return {"error": f"搜索记忆失败: {str(e)}"}
@@ -561,23 +467,21 @@ async def call_assistant(message: str) -> Dict[str, Any]:
     router = get_secondary_router()
     if not router:
         return {"error": "记忆管理模型不可用"}
-    
+
     try:
-        from backend.core.memory.secondary_router import SecondaryInstruction, SecondaryCommand
-        
+        from backend.core.memory.secondary_router import SecondaryCommand, SecondaryInstruction
+
         instruction = SecondaryInstruction(
-            command="custom",  # 自定义指令
-            parameters={"user_message": message},
-            priority=1
+            command="custom", parameters={"user_message": message}, priority=1  # 自定义指令
         )
-        
+
         result = await router.execute_command(instruction, is_from_main=True)
-        
+
         return {
             "status": result.status,
             "message": message,
             "response": result.output.get("response", "") or str(result.output),
-            "execution_time_ms": result.execution_time_ms
+            "execution_time_ms": result.execution_time_ms,
         }
     except Exception as e:
         return {"error": f"调用记忆管理模型失败: {str(e)}"}
@@ -585,29 +489,30 @@ async def call_assistant(message: str) -> Dict[str, Any]:
 
 def set_alarm(seconds: int, message: str, agent_id: str = "default") -> Dict[str, Any]:
     """设置提醒
-    
+
     Args:
         seconds: 秒数（1-86400，即24小时内）
         message: 提醒消息
         agent_id: Agent ID（可选）
-    
+
     Returns:
         包含 alarm_id 和 scheduled_time 的字典
     """
     if not (1 <= seconds <= 86400):
         return {"error": "秒数必须在1-86400之间（24小时内）"}
-    
+
     try:
         from backend.core.alarm import get_alarm_manager
+
         alarm_mgr = get_alarm_manager()
         alarm_id = alarm_mgr.create_alarm(agent_id, seconds, message)
-        
+
         return {
             "status": "scheduled",
             "alarm_id": alarm_id,
             "seconds": seconds,
             "message": message,
-            "scheduled_time": (datetime.now() + timedelta(seconds=seconds)).isoformat()
+            "scheduled_time": (datetime.now() + timedelta(seconds=seconds)).isoformat(),
         }
     except Exception as e:
         return {"error": f"设置提醒失败: {str(e)}"}
@@ -615,54 +520,44 @@ def set_alarm(seconds: int, message: str, agent_id: str = "default") -> Dict[str
 
 def get_alarms(agent_id: str = "default", include_triggered: bool = False) -> Dict[str, Any]:
     """获取提醒列表
-    
+
     Args:
         agent_id: Agent ID
         include_triggered: 是否包含已触发的提醒
-    
+
     Returns:
         提醒列表
     """
     try:
         from backend.core.alarm import get_alarm_manager
+
         alarm_mgr = get_alarm_manager()
         alarms = alarm_mgr.get_alarms_by_agent(agent_id, include_triggered)
-        
-        return {
-            "status": "success",
-            "agent_id": agent_id,
-            "count": len(alarms),
-            "alarms": alarms
-        }
+
+        return {"status": "success", "agent_id": agent_id, "count": len(alarms), "alarms": alarms}
     except Exception as e:
         return {"error": f"获取提醒列表失败: {str(e)}"}
 
 
 def cancel_alarm(alarm_id: str) -> Dict[str, Any]:
     """取消提醒
-    
+
     Args:
         alarm_id: 提醒ID
-    
+
     Returns:
         取消结果
     """
     try:
         from backend.core.alarm import get_alarm_manager
+
         alarm_mgr = get_alarm_manager()
         success = alarm_mgr.cancel_alarm(alarm_id)
-        
+
         if success:
-            return {
-                "status": "cancelled",
-                "alarm_id": alarm_id
-            }
+            return {"status": "cancelled", "alarm_id": alarm_id}
         else:
-            return {
-                "status": "not_found",
-                "alarm_id": alarm_id,
-                "error": "提醒不存在或已触发"
-            }
+            return {"status": "not_found", "alarm_id": alarm_id, "error": "提醒不存在或已触发"}
     except Exception as e:
         return {"error": f"取消提醒失败: {str(e)}"}
 
@@ -672,24 +567,38 @@ def mono(content: str, session_id: str = None, rounds: int = 1) -> Dict[str, Any
     cm = get_context_manager()
     if not cm:
         return {"error": "上下文管理器不可用"}
-    
-    # 如果没有提供 session_id，尝试从当前上下文中获取
+
     if not session_id:
         return {
             "status": "info",
-            "message": "内容已记录，将在后续对话中保持",
-            "content": content,
-            "rounds": rounds
-        }
-    
-    try:
-        result = cm.add_mono_context(session_id=session_id, content=content, rounds=rounds)
-        return {
-            "status": "added" if result else "failed",
+            "message": "内容已记录，将在后续对话中保持。请提供 session_id 以持久化存储。",
             "content": content,
             "rounds": rounds,
-            "session_id": session_id
+            "session_id": None,
         }
+
+    try:
+        result = cm.add_mono_context(session_id=session_id, content=content, rounds=rounds)
+        if result:
+            from datetime import datetime, timedelta
+
+            expires_at = datetime.now() + timedelta(rounds=rounds)
+            return {
+                "status": "success",
+                "message": "上下文已添加，将在指定轮数内保持",
+                "content": content,
+                "rounds": rounds,
+                "session_id": session_id,
+                "expires_after_rounds": rounds,
+                "added_at": datetime.now().isoformat(),
+            }
+        else:
+            return {
+                "status": "failed",
+                "error": "添加上下文失败",
+                "content": content,
+                "session_id": session_id,
+            }
     except Exception as e:
         return {"error": f"添加上下文信息失败: {str(e)}"}
 
@@ -699,32 +608,28 @@ def write_permanent_memory(
     tags: List[str] = None,
     # 别名参数（兼容模型不同调用方式）
     message: str = None,
-    tag: str = None
+    tag: str = None,
 ) -> Dict[str, Any]:
     """写入永久记忆"""
     # 参数别名映射
     content = content or message
     if tag and not tags:
         tags = [tag]
-    
+
     if not content:
         return {"error": "内容不能为空"}
-    
+
     mm = get_memory_manager()
     if not mm:
         return {"error": "记忆管理器不可用"}
-    
+
     try:
-        memory_id = mm.write_permanent_memory(
-            content=content,
-            tags=tags or [],
-            is_from_main=True
-        )
+        memory_id = mm.write_permanent_memory(content=content, tags=tags or [], is_from_main=True)
         return {
             "status": "success",
             "message": "永久记忆已保存",
             "memory_id": memory_id,
-            "content_preview": content[:100] + "..." if len(content) > 100 else content
+            "content_preview": content[:100] + "..." if len(content) > 100 else content,
         }
     except Exception as e:
         return {"error": f"保存永久记忆失败: {str(e)}"}
@@ -735,14 +640,10 @@ async def acp_list_agents(online_only: bool = True) -> Dict[str, Any]:
     acp = get_acp_manager()
     if not acp:
         return {"error": "ACP 管理器不可用"}
-    
+
     try:
         agents = await acp.list_agents(online_only=online_only)
-        return {
-            "status": "success",
-            "count": len(agents),
-            "agents": agents
-        }
+        return {"status": "success", "count": len(agents), "agents": agents}
     except Exception as e:
         return {"error": f"获取 Agent 列表失败: {str(e)}"}
 
@@ -752,20 +653,21 @@ async def acp_connect(agent_id: str, host: str = None, port: int = None) -> Dict
     acp = get_acp_manager()
     if not acp:
         return {"error": "ACP 管理器不可用"}
-    
+
     try:
-        from backend.core.acp.manager import ACPConnectionInfo
         import uuid
-        
+
+        from backend.core.acp.manager import ACPConnectionInfo
+
         # 检查 Agent 是否已注册
         agent = await acp.get_agent(agent_id)
         if agent:
             host = host or agent.get("host", "")
             port = port or agent.get("port", 0)
-        
+
         if not host:
             return {"error": f"Agent '{agent_id}' 未注册，请提供 host 和 port"}
-        
+
         connection = ACPConnectionInfo(
             id=str(uuid.uuid4()),
             local_agent_id=acp._local_agent_id,
@@ -774,18 +676,18 @@ async def acp_connect(agent_id: str, host: str = None, port: int = None) -> Dict
             host=host,
             port=port,
             status="connected",
-            connected_at=datetime.now().isoformat()
+            connected_at=datetime.now().isoformat(),
         )
-        
+
         await acp.create_connection(connection)
-        
+
         return {
             "status": "success",
             "connection_id": connection.id,
             "remote_agent_id": agent_id,
             "remote_agent_name": connection.remote_agent_name,
             "host": host,
-            "port": port
+            "port": port,
         }
     except Exception as e:
         return {"error": f"连接 Agent 失败: {str(e)}"}
@@ -796,46 +698,46 @@ async def acp_disconnect(connection_id: str) -> Dict[str, Any]:
     acp = get_acp_manager()
     if not acp:
         return {"error": "ACP 管理器不可用"}
-    
+
     try:
         success = await acp.delete_connection(connection_id)
         if success:
-            return {
-                "status": "success",
-                "message": f"连接 {connection_id} 已断开"
-            }
+            return {"status": "success", "message": f"连接 {connection_id} 已断开"}
         else:
             return {"error": f"连接 {connection_id} 不存在"}
     except Exception as e:
         return {"error": f"断开连接失败: {str(e)}"}
 
 
-async def acp_send_message(agent_id: str, message: str, message_type: str = "chat") -> Dict[str, Any]:
+async def acp_send_message(
+    agent_id: str, message: str, message_type: str = "chat"
+) -> Dict[str, Any]:
     """向远程 Agent 发送消息"""
     acp = get_acp_manager()
     if not acp:
         return {"error": "ACP 管理器不可用"}
-    
+
     try:
-        from backend.core.acp.manager import ACPMessageInfo
         import uuid
-        
+
+        from backend.core.acp.manager import ACPMessageInfo
+
         msg = ACPMessageInfo(
             id=str(uuid.uuid4()),
             from_agent_id=acp._local_agent_id,
             to_agent_id=agent_id,
             message_type=message_type,
             content=message,
-            created_at=datetime.now().isoformat()
+            created_at=datetime.now().isoformat(),
         )
-        
+
         await acp.send_message(msg)
-        
+
         return {
             "status": "success",
             "message_id": msg.id,
             "to_agent_id": agent_id,
-            "message_type": message_type
+            "message_type": message_type,
         }
     except Exception as e:
         return {"error": f"发送消息失败: {str(e)}"}
@@ -846,34 +748,32 @@ async def acp_create_group(name: str, description: str = "") -> Dict[str, Any]:
     acp = get_acp_manager()
     if not acp:
         return {"error": "ACP 管理器不可用"}
-    
+
     try:
-        from backend.core.acp.manager import ACPGroupInfo
         import uuid
-        
+
+        from backend.core.acp.manager import ACPGroupInfo
+
         group = ACPGroupInfo(
             id=str(uuid.uuid4()),
             name=name,
             description=description,
             creator_id=acp._local_agent_id,
             creator_name=acp._local_agent_name,
-            members=[{
-                "agent_id": acp._local_agent_id,
-                "agent_name": acp._local_agent_name,
-                "joined_at": datetime.now().isoformat()
-            }],
+            members=[
+                {
+                    "agent_id": acp._local_agent_id,
+                    "agent_name": acp._local_agent_name,
+                    "joined_at": datetime.now().isoformat(),
+                }
+            ],
             created_at=datetime.now().isoformat(),
-            updated_at=datetime.now().isoformat()
+            updated_at=datetime.now().isoformat(),
         )
-        
+
         await acp.create_group(group)
-        
-        return {
-            "status": "success",
-            "group_id": group.id,
-            "name": name,
-            "description": description
-        }
+
+        return {"status": "success", "group_id": group.id, "name": name, "description": description}
     except Exception as e:
         return {"error": f"创建群组失败: {str(e)}"}
 
@@ -883,22 +783,18 @@ async def acp_join_group(group_id: str) -> Dict[str, Any]:
     acp = get_acp_manager()
     if not acp:
         return {"error": "ACP 管理器不可用"}
-    
+
     try:
         member = {
             "agent_id": acp._local_agent_id,
             "agent_name": acp._local_agent_name,
-            "joined_at": datetime.now().isoformat()
+            "joined_at": datetime.now().isoformat(),
         }
-        
+
         success = await acp.add_group_member(group_id, member)
-        
+
         if success:
-            return {
-                "status": "success",
-                "group_id": group_id,
-                "message": f"已加入群组 {group_id}"
-            }
+            return {"status": "success", "group_id": group_id, "message": f"已加入群组 {group_id}"}
         else:
             return {"error": f"群组 {group_id} 不存在"}
     except Exception as e:
@@ -910,16 +806,12 @@ async def acp_leave_group(group_id: str) -> Dict[str, Any]:
     acp = get_acp_manager()
     if not acp:
         return {"error": "ACP 管理器不可用"}
-    
+
     try:
         success = await acp.remove_group_member(group_id, acp._local_agent_id)
-        
+
         if success:
-            return {
-                "status": "success",
-                "group_id": group_id,
-                "message": f"已离开群组 {group_id}"
-            }
+            return {"status": "success", "group_id": group_id, "message": f"已离开群组 {group_id}"}
         else:
             return {"error": f"群组 {group_id} 不存在或你不在该群组中"}
     except Exception as e:

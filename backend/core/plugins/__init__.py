@@ -1,6 +1,6 @@
-from .manager import PluginManager, get_plugin_manager
-from .models import Plugin, PluginMetadata, PluginHook, HookType
 from .context import PluginContext
+from .manager import PluginManager, get_plugin_manager
+from .models import HookType, Plugin, PluginHook, PluginMetadata
 
 __all__ = [
     "PluginManager",
@@ -9,5 +9,5 @@ __all__ = [
     "PluginMetadata",
     "PluginHook",
     "HookType",
-    "PluginContext"
+    "PluginContext",
 ]

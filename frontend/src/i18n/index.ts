@@ -7,14 +7,14 @@ import enUS from './locales/en-US.json';
 
 const resources = {
   'zh-CN': {
-    translation: zhCN
+    translation: zhCN,
   },
-  'en': {
-    translation: enUS
+  en: {
+    translation: enUS,
   },
   'en-US': {
-    translation: enUS
-  }
+    translation: enUS,
+  },
 };
 
 i18n
@@ -24,23 +24,23 @@ i18n
     resources,
     fallbackLng: 'zh-CN',
     debug: false,
-    
+
     interpolation: {
       escapeValue: false,
     },
-    
+
     detection: {
       order: ['localStorage', 'navigator', 'htmlTag'],
       caches: ['localStorage'],
-      lookupLocalStorage: 'i18nextLng'
-    }
+      lookupLocalStorage: 'i18nextLng',
+    },
   });
 
 export default i18n;
 
 export const supportedLanguages = [
   { code: 'zh-CN', name: '简体中文', flag: '🇨🇳' },
-  { code: 'en', name: 'English', flag: '🇺🇸' }
+  { code: 'en', name: 'English', flag: '🇺🇸' },
 ];
 
 export const changeLanguage = (lng: string) => {

@@ -1,7 +1,8 @@
-from typing import Dict, List, Optional, Any
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime
-import asyncio
+from typing import Any, Dict, List, Optional
+
 from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
@@ -57,18 +58,12 @@ class DecayBatchProcessor:
 
             # 等待下一次执行或停止信号
             try:
-                await asyncio.wait_for(
-                    self._stop_event.wait(),
-                    timeout=self.interval_hours * 3600
-                )
+                await asyncio.wait_for(self._stop_event.wait(), timeout=self.interval_hours * 3600)
             except asyncio.TimeoutError:
                 continue
 
     async def process_batch(
-        self,
-        batch_size: int = 100,
-        sync: bool = False,
-        dry_run: bool = False
+        self, batch_size: int = 100, sync: bool = False, dry_run: bool = False
     ) -> BatchDecayResult:
         from backend.core.memory.decay import DecayCalculator
 
@@ -76,17 +71,10 @@ class DecayBatchProcessor:
             self._batch_size = batch_size
 
         decay_calculator = DecayCalculator()
-        memories = self.memory_manager.search_memories(
-            limit=self._batch_size
-        )
+        memories = self.memory_manager.search_memories(limit=self._batch_size)
 
         if not memories:
-            return BatchDecayResult(
-                total=0,
-                updated=0,
-                failed=0,
-                details=[]
-            )
+            return BatchDecayResult(total=0, updated=0, failed=0, details=[])
 
         results = []
         updated_count = 0
@@ -99,50 +87,52 @@ class DecayBatchProcessor:
                     importance=memory.get("importance_score", 0.6),
                     created_at=memory.get("created_at", datetime.now().isoformat()),
                     decay_type=memory.get("decay_type", "exponential"),
-                    decay_params=memory.get("decay_params")
+                    decay_params=memory.get("decay_params"),
                 )
 
                 if dry_run:
-                    results.append({
-                        "memory_id": memory_id,
-                        "old_value": memory.get("importance_score", 0.0),
-                        "new_value": decayed_value,
-                        "dry_run": True
-                    })
+                    results.append(
+                        {
+                            "memory_id": memory_id,
+                            "old_value": memory.get("importance_score", 0.0),
+                            "new_value": decayed_value,
+                            "dry_run": True,
+                        }
+                    )
                     updated_count += 1
                 else:
                     # 更新记忆的重要性和元数据
                     from backend.core.memory.decay import score_to_importance
+
                     new_importance = score_to_importance(decayed_value)
-                    
+
                     success = self.memory_manager.update_memory(
                         memory_id=memory_id,
                         new_importance=new_importance,
-                        new_metadata={"importance_score": decayed_value, "decay_updated_at": datetime.now().isoformat()}
+                        new_metadata={
+                            "importance_score": decayed_value,
+                            "decay_updated_at": datetime.now().isoformat(),
+                        },
                     )
 
                     if success:
-                        results.append({
-                            "memory_id": memory_id,
-                            "old_value": memory.get("importance_score", 0.0),
-                            "new_value": decayed_value,
-                            "updated": True
-                        })
+                        results.append(
+                            {
+                                "memory_id": memory_id,
+                                "old_value": memory.get("importance_score", 0.0),
+                                "new_value": decayed_value,
+                                "updated": True,
+                            }
+                        )
                         updated_count += 1
                     else:
-                        results.append({
-                            "memory_id": memory_id,
-                            "error": "Update failed",
-                            "updated": False
-                        })
+                        results.append(
+                            {"memory_id": memory_id, "error": "Update failed", "updated": False}
+                        )
                         failed_count += 1
             except Exception as e:
                 logger.error(f"处理记忆失败: {memory_id}, {e}")
-                results.append({
-                    "memory_id": memory_id,
-                    "error": str(e),
-                    "updated": False
-                })
+                results.append({"memory_id": memory_id, "error": str(e), "updated": False})
                 failed_count += 1
 
         if sync and not dry_run:
@@ -150,17 +140,11 @@ class DecayBatchProcessor:
             logger.info(f"同步衰减值: 更新={sync_result['updated']}, 失败={sync_result['failed']}")
 
         return BatchDecayResult(
-            total=len(memories),
-            updated=updated_count,
-            failed=failed_count,
-            details=results
+            total=len(memories), updated=updated_count, failed=failed_count, details=results
         )
 
     async def process_all(
-        self,
-        batch_size: int = 100,
-        sync: bool = False,
-        dry_run: bool = False
+        self, batch_size: int = 100, sync: bool = False, dry_run: bool = False
     ) -> Dict:
         total_updated = 0
         total_failed = 0
@@ -169,9 +153,7 @@ class DecayBatchProcessor:
 
         while True:
             batch_result = await self.process_batch(
-                batch_size=batch_size,
-                sync=False,
-                dry_run=dry_run
+                batch_size=batch_size, sync=False, dry_run=dry_run
             )
 
             batch_count += 1
@@ -195,12 +177,12 @@ class DecayBatchProcessor:
             "total_batches": batch_count,
             "total_updated": total_updated,
             "total_failed": total_failed,
-            "details": all_details
+            "details": all_details,
         }
 
     def get_batch_status(self) -> Dict:
         return {
             "batch_size": self._batch_size,
             "memory_manager": self.memory_manager is not None,
-            "decay_calculator": self.decay_calculator is not None
+            "decay_calculator": self.decay_calculator is not None,
         }

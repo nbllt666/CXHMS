@@ -1,41 +1,41 @@
-import { useState, useRef, useEffect } from 'react'
-import { Send, Database, Brain, ChevronDown, ChevronUp, X } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { api } from '../api/client'
-import { formatRelativeTime } from '../lib/utils'
+import { useState, useRef, useEffect } from 'react';
+import { Send, Database, Brain, ChevronDown, ChevronUp, X } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { api } from '../api/client';
+import { formatRelativeTime } from '../lib/utils';
 
 interface Message {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  timestamp: string
-  tool_calls?: ToolCall[]
-  thinking?: string
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  tool_calls?: ToolCall[];
+  thinking?: string;
 }
 
 interface ToolCall {
-  id: string
-  name: string
-  arguments?: Record<string, unknown>
-  result?: unknown
-  status?: 'pending' | 'executing' | 'completed' | 'failed'
+  id: string;
+  name: string;
+  arguments?: Record<string, unknown>;
+  result?: unknown;
+  status?: 'pending' | 'executing' | 'completed' | 'failed';
 }
 
 interface StreamToolCall {
-  id?: string
-  name?: string
-  arguments?: Record<string, unknown>
+  id?: string;
+  name?: string;
+  arguments?: Record<string, unknown>;
   function?: {
-    name?: string
-    arguments?: Record<string, unknown>
-  }
+    name?: string;
+    arguments?: Record<string, unknown>;
+  };
 }
 
 interface CodeProps {
-  inline?: boolean
-  className?: string
-  children?: React.ReactNode
+  inline?: boolean;
+  className?: string;
+  children?: React.ReactNode;
 }
 
 function MarkdownContent({ content }: { content: string }) {
@@ -45,7 +45,7 @@ function MarkdownContent({ content }: { content: string }) {
       className="prose prose-sm dark:prose-invert max-w-none"
       components={{
         code({ inline, className, children, ...props }: CodeProps) {
-          const match = /language-(\w+)/.exec(className || '')
+          const match = /language-(\w+)/.exec(className || '');
           return !inline && match ? (
             <div className="relative group">
               <div className="absolute right-2 top-2 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
@@ -61,20 +61,20 @@ function MarkdownContent({ content }: { content: string }) {
             <code className="bg-muted/50 px-1.5 py-0.5 rounded text-sm" {...props}>
               {children}
             </code>
-          )
-        }
+          );
+        },
       }}
     >
       {content}
     </ReactMarkdown>
-  )
+  );
 }
 
 // 思考过程折叠组件
 function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls?: ToolCall[] }) {
-  const [isExpanded, setIsExpanded] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(false);
 
-  if (!thinking && (!toolCalls || toolCalls.length === 0)) return null
+  if (!thinking && (!toolCalls || toolCalls.length === 0)) return null;
 
   return (
     <div className="mt-2 border border-border/50 rounded-lg overflow-hidden">
@@ -93,35 +93,24 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
         </span>
         {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
       </button>
-      
+
       {isExpanded && (
         <div className="px-3 py-2 bg-muted/20 text-xs space-y-2">
-          {thinking && (
-            <div className="text-muted-foreground whitespace-pre-wrap">
-              {thinking}
-            </div>
-          )}
-          
+          {thinking && <div className="text-muted-foreground whitespace-pre-wrap">{thinking}</div>}
+
           {toolCalls && toolCalls.length > 0 && (
             <div className="space-y-2">
               {toolCalls.map((toolCall, idx) => (
-                <div
-                  key={idx}
-                  className="p-2 bg-muted/50 rounded border border-border/50"
-                >
+                <div key={idx} className="p-2 bg-muted/50 rounded border border-border/50">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium text-foreground">
-                      🔧 {toolCall.name}
-                    </span>
+                    <span className="font-medium text-foreground">🔧 {toolCall.name}</span>
                     {toolCall.status === 'executing' && (
                       <span className="animate-pulse text-blue-500">执行中...</span>
                     )}
                     {toolCall.status === 'completed' && (
                       <span className="text-green-500">✓ 完成</span>
                     )}
-                    {toolCall.status === 'failed' && (
-                      <span className="text-red-500">✗ 失败</span>
-                    )}
+                    {toolCall.status === 'failed' && <span className="text-red-500">✗ 失败</span>}
                   </div>
                   {toolCall.arguments && (
                     <div className="text-muted-foreground font-mono text-[10px] mb-1">
@@ -140,160 +129,183 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
         </div>
       )}
     </div>
-  )
+  );
 }
 
 export function MemoryAgentPage() {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+    scrollToBottom();
+  }, [messages]);
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return
+    if (!input.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
       content: input,
-      timestamp: new Date().toISOString()
-    }
+      timestamp: new Date().toISOString(),
+    };
 
-    const tempAssistantId = (Date.now() + 1).toString()
+    const tempAssistantId = (Date.now() + 1).toString();
     const streamingMessage: Message = {
       id: tempAssistantId,
       role: 'assistant',
       content: '',
       timestamp: new Date().toISOString(),
       tool_calls: [],
-      thinking: ''
-    }
+      thinking: '',
+    };
 
-    setMessages(prev => [...prev, userMessage, streamingMessage])
-    setInput('')
-    setIsLoading(true)
+    setMessages((prev) => [...prev, userMessage, streamingMessage]);
+    setInput('');
+    setIsLoading(true);
 
     try {
-      await api.sendMemoryAgentMessageStream(
-        userMessage.content,
-        (chunk) => {
-          if (chunk.type === 'content' && chunk.content) {
-            setMessages(prev => {
-              const lastMsg = prev[prev.length - 1]
-              if (lastMsg && lastMsg.id === tempAssistantId) {
-                return [...prev.slice(0, -1), {
+      await api.sendMemoryAgentMessageStream(userMessage.content, (chunk) => {
+        if (chunk.type === 'content' && chunk.content) {
+          setMessages((prev) => {
+            const lastMsg = prev[prev.length - 1];
+            if (lastMsg && lastMsg.id === tempAssistantId) {
+              return [
+                ...prev.slice(0, -1),
+                {
                   ...lastMsg,
-                  content: lastMsg.content + chunk.content!
-                }]
-              }
-              return prev
-            })
-          } else if (chunk.type === 'tool_call' && chunk.tool_call) {
-            const tc = chunk.tool_call as StreamToolCall
-            setMessages(prev => {
-              const lastMsg = prev[prev.length - 1]
-              if (lastMsg && lastMsg.id === tempAssistantId) {
-                return [...prev.slice(0, -1), {
+                  content: lastMsg.content + chunk.content!,
+                },
+              ];
+            }
+            return prev;
+          });
+        } else if (chunk.type === 'tool_call' && chunk.tool_call) {
+          const tc = chunk.tool_call as StreamToolCall;
+          setMessages((prev) => {
+            const lastMsg = prev[prev.length - 1];
+            if (lastMsg && lastMsg.id === tempAssistantId) {
+              return [
+                ...prev.slice(0, -1),
+                {
                   ...lastMsg,
-                  tool_calls: [...(lastMsg.tool_calls || []), {
-                    id: tc.id || Date.now().toString(),
-                    name: tc.name || tc.function?.name || 'unknown',
-                    arguments: tc.arguments || tc.function?.arguments,
-                    status: 'pending'
-                  }]
-                }]
-              }
-              return prev
-            })
-          } else if (chunk.type === 'tool_start' && chunk.tool_name) {
-            setMessages(prev => {
-              const lastMsg = prev[prev.length - 1]
-              if (lastMsg && lastMsg.id === tempAssistantId && lastMsg.tool_calls) {
-                return [...prev.slice(0, -1), {
+                  tool_calls: [
+                    ...(lastMsg.tool_calls || []),
+                    {
+                      id: tc.id || Date.now().toString(),
+                      name: tc.name || tc.function?.name || 'unknown',
+                      arguments: tc.arguments || tc.function?.arguments,
+                      status: 'pending',
+                    },
+                  ],
+                },
+              ];
+            }
+            return prev;
+          });
+        } else if (chunk.type === 'tool_start' && chunk.tool_name) {
+          setMessages((prev) => {
+            const lastMsg = prev[prev.length - 1];
+            if (lastMsg && lastMsg.id === tempAssistantId && lastMsg.tool_calls) {
+              return [
+                ...prev.slice(0, -1),
+                {
                   ...lastMsg,
-                  tool_calls: lastMsg.tool_calls.map(tc =>
+                  tool_calls: lastMsg.tool_calls.map((tc) =>
                     tc.name === chunk.tool_name ? { ...tc, status: 'executing' } : tc
-                  )
-                }]
-              }
-              return prev
-            })
-          } else if (chunk.type === 'tool_result' && chunk.tool_name && chunk.result) {
-            setMessages(prev => {
-              const lastMsg = prev[prev.length - 1]
-              if (lastMsg && lastMsg.id === tempAssistantId && lastMsg.tool_calls) {
-                return [...prev.slice(0, -1), {
+                  ),
+                },
+              ];
+            }
+            return prev;
+          });
+        } else if (chunk.type === 'tool_result' && chunk.tool_name && chunk.result) {
+          setMessages((prev) => {
+            const lastMsg = prev[prev.length - 1];
+            if (lastMsg && lastMsg.id === tempAssistantId && lastMsg.tool_calls) {
+              return [
+                ...prev.slice(0, -1),
+                {
                   ...lastMsg,
-                  tool_calls: lastMsg.tool_calls.map(tc =>
-                    tc.name === chunk.tool_name ? { ...tc, status: 'completed', result: chunk.result } : tc
-                  )
-                }]
-              }
-              return prev
-            })
-          } else if (chunk.type === 'thinking' && chunk.content) {
-            setMessages(prev => {
-              const lastMsg = prev[prev.length - 1]
-              if (lastMsg && lastMsg.id === tempAssistantId) {
-                return [...prev.slice(0, -1), {
+                  tool_calls: lastMsg.tool_calls.map((tc) =>
+                    tc.name === chunk.tool_name
+                      ? { ...tc, status: 'completed', result: chunk.result }
+                      : tc
+                  ),
+                },
+              ];
+            }
+            return prev;
+          });
+        } else if (chunk.type === 'thinking' && chunk.content) {
+          setMessages((prev) => {
+            const lastMsg = prev[prev.length - 1];
+            if (lastMsg && lastMsg.id === tempAssistantId) {
+              return [
+                ...prev.slice(0, -1),
+                {
                   ...lastMsg,
-                  thinking: (lastMsg.thinking || '') + chunk.content
-                }]
-              }
-              return prev
-            })
-          } else if (chunk.type === 'done') {
-            setMessages(prev => {
-              const lastMsg = prev[prev.length - 1]
-              if (lastMsg && lastMsg.id === tempAssistantId) {
-                return [...prev.slice(0, -1), {
+                  thinking: (lastMsg.thinking || '') + chunk.content,
+                },
+              ];
+            }
+            return prev;
+          });
+        } else if (chunk.type === 'done') {
+          setMessages((prev) => {
+            const lastMsg = prev[prev.length - 1];
+            if (lastMsg && lastMsg.id === tempAssistantId) {
+              return [
+                ...prev.slice(0, -1),
+                {
                   ...lastMsg,
-                  content: lastMsg.content || '响应已完成'
-                }]
-              }
-              return prev
-            })
-          } else if (chunk.type === 'error') {
-            throw new Error(chunk.error || '未知错误')
-          }
+                  content: lastMsg.content || '响应已完成',
+                },
+              ];
+            }
+            return prev;
+          });
+        } else if (chunk.type === 'error') {
+          throw new Error(chunk.error || '未知错误');
         }
-      )
+      });
     } catch (error) {
-      console.error('发送消息失败:', error)
-      setMessages(prev => {
-        const lastMsg = prev[prev.length - 1]
+      console.error('发送消息失败:', error);
+      setMessages((prev) => {
+        const lastMsg = prev[prev.length - 1];
         if (lastMsg && lastMsg.id === tempAssistantId) {
-          return [...prev.slice(0, -1), {
-            ...lastMsg,
-            content: '抱歉，服务暂时不可用，请稍后重试。'
-          }]
+          return [
+            ...prev.slice(0, -1),
+            {
+              ...lastMsg,
+              content: '抱歉，服务暂时不可用，请稍后重试。',
+            },
+          ];
         }
-        return prev
-      })
+        return prev;
+      });
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
+      e.preventDefault();
+      handleSend();
     }
-  }
+  };
 
   const clearChat = () => {
-    setMessages([])
-  }
+    setMessages([]);
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -345,42 +357,43 @@ export function MemoryAgentPage() {
               key={message.id}
               className={`flex gap-4 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
             >
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                message.role === 'user'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted'
-              }`}>
+              <div
+                className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                  message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'
+                }`}
+              >
                 {message.role === 'user' ? (
                   <span className="text-sm font-medium">我</span>
                 ) : (
                   <Database className="w-5 h-5" />
                 )}
               </div>
-              <div className={`max-w-[80%] ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
-                <div className={`px-4 py-3 rounded-2xl ${
-                  message.role === 'user'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted'
-                }`}>
+              <div
+                className={`max-w-[80%] ${message.role === 'user' ? 'items-end' : 'items-start'}`}
+              >
+                <div
+                  className={`px-4 py-3 rounded-2xl ${
+                    message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'
+                  }`}
+                >
                   {message.role === 'user' ? (
                     <p className="whitespace-pre-wrap">{message.content}</p>
                   ) : (
                     <MarkdownContent content={message.content} />
                   )}
-                  {message.role === 'assistant' && isLoading && message.id === messages[messages.length - 1]?.id && (
-                    <span className="inline-block w-2 h-4 ml-1 bg-primary/60 animate-pulse" />
-                  )}
+                  {message.role === 'assistant' &&
+                    isLoading &&
+                    message.id === messages[messages.length - 1]?.id && (
+                      <span className="inline-block w-2 h-4 ml-1 bg-primary/60 animate-pulse" />
+                    )}
                 </div>
                 <span className="text-xs text-muted-foreground mt-1 px-1">
                   {formatRelativeTime(message.timestamp)}
                 </span>
-                
+
                 {/* 思考过程显示 */}
                 {message.role === 'assistant' && (
-                  <ThinkingProcess 
-                    thinking={message.thinking} 
-                    toolCalls={message.tool_calls} 
-                  />
+                  <ThinkingProcess thinking={message.thinking} toolCalls={message.tool_calls} />
                 )}
               </div>
             </div>
@@ -414,5 +427,5 @@ export function MemoryAgentPage() {
         </p>
       </div>
     </div>
-  )
+  );
 }

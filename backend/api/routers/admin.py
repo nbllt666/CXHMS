@@ -1,8 +1,10 @@
-from fastapi import APIRouter, HTTPException, Header
+import os
 from datetime import datetime
 from typing import Dict, Optional
+
+from fastapi import APIRouter, Header, HTTPException
+
 from backend.core.logging_config import get_contextual_logger
-import os
 
 router = APIRouter()
 logger = get_contextual_logger(__name__)
@@ -22,37 +24,29 @@ async def get_dashboard(x_api_key: Optional[str] = Header(None)):
     if not verify_admin_key(x_api_key):
         raise HTTPException(status_code=401, detail="未授权访问")
 
-    from backend.api.app import get_memory_manager, get_context_manager, get_acp_manager
+    from backend.api.app import get_acp_manager, get_context_manager, get_memory_manager
 
-    stats = {
-        "memory": {},
-        "context": {},
-        "acp": {}
-    }
+    stats = {"memory": {}, "context": {}, "acp": {}}
 
     try:
         memory_mgr = get_memory_manager()
         stats["memory"] = memory_mgr.get_statistics()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"获取内存管理统计失败: {e}")
 
     try:
         context_mgr = get_context_manager()
         stats["context"] = context_mgr.get_statistics()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"获取上下文管理统计失败: {e}")
 
     try:
         acp_mgr = get_acp_manager()
         stats["acp"] = await acp_mgr.get_statistics()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"获取ACP统计失败: {e}")
 
-    return {
-        "status": "success",
-        "timestamp": datetime.now().isoformat(),
-        "dashboard": stats
-    }
+    return {"status": "success", "timestamp": datetime.now().isoformat(), "dashboard": stats}
 
 
 @router.get("/admin/stats")
@@ -60,48 +54,37 @@ async def get_stats(x_api_key: Optional[str] = Header(None)):
     if not verify_admin_key(x_api_key):
         raise HTTPException(status_code=401, detail="未授权访问")
 
-    from backend.api.app import get_memory_manager, get_context_manager
+    from backend.api.app import get_context_manager, get_memory_manager
     from backend.core.tools.registry import tool_registry
 
-    stats = {
-        "memory": {},
-        "context": {},
-        "tools": {}
-    }
+    stats = {"memory": {}, "context": {}, "tools": {}}
 
     try:
         memory_mgr = get_memory_manager()
         stats["memory"] = memory_mgr.get_statistics()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"获取内存管理统计失败: {e}")
 
     try:
         context_mgr = get_context_manager()
         stats["context"] = context_mgr.get_statistics()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"获取上下文管理统计失败: {e}")
 
     try:
         stats["tools"] = tool_registry.get_tool_stats()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"获取工具统计失败: {e}")
 
-    return {
-        "status": "success",
-        "statistics": stats
-    }
+    return {"status": "success", "statistics": stats}
 
 
 @router.get("/admin/health")
 async def health_check():
     """健康检查端点 - 不需要认证"""
-    from backend.api.app import get_memory_manager, get_context_manager, get_acp_manager
+    from backend.api.app import get_acp_manager, get_context_manager, get_memory_manager
 
-    health = {
-        "memory": "unknown",
-        "context": "unknown",
-        "acp": "unknown"
-    }
+    health = {"memory": "unknown", "context": "unknown", "acp": "unknown"}
 
     try:
         memory_mgr = get_memory_manager()
@@ -124,10 +107,7 @@ async def health_check():
 
     overall = "healthy" if all(h == "healthy" for h in health.values()) else "degraded"
 
-    return {
-        "status": overall,
-        "components": health
-    }
+    return {"status": overall, "components": health}
 
 
 @router.get("/admin/config")
@@ -140,21 +120,14 @@ async def get_config(x_api_key: Optional[str] = Header(None)):
     return {
         "status": "success",
         "config": {
-            "llm": {
-                "provider": settings.config.llm.provider,
-                "model": settings.config.llm.model
-            },
-            "vector": {
-                "enabled": settings.config.vector.enabled
-            },
+            "llm": {"provider": settings.config.llm.provider, "model": settings.config.llm.model},
+            "vector": {"enabled": settings.config.vector.enabled},
             "acp": {
                 "enabled": settings.config.acp.enabled,
-                "agent_name": settings.config.acp.agent_name
+                "agent_name": settings.config.acp.agent_name,
             },
-            "system": {
-                "debug": settings.config.system.debug
-            }
-        }
+            "system": {"debug": settings.config.system.debug},
+        },
     }
 
 
@@ -196,10 +169,7 @@ async def update_config(config: Dict, x_api_key: Optional[str] = Header(None)):
 
         logger.info("管理员更新了系统配置")
 
-        return {
-            "status": "success",
-            "message": "配置已更新"
-        }
+        return {"status": "success", "message": "配置已更新"}
     except HTTPException:
         raise
     except Exception as e:
@@ -228,7 +198,7 @@ async def get_logs(level: str = "INFO", lines: int = 50, x_api_key: Optional[str
         "logs": ["日志功能通过服务端日志文件查看", f"当前日志级别: {level}", f"请求行数: {lines}"],
         "total": 3,
         "level": level,
-        "lines": lines
+        "lines": lines,
     }
 
 
@@ -237,8 +207,8 @@ async def create_backup(x_api_key: Optional[str] = Header(None)):
     if not verify_admin_key(x_api_key):
         raise HTTPException(status_code=401, detail="未授权访问")
 
-    import shutil
     import os
+    import shutil
 
     try:
         data_dir = "data"
@@ -254,14 +224,14 @@ async def create_backup(x_api_key: Optional[str] = Header(None)):
         backup_name = f"backup_{timestamp}"
         backup_path = f"{backup_dir}/{backup_name}"
 
-        shutil.make_archive(backup_path, 'zip', data_dir)
+        shutil.make_archive(backup_path, "zip", data_dir)
 
         logger.info(f"创建备份: {backup_path}.zip")
 
         return {
             "status": "success",
             "path": f"{backup_path}.zip",
-            "message": f"备份已创建: {backup_name}.zip"
+            "message": f"备份已创建: {backup_name}.zip",
         }
     except HTTPException:
         raise

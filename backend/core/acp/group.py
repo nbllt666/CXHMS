@@ -1,11 +1,13 @@
 import asyncio
-import uuid
 import json
-from typing import Dict, List, Optional, Any
+import uuid
 from datetime import datetime
-from .manager import ACPManager, ACPGroupInfo, ACPMessageInfo
-from backend.models.acp import ACPGroupMember
+from typing import Any, Dict, List, Optional
+
 from backend.core.logging_config import get_contextual_logger
+from backend.models.acp import ACPGroupMember
+
+from .manager import ACPGroupInfo, ACPManager, ACPMessageInfo
 
 logger = get_contextual_logger(__name__)
 
@@ -21,15 +23,11 @@ class ACPGroupManager:
         creator_id: str = "",
         creator_name: str = "",
         max_members: int = 50,
-        metadata: Dict = None
+        metadata: Dict = None,
     ) -> ACPGroupInfo:
         group_id = str(uuid.uuid4())
 
-        creator = ACPGroupMember(
-            agent_id=creator_id,
-            agent_name=creator_name,
-            role="admin"
-        )
+        creator = ACPGroupMember(agent_id=creator_id, agent_name=creator_name, role="admin")
 
         group = ACPGroupInfo(
             id=group_id,
@@ -42,7 +40,7 @@ class ACPGroupManager:
             is_active=True,
             created_at=datetime.now().isoformat(),
             updated_at=datetime.now().isoformat(),
-            metadata=metadata or {}
+            metadata=metadata or {},
         )
 
         await self.acp_manager.create_group(group)
@@ -62,12 +60,7 @@ class ACPGroupManager:
     async def delete_group(self, group_id: str) -> bool:
         return await self.acp_manager.delete_group(group_id)
 
-    async def join_group(
-        self,
-        group_id: str,
-        agent_id: str,
-        agent_name: str
-    ) -> bool:
+    async def join_group(self, group_id: str, agent_id: str, agent_name: str) -> bool:
         group = await self.acp_manager.get_group(group_id)
         if not group:
             return False
@@ -84,18 +77,13 @@ class ACPGroupManager:
                 logger.info(f"Agent已在群组中: {agent_id}")
                 return True
 
-        member = ACPGroupMember(
-            agent_id=agent_id,
-            agent_name=agent_name,
-            role="member"
-        )
+        member = ACPGroupMember(agent_id=agent_id, agent_name=agent_name, role="member")
 
         success = await self.acp_manager.add_group_member(group_id, member.to_dict())
         if success:
-            await self._broadcast_group_event(group_id, "member_joined", {
-                "agent_id": agent_id,
-                "agent_name": agent_name
-            })
+            await self._broadcast_group_event(
+                group_id, "member_joined", {"agent_id": agent_id, "agent_name": agent_name}
+            )
 
         return success
 
@@ -113,19 +101,13 @@ class ACPGroupManager:
             agent_info = await self.acp_manager.get_agent(agent_id)
             agent_name = agent_info.name if agent_info else "Unknown"
 
-            await self._broadcast_group_event(group_id, "member_left", {
-                "agent_id": agent_id,
-                "agent_name": agent_name
-            })
+            await self._broadcast_group_event(
+                group_id, "member_left", {"agent_id": agent_id, "agent_name": agent_name}
+            )
 
         return success
 
-    async def invite_member(
-        self,
-        group_id: str,
-        inviter_id: str,
-        invitee_agent_id: str
-    ) -> bool:
+    async def invite_member(self, group_id: str, inviter_id: str, invitee_agent_id: str) -> bool:
         group = await self.acp_manager.get_group(group_id)
         if not group:
             return False
@@ -140,12 +122,7 @@ class ACPGroupManager:
 
         return True
 
-    async def kick_member(
-        self,
-        group_id: str,
-        kicker_id: str,
-        target_id: str
-    ) -> bool:
+    async def kick_member(self, group_id: str, kicker_id: str, target_id: str) -> bool:
         group = await self.acp_manager.get_group(group_id)
         if not group:
             return False
@@ -167,11 +144,11 @@ class ACPGroupManager:
             agent_info = await self.acp_manager.get_agent(target_id)
             agent_name = agent_info.name if agent_info else "Unknown"
 
-            await self._broadcast_group_event(group_id, "member_kicked", {
-                "agent_id": target_id,
-                "agent_name": agent_name,
-                "kicked_by": kicker_id
-            })
+            await self._broadcast_group_event(
+                group_id,
+                "member_kicked",
+                {"agent_id": target_id, "agent_name": agent_name, "kicked_by": kicker_id},
+            )
 
         return success
 
@@ -181,7 +158,7 @@ class ACPGroupManager:
         from_agent_id: str,
         from_agent_name: str,
         content: Dict,
-        msg_type: str = "group_message"
+        msg_type: str = "group_message",
     ) -> ACPMessageInfo:
         group = await self.acp_manager.get_group(group_id)
         if not group or not group.is_active:
@@ -195,7 +172,7 @@ class ACPGroupManager:
             to_group_id=group_id,
             content=content,
             timestamp=datetime.now().isoformat(),
-            is_sent=True
+            is_sent=True,
         )
 
         await self.acp_manager.send_message(message)
@@ -203,11 +180,7 @@ class ACPGroupManager:
 
         return message
 
-    async def get_group_messages(
-        self,
-        group_id: str,
-        limit: int = 50
-    ) -> List[Dict]:
+    async def get_group_messages(self, group_id: str, limit: int = 50) -> List[Dict]:
         return await self.acp_manager.get_messages(group_id, group_id=group_id, limit=limit)
 
     async def get_member_groups(self, agent_id: str) -> List[Dict]:
@@ -223,30 +196,19 @@ class ACPGroupManager:
 
         return member_groups
 
-    async def _broadcast_group_event(
-        self,
-        group_id: str,
-        event_type: str,
-        event_data: Dict
-    ):
+    async def _broadcast_group_event(self, group_id: str, event_type: str, event_data: Dict):
         message = ACPMessageInfo(
             id=str(uuid.uuid4()),
             msg_type="control",
             from_agent_id="system",
             from_agent_name="System",
             to_group_id=group_id,
-            content={
-                "event": event_type,
-                "data": event_data
-            },
+            content={"event": event_type, "data": event_data},
             timestamp=datetime.now().isoformat(),
-            is_sent=True
+            is_sent=True,
         )
 
         await self.acp_manager.send_message(message)
 
     def get_status(self) -> Dict:
-        return {
-            "enabled": True,
-            "max_groups_per_agent": 10
-        }
+        return {"enabled": True, "max_groups_per_agent": 10}

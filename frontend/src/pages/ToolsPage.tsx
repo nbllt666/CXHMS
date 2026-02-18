@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Wrench,
   Plus,
@@ -20,33 +20,33 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
-  Check
-} from 'lucide-react'
-import { api } from '../api/client'
-import { cn } from '../lib/utils'
+  Check,
+} from 'lucide-react';
+import { api } from '../api/client';
+import { cn } from '../lib/utils';
 
 interface Tool {
-  id: string
-  name: string
-  description: string
-  type: 'builtin' | 'mcp' | 'custom'
-  status: 'active' | 'inactive' | 'error'
-  config: Record<string, unknown>
-  icon?: string
-  created_at: string
-  last_used?: string
-  use_count: number
-  parameters?: Record<string, unknown>
-  examples?: string[]
-  tags?: string[]
+  id: string;
+  name: string;
+  description: string;
+  type: 'builtin' | 'mcp' | 'custom';
+  status: 'active' | 'inactive' | 'error';
+  config: Record<string, unknown>;
+  icon?: string;
+  created_at: string;
+  last_used?: string;
+  use_count: number;
+  parameters?: Record<string, unknown>;
+  examples?: string[];
+  tags?: string[];
 }
 
 interface ToolStats {
-  total_tools: number
-  active_tools: number
-  mcp_tools: number
-  native_tools: number
-  total_calls: number
+  total_tools: number;
+  active_tools: number;
+  mcp_tools: number;
+  native_tools: number;
+  total_calls: number;
 }
 
 const toolIcons: Record<string, React.ElementType> = {
@@ -56,8 +56,8 @@ const toolIcons: Record<string, React.ElementType> = {
   file: FileText,
   code: Code,
   wrench: Wrench,
-  settings: Settings
-}
+  settings: Settings,
+};
 
 // 预设的工具模板
 const toolTemplates = {
@@ -67,9 +67,9 @@ const toolTemplates = {
     parameters: {
       type: 'object',
       properties: {},
-      required: []
+      required: [],
     },
-    examples: []
+    examples: [],
   },
   mcp: {
     name: '',
@@ -79,15 +79,15 @@ const toolTemplates = {
       properties: {
         server_name: {
           type: 'string',
-          description: 'MCP 服务器名称'
-        }
+          description: 'MCP 服务器名称',
+        },
       },
-      required: ['server_name']
+      required: ['server_name'],
     },
     config: {
       server_name: '',
-      tool_name: ''
-    }
+      tool_name: '',
+    },
   },
   calculator: {
     name: 'calculator',
@@ -97,12 +97,12 @@ const toolTemplates = {
       properties: {
         expression: {
           type: 'string',
-          description: '数学表达式，如 "1 + 2" 或 "sin(30)"'
-        }
+          description: '数学表达式，如 "1 + 2" 或 "sin(30)"',
+        },
       },
-      required: ['expression']
+      required: ['expression'],
     },
-    examples: ['1 + 2', 'sin(30)', 'log(100)']
+    examples: ['1 + 2', 'sin(30)', 'log(100)'],
   },
   datetime: {
     name: 'datetime',
@@ -112,87 +112,97 @@ const toolTemplates = {
       properties: {
         format: {
           type: 'string',
-          description: '日期格式，如 "YYYY-MM-DD HH:mm:ss"'
-        }
+          description: '日期格式，如 "YYYY-MM-DD HH:mm:ss"',
+        },
       },
-      required: []
+      required: [],
     },
-    examples: ['', 'YYYY-MM-DD']
-  }
-}
+    examples: ['', 'YYYY-MM-DD'],
+  },
+};
 
 export function ToolsPage() {
-  const queryClient = useQueryClient()
-  const [selectedTool, setSelectedTool] = useState<Tool | null>(null)
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
-  const [isTestModalOpen, setIsTestModalOpen] = useState(false)
-  const [filter, setFilter] = useState<'all' | 'builtin' | 'mcp' | 'custom'>('all')
+  const queryClient = useQueryClient();
+  const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isTestModalOpen, setIsTestModalOpen] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'builtin' | 'mcp' | 'custom'>('all');
 
   // Fetch tools stats
   const { data: stats, isLoading: statsLoading } = useQuery<ToolStats>({
     queryKey: ['tools-stats'],
     queryFn: async () => {
-      const response = await api.getToolsStats()
-      return response
+      const response = await api.getToolsStats();
+      return response;
     },
-    refetchInterval: 10000
-  })
+    refetchInterval: 10000,
+  });
 
   // Fetch tools list
   const { data: toolsData, isLoading: toolsLoading } = useQuery({
     queryKey: ['tools', filter],
     queryFn: async () => {
-      const response = await api.getTools(filter === 'all' ? undefined : filter)
+      const response = await api.getTools(filter === 'all' ? undefined : filter);
       // 将工具对象转换为数组
-      const toolsObj = response.tools || {}
-      return Object.values(toolsObj) as Tool[]
-    }
-  })
+      const toolsObj = response.tools || {};
+      return Object.values(toolsObj) as Tool[];
+    },
+  });
 
   // Create tool mutation
   const createToolMutation = useMutation({
     mutationFn: api.createTool,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tools'] })
-      queryClient.invalidateQueries({ queryKey: ['tools-stats'] })
-      setIsCreateModalOpen(false)
-    }
-  })
+      queryClient.invalidateQueries({ queryKey: ['tools'] });
+      queryClient.invalidateQueries({ queryKey: ['tools-stats'] });
+      setIsCreateModalOpen(false);
+    },
+  });
 
   // Update tool mutation
   const updateToolMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: { name?: string; description?: string; type?: 'mcp' | 'native' | 'custom'; icon?: string; config?: Record<string, unknown>; status?: 'active' | 'inactive' } }) =>
-      api.updateTool(id, data),
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: {
+        name?: string;
+        description?: string;
+        type?: 'mcp' | 'native' | 'custom';
+        icon?: string;
+        config?: Record<string, unknown>;
+        status?: 'active' | 'inactive';
+      };
+    }) => api.updateTool(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tools'] })
-      setIsEditModalOpen(false)
-      setSelectedTool(null)
-    }
-  })
+      queryClient.invalidateQueries({ queryKey: ['tools'] });
+      setIsEditModalOpen(false);
+      setSelectedTool(null);
+    },
+  });
 
   // Delete tool mutation
   const deleteToolMutation = useMutation({
     mutationFn: api.deleteTool,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tools'] })
-      queryClient.invalidateQueries({ queryKey: ['tools-stats'] })
-      setSelectedTool(null)
-    }
-  })
+      queryClient.invalidateQueries({ queryKey: ['tools'] });
+      queryClient.invalidateQueries({ queryKey: ['tools-stats'] });
+      setSelectedTool(null);
+    },
+  });
 
   // Toggle tool status
   const toggleToolStatus = (tool: Tool) => {
     updateToolMutation.mutate({
       id: tool.id,
-      data: { status: tool.status === 'active' ? 'inactive' : 'active' }
-    })
-  }
+      data: { status: tool.status === 'active' ? 'inactive' : 'active' },
+    });
+  };
 
   // Filter tools
-  const filteredTools = toolsData?.filter(tool =>
-    filter === 'all' || tool.type === filter
-  )
+  const filteredTools = toolsData?.filter((tool) => filter === 'all' || tool.type === filter);
 
   return (
     <div className="space-y-6">
@@ -203,9 +213,7 @@ export function ToolsPage() {
             <Wrench className="w-6 h-6 text-primary" />
             工具管理
           </h1>
-          <p className="text-muted-foreground mt-1">
-            管理 MCP 工具、原生工具和自定义工具
-          </p>
+          <p className="text-muted-foreground mt-1">管理 MCP 工具、原生工具和自定义工具</p>
         </div>
         <button
           onClick={() => setIsCreateModalOpen(true)}
@@ -229,7 +237,9 @@ export function ToolsPage() {
           value={stats?.active_tools || 0}
           icon={CheckCircle2}
           loading={statsLoading}
-          trend={stats ? `${Math.round((stats.active_tools / stats.total_tools) * 100)}%` : undefined}
+          trend={
+            stats ? `${Math.round((stats.active_tools / stats.total_tools) * 100)}%` : undefined
+          }
         />
         <StatCard
           title="MCP 工具"
@@ -252,13 +262,19 @@ export function ToolsPage() {
             key={type}
             onClick={() => setFilter(type)}
             className={cn(
-              "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+              'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
               filter === type
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground hover:bg-accent"
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-muted-foreground hover:bg-accent'
             )}
           >
-            {type === 'all' ? '全部' : type === 'builtin' ? '内置' : type === 'mcp' ? 'MCP' : '自定义'}
+            {type === 'all'
+              ? '全部'
+              : type === 'builtin'
+                ? '内置'
+                : type === 'mcp'
+                  ? 'MCP'
+                  : '自定义'}
           </button>
         ))}
       </div>
@@ -271,7 +287,7 @@ export function ToolsPage() {
           </div>
         ) : filteredTools && filteredTools.length > 0 ? (
           filteredTools.map((tool) => {
-            const IconComponent = toolIcons[tool.icon || ''] || Wrench
+            const IconComponent = toolIcons[tool.icon || ''] || Wrench;
             return (
               <div
                 key={tool.id}
@@ -279,14 +295,18 @@ export function ToolsPage() {
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className={cn(
-                      "w-10 h-10 rounded-lg flex items-center justify-center",
-                      tool.status === 'active' ? "bg-primary/10" : "bg-muted"
-                    )}>
-                      <IconComponent className={cn(
-                        "w-5 h-5",
-                        tool.status === 'active' ? "text-primary" : "text-muted-foreground"
-                      )} />
+                    <div
+                      className={cn(
+                        'w-10 h-10 rounded-lg flex items-center justify-center',
+                        tool.status === 'active' ? 'bg-primary/10' : 'bg-muted'
+                      )}
+                    >
+                      <IconComponent
+                        className={cn(
+                          'w-5 h-5',
+                          tool.status === 'active' ? 'text-primary' : 'text-muted-foreground'
+                        )}
+                      />
                     </div>
                     <div>
                       <h3 className="font-medium">{tool.name}</h3>
@@ -322,8 +342,8 @@ export function ToolsPage() {
                   <div className="flex gap-2 mt-3">
                     <button
                       onClick={() => {
-                        setSelectedTool(tool)
-                        setIsTestModalOpen(true)
+                        setSelectedTool(tool);
+                        setIsTestModalOpen(true);
                       }}
                       className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm bg-muted rounded-lg hover:bg-accent transition-colors"
                     >
@@ -332,8 +352,8 @@ export function ToolsPage() {
                     </button>
                     <button
                       onClick={() => {
-                        setSelectedTool(tool)
-                        setIsEditModalOpen(true)
+                        setSelectedTool(tool);
+                        setIsEditModalOpen(true);
                       }}
                       className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm bg-muted rounded-lg hover:bg-accent transition-colors"
                     >
@@ -342,7 +362,7 @@ export function ToolsPage() {
                     <button
                       onClick={() => {
                         if (confirm('确定要删除此工具吗？')) {
-                          deleteToolMutation.mutate(tool.id)
+                          deleteToolMutation.mutate(tool.id);
                         }
                       }}
                       className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm bg-muted rounded-lg hover:bg-red-500/10 hover:text-red-500 transition-colors"
@@ -352,7 +372,7 @@ export function ToolsPage() {
                   </div>
                 </div>
               </div>
-            )
+            );
           })
         ) : (
           <div className="col-span-full text-center py-12 text-muted-foreground">
@@ -384,8 +404,8 @@ export function ToolsPage() {
           title="编辑工具"
           tool={selectedTool}
           onClose={() => {
-            setIsEditModalOpen(false)
-            setSelectedTool(null)
+            setIsEditModalOpen(false);
+            setSelectedTool(null);
           }}
           onSubmit={(data) => updateToolMutation.mutate({ id: selectedTool.id, data })}
           isLoading={updateToolMutation.isPending}
@@ -397,22 +417,22 @@ export function ToolsPage() {
         <TestToolModal
           tool={selectedTool}
           onClose={() => {
-            setIsTestModalOpen(false)
-            setSelectedTool(null)
+            setIsTestModalOpen(false);
+            setSelectedTool(null);
           }}
         />
       )}
     </div>
-  )
+  );
 }
 
 // Stat Card Component
 interface StatCardProps {
-  title: string
-  value: number
-  icon: React.ElementType
-  loading?: boolean
-  trend?: string
+  title: string;
+  value: number;
+  icon: React.ElementType;
+  loading?: boolean;
+  trend?: string;
 }
 
 function StatCard({ title, value, icon: Icon, loading, trend }: StatCardProps) {
@@ -426,9 +446,7 @@ function StatCard({ title, value, icon: Icon, loading, trend }: StatCardProps) {
           ) : (
             <div className="flex items-baseline gap-2">
               <p className="text-2xl font-bold">{value}</p>
-              {trend && (
-                <span className="text-xs text-green-500">{trend}</span>
-              )}
+              {trend && <span className="text-xs text-green-500">{trend}</span>}
             </div>
           )}
         </div>
@@ -437,72 +455,79 @@ function StatCard({ title, value, icon: Icon, loading, trend }: StatCardProps) {
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 // Tool Modal Component
 interface ToolModalProps {
-  title: string
-  tool?: Tool
-  onClose: () => void
-  onSubmit: (data: { 
-    name: string
-    description?: string
-    type: 'mcp' | 'native' | 'custom'
-    icon?: string
-    config?: Record<string, unknown>
-    parameters?: Record<string, unknown>
-    examples?: string[]
-    tags?: string[]
-  }) => void
-  isLoading: boolean
+  title: string;
+  tool?: Tool;
+  onClose: () => void;
+  onSubmit: (data: {
+    name: string;
+    description?: string;
+    type: 'mcp' | 'native' | 'custom';
+    icon?: string;
+    config?: Record<string, unknown>;
+    parameters?: Record<string, unknown>;
+    examples?: string[];
+    tags?: string[];
+  }) => void;
+  isLoading: boolean;
 }
 
 function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps) {
-  const [selectedTemplate, setSelectedTemplate] = useState<string>('custom')
-  const [activeTab, setActiveTab] = useState<'basic' | 'params' | 'advanced'>('basic')
-  const [copied, setCopied] = useState(false)
-  
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('custom');
+  const [activeTab, setActiveTab] = useState<'basic' | 'params' | 'advanced'>('basic');
+  const [copied, setCopied] = useState(false);
+
   const [formData, setFormData] = useState({
     name: tool?.name || '',
     description: tool?.description || '',
     type: (tool?.type as 'mcp' | 'native' | 'custom') || 'custom',
     icon: tool?.icon || 'wrench',
-    parameters: JSON.stringify(tool?.parameters || { type: 'object', properties: {}, required: [] }, null, 2),
+    parameters: JSON.stringify(
+      tool?.parameters || { type: 'object', properties: {}, required: [] },
+      null,
+      2
+    ),
     examples: tool?.examples?.join('\n') || '',
     tags: tool?.tags?.join(', ') || '',
-    config: JSON.stringify(tool?.config || {}, null, 2)
-  })
+    config: JSON.stringify(tool?.config || {}, null, 2),
+  });
 
   const handleTemplateSelect = (templateKey: string) => {
-    setSelectedTemplate(templateKey)
-    const template = toolTemplates[templateKey as keyof typeof toolTemplates]
+    setSelectedTemplate(templateKey);
+    const template = toolTemplates[templateKey as keyof typeof toolTemplates];
     if (template) {
-      const templateExamples = 'examples' in template ? template.examples : []
-      setFormData(prev => ({
+      const templateExamples = 'examples' in template ? template.examples : [];
+      setFormData((prev) => ({
         ...prev,
         name: template.name || prev.name,
         description: template.description || prev.description,
         parameters: JSON.stringify(template.parameters, null, 2),
-        examples: templateExamples?.join('\n') || ''
-      }))
+        examples: templateExamples?.join('\n') || '',
+      }));
     }
-  }
+  };
 
   const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
     try {
-      const parameters = JSON.parse(formData.parameters)
-      const config = JSON.parse(formData.config)
-      const examples = formData.examples.split('\n').filter(e => e.trim())
-      const tags = formData.tags.split(',').map(t => t.trim()).filter(t => t)
-      
+      const parameters = JSON.parse(formData.parameters);
+      const config = JSON.parse(formData.config);
+      const examples = formData.examples.split('\n').filter((e) => e.trim());
+      const tags = formData.tags
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t);
+
       onSubmit({
         name: formData.name,
         description: formData.description,
@@ -511,12 +536,12 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
         parameters,
         examples,
         tags,
-        config
-      })
+        config,
+      });
     } catch {
-      alert('JSON 格式错误，请检查参数或配置')
+      alert('JSON 格式错误，请检查参数或配置');
     }
-  }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -538,13 +563,19 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
                   key={key}
                   onClick={() => handleTemplateSelect(key)}
                   className={cn(
-                    "px-3 py-2 text-sm rounded-lg border transition-colors",
+                    'px-3 py-2 text-sm rounded-lg border transition-colors',
                     selectedTemplate === key
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border hover:border-primary/50"
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border hover:border-primary/50'
                   )}
                 >
-                  {key === 'custom' ? '自定义' : key === 'mcp' ? 'MCP' : key === 'calculator' ? '计算器' : '时间'}
+                  {key === 'custom'
+                    ? '自定义'
+                    : key === 'mcp'
+                      ? 'MCP'
+                      : key === 'calculator'
+                        ? '计算器'
+                        : '时间'}
                 </button>
               ))}
             </div>
@@ -558,10 +589,10 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={cn(
-                "flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                'flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
                 activeTab === tab
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
               )}
             >
               {tab === 'basic' ? '基本信息' : tab === 'params' ? '参数定义' : '高级配置'}
@@ -601,7 +632,12 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
                   <label className="block text-sm font-medium mb-1">类型</label>
                   <select
                     value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value as 'mcp' | 'native' | 'custom' })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        type: e.target.value as 'mcp' | 'native' | 'custom',
+                      })
+                    }
                     className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                   >
                     <option value="custom">自定义</option>
@@ -720,70 +756,73 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
         </form>
       </div>
     </div>
-  )
+  );
 }
 
 // Test Tool Modal
 interface TestToolModalProps {
-  tool: Tool
-  onClose: () => void
+  tool: Tool;
+  onClose: () => void;
 }
 
 function TestToolModal({ tool, onClose }: TestToolModalProps) {
-  const [params, setParams] = useState('{}')
-  const [result, setResult] = useState<string | null>(null)
-  const [isTesting, setIsTesting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [showParamsHelp, setShowParamsHelp] = useState(false)
+  const [params, setParams] = useState('{}');
+  const [result, setResult] = useState<string | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showParamsHelp, setShowParamsHelp] = useState(false);
 
   const handleTest = async () => {
-    setIsTesting(true)
-    setError(null)
-    setResult(null)
+    setIsTesting(true);
+    setError(null);
+    setResult(null);
 
     try {
-      const parsedParams = JSON.parse(params)
-      const response = await api.testTool(tool.id, parsedParams)
-      setResult(JSON.stringify(response, null, 2))
+      const parsedParams = JSON.parse(params);
+      const response = await api.testTool(tool.id, parsedParams);
+      setResult(JSON.stringify(response, null, 2));
     } catch (e) {
-      setError(e instanceof Error ? e.message : '测试失败')
+      setError(e instanceof Error ? e.message : '测试失败');
     } finally {
-      setIsTesting(false)
+      setIsTesting(false);
     }
-  }
+  };
 
   // 生成示例参数
   const generateExampleParams = () => {
-    if (!tool.parameters || !tool.parameters.properties) return '{}'
-    
-    const example: Record<string, unknown> = {}
-    const properties = tool.parameters.properties as Record<string, { type: string; description?: string; default?: unknown }>
-    
+    if (!tool.parameters || !tool.parameters.properties) return '{}';
+
+    const example: Record<string, unknown> = {};
+    const properties = tool.parameters.properties as Record<
+      string,
+      { type: string; description?: string; default?: unknown }
+    >;
+
     Object.entries(properties).forEach(([key, prop]) => {
       switch (prop.type) {
         case 'string':
-          example[key] = prop.default || tool.examples?.[0] || ''
-          break
+          example[key] = prop.default || tool.examples?.[0] || '';
+          break;
         case 'number':
         case 'integer':
-          example[key] = prop.default || 0
-          break
+          example[key] = prop.default || 0;
+          break;
         case 'boolean':
-          example[key] = prop.default || false
-          break
+          example[key] = prop.default || false;
+          break;
         case 'array':
-          example[key] = []
-          break
+          example[key] = [];
+          break;
         case 'object':
-          example[key] = {}
-          break
+          example[key] = {};
+          break;
         default:
-          example[key] = null
+          example[key] = null;
       }
-    })
-    
-    return JSON.stringify(example, null, 2)
-  }
+    });
+
+    return JSON.stringify(example, null, 2);
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -794,7 +833,7 @@ function TestToolModal({ tool, onClose }: TestToolModalProps) {
             ✕
           </button>
         </div>
-        
+
         <div className="space-y-4">
           {/* Parameters Help */}
           <div className="bg-muted rounded-lg p-3">
@@ -803,13 +842,22 @@ function TestToolModal({ tool, onClose }: TestToolModalProps) {
               className="flex items-center justify-between w-full text-sm font-medium"
             >
               <span>参数说明</span>
-              {showParamsHelp ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              {showParamsHelp ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
             </button>
             {showParamsHelp && (
               <div className="mt-2 text-sm text-muted-foreground">
                 {tool.parameters && tool.parameters.properties ? (
                   <ul className="space-y-1">
-                    {Object.entries(tool.parameters.properties as Record<string, { type: string; description?: string }>).map(([key, prop]) => (
+                    {Object.entries(
+                      tool.parameters.properties as Record<
+                        string,
+                        { type: string; description?: string }
+                      >
+                    ).map(([key, prop]) => (
                       <li key={key}>
                         <code className="bg-background px-1 rounded">{key}</code>
                         <span className="text-xs ml-2">({prop.type})</span>
@@ -825,7 +873,9 @@ function TestToolModal({ tool, onClose }: TestToolModalProps) {
                     <span className="font-medium">示例值:</span>
                     <ul className="mt-1 space-y-1">
                       {tool.examples.map((ex, i) => (
-                        <li key={i} className="font-mono text-xs bg-background px-2 py-1 rounded">{ex}</li>
+                        <li key={i} className="font-mono text-xs bg-background px-2 py-1 rounded">
+                          {ex}
+                        </li>
                       ))}
                     </ul>
                   </div>
@@ -858,7 +908,11 @@ function TestToolModal({ tool, onClose }: TestToolModalProps) {
             disabled={isTesting}
             className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
-            {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+            {isTesting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Play className="w-4 h-4" />
+            )}
             {isTesting ? '测试中...' : '执行测试'}
           </button>
 
@@ -880,5 +934,5 @@ function TestToolModal({ tool, onClose }: TestToolModalProps) {
         </div>
       </div>
     </div>
-  )
+  );
 }
