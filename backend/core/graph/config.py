@@ -43,8 +43,8 @@ def get_graph_config() -> GraphConfig:
     if _config is not None:
         return _config
     try:
-        from backend.config import get_config
-        unified = get_config()
+        from config.settings import settings
+        unified = settings.config
         if hasattr(unified, 'graph') and unified.graph.enabled:
             gc = unified.graph
             _config = GraphConfig(

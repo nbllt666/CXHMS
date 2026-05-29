@@ -10,6 +10,8 @@ router = APIRouter()
 logger = get_contextual_logger(__name__)
 
 ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY")
+if not ADMIN_API_KEY:
+    raise RuntimeError("ADMIN_API_KEY environment variable must be set")
 
 
 def verify_admin_key(x_api_key: Optional[str] = Header(None)) -> bool:
