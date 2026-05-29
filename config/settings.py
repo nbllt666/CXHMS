@@ -324,6 +324,63 @@ class WeaviateConfig:
 
 
 @dataclass
+class ChromaConfig:
+    db_path: str = "data/chroma_db"
+    collection_name: str = "cxhms_memories"
+    vector_size: int = 768
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ChromaConfig":
+        return cls(
+            db_path=data.get("db_path", "data/chroma_db"),
+            collection_name=data.get("collection_name", "cxhms_memories"),
+            vector_size=data.get("vector_size", 768),
+        )
+
+
+@dataclass
+class GraphConfigSection:
+    enabled: bool = False
+    db_path: str = "data/graph.db"
+    vector_size: int = 768
+    weaviate_host: str = "localhost"
+    weaviate_port: int = 8080
+    embedding_model: str = "nomic-embed-text"
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "GraphConfigSection":
+        return cls(
+            enabled=data.get("enabled", False),
+            db_path=data.get("db_path", "data/graph.db"),
+            vector_size=data.get("vector_size", 768),
+            weaviate_host=data.get("weaviate_host", "localhost"),
+            weaviate_port=data.get("weaviate_port", 8080),
+            embedding_model=data.get("embedding_model", "nomic-embed-text"),
+        )
+
+
+@dataclass
+class CXFCConfig:
+    enabled: bool = False
+    discovery_port: int = 19876
+    discovery_enabled: bool = True
+    heartbeat_timeout: int = 60
+    auto_reconnect: bool = True
+    storage_path: str = "data/cxfc_plugins.db"
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "CXFCConfig":
+        return cls(
+            enabled=data.get("enabled", False),
+            discovery_port=data.get("discovery_port", 19876),
+            discovery_enabled=data.get("discovery_enabled", True),
+            heartbeat_timeout=data.get("heartbeat_timeout", 60),
+            auto_reconnect=data.get("auto_reconnect", True),
+            storage_path=data.get("storage_path", "data/cxfc_plugins.db"),
+        )
+
+
+@dataclass
 class MemoryConfig:
     decay_enabled: bool = True
     batch_interval: int = 3600
@@ -335,6 +392,7 @@ class MemoryConfig:
     milvus_lite: MilvusLiteConfig = field(default_factory=MilvusLiteConfig)
     qdrant: QdrantConfig = field(default_factory=QdrantConfig)
     weaviate: WeaviateConfig = field(default_factory=WeaviateConfig)
+    chroma: ChromaConfig = field(default_factory=ChromaConfig)
     archive_enabled: bool = True
     dedup_threshold: float = 0.85
     archive_compression_enabled: bool = True
@@ -352,6 +410,7 @@ class MemoryConfig:
             milvus_lite=MilvusLiteConfig.from_dict(data.get("milvus_lite", {})),
             qdrant=QdrantConfig.from_dict(data.get("qdrant", {})),
             weaviate=WeaviateConfig.from_dict(data.get("weaviate", {})),
+            chroma=ChromaConfig.from_dict(data.get("chroma", {})),
             archive_enabled=data.get("archive_enabled", True),
             dedup_threshold=data.get("dedup_threshold", 0.85),
             archive_compression_enabled=data.get("archive_compression_enabled", True),
@@ -430,6 +489,8 @@ class CXHMSConfig:
     rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
     cors: CORSConfig = field(default_factory=CORSConfig)
     system: SystemConfig = field(default_factory=SystemConfig)
+    graph: GraphConfigSection = field(default_factory=GraphConfigSection)
+    cxfc: CXFCConfig = field(default_factory=CXFCConfig)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "CXHMSConfig":
@@ -445,6 +506,8 @@ class CXHMSConfig:
             rate_limit=RateLimitConfig.from_dict(data.get("rate_limit", {})),
             cors=CORSConfig.from_dict(data.get("cors", {})),
             system=SystemConfig.from_dict(server_data),
+            graph=GraphConfigSection.from_dict(data.get("graph", {})),
+            cxfc=CXFCConfig.from_dict(data.get("cxfc", {})),
         )
 
 

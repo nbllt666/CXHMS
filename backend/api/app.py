@@ -23,13 +23,20 @@ from backend.api.routers import (
     archive,
     backup,
     chat,
+    config as config_router,
     context,
+    cxfc as cxfc_router,
+    graph as graph_router,
     memory,
+    memory_chat,
     service,
+    stats as stats_router,
     tools,
+    vector as vector_router,
     websocket,
 )
 from backend.core.logging_config import LogContext, get_contextual_logger, setup_logging
+from backend.dependencies import ServiceState, set_service_state
 from config.settings import settings
 
 # 配置结构化日志
@@ -62,12 +69,16 @@ llm_client = None
 secondary_router = None
 decay_batch_processor = None
 mcp_manager = None
-model_router = None  # 新增：模型路由器
+model_router = None
+async_memory_manager = None
+graph_database = None
+graph_store = None
+cxfc_manager = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global memory_manager, context_manager, acp_manager, llm_client, secondary_router, decay_batch_processor, mcp_manager, model_router
+    global memory_manager, context_manager, acp_manager, llm_client, secondary_router, decay_batch_processor, mcp_manager, model_router, async_memory_manager, graph_database, graph_store, cxfc_manager
 
     from backend.core.acp.manager import ACPManager
     from backend.core.context.manager import ContextManager
@@ -372,9 +383,83 @@ async def lifespan(app: FastAPI):
         logger.warning(f"批量衰减处理器启动失败: {e}")
         decay_batch_processor = None
 
+    # Initialize AsyncMemoryManager
+    async_memory_manager = None
+    try:
+        from backend.core.memory.async_manager import AsyncMemoryManager
+        async_memory_manager = AsyncMemoryManager(db_path=db_config.memories_db)
+        logger.info("异步记忆管理器已启动")
+    except Exception as e:
+        logger.warning(f"异步记忆管理器启动失败: {e}")
+
+    # Initialize GraphDatabase
+    graph_database = None
+    graph_store = None
+    try:
+        if getattr(settings.config, 'graph', None) and settings.config.graph.enabled:
+            from backend.core.graph.database import GraphDatabase
+            graph_database = GraphDatabase(db_path=settings.config.graph.db_path)
+            logger.info("图数据库已启动")
+            
+            from backend.core.memory.graph_store import SQLiteGraphStore
+            graph_store = SQLiteGraphStore(graph_database)
+            logger.info("图存储已启动")
+    except Exception as e:
+        logger.warning(f"图数据库启动失败: {e}")
+
+    # Initialize CXFCManager
+    cxfc_manager = None
+    try:
+        if getattr(settings.config, 'cxfc', None) and settings.config.cxfc.enabled:
+            from backend.core.cxfc.manager import CXFCManager
+            cxfc_manager = CXFCManager()
+            await cxfc_manager.initialize()
+            logger.info("CXFC管理器已启动")
+    except Exception as e:
+        logger.warning(f"CXFC管理器启动失败: {e}")
+
+    # Register graph tools
+    try:
+        if graph_database and graph_store:
+            from backend.core.tools.graph_tools import register_graph_tools
+            register_graph_tools(graph_database, graph_store)
+            logger.info("图数据库工具已注册")
+    except Exception as e:
+        logger.warning(f"图数据库工具注册失败: {e}")
+
+    # Set up ServiceState for dependency injection
+    service_state = ServiceState()
+    service_state.memory_manager = memory_manager
+    service_state.async_memory_manager = async_memory_manager
+    service_state.context_manager = context_manager
+    service_state.acp_manager = acp_manager
+    service_state.llm_client = llm_client
+    service_state.secondary_router = secondary_router
+    service_state.decay_batch_processor = decay_batch_processor
+    service_state.mcp_manager = mcp_manager
+    service_state.model_router = model_router
+    service_state.graph_database = graph_database
+    service_state.graph_store = graph_store
+    service_state.cxfc_manager = cxfc_manager
+    app.state.services = service_state
+
     yield
 
     logger.info("正在关闭CXHMS服务...")
+
+    # Shutdown CXFC manager
+    if cxfc_manager:
+        try:
+            await cxfc_manager.shutdown()
+        except Exception:
+            pass
+
+    # Close graph database
+    if graph_database:
+        try:
+            graph_database.close()
+        except Exception:
+            pass
 
     try:
         from backend.core.alarm import get_alarm_manager
@@ -455,6 +540,12 @@ app.include_router(service.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(backup.router, prefix="/api")
 app.include_router(websocket.router)
+app.include_router(memory_chat.router, prefix="/api")
+app.include_router(stats_router.router, prefix="/api")
+app.include_router(config_router.router, prefix="/api")
+app.include_router(vector_router.router, prefix="/api")
+app.include_router(graph_router.router, prefix="/api")
+app.include_router(cxfc_router.router, prefix="/api")
 
 app.add_exception_handler(CXHMSError, cxhms_exception_handler)
 app.add_exception_handler(HTTPException, http_exception_handler)
@@ -470,6 +561,9 @@ async def health_check():
         "acp_manager": acp_manager is not None,
         "llm_client": llm_client is not None,
         "model_router": model_router is not None,
+        "async_memory_manager": async_memory_manager is not None,
+        "graph_database": graph_database is not None,
+        "cxfc_manager": cxfc_manager is not None,
     }
     return HealthResponse(
         status="healthy" if all(components.values()) else "degraded",

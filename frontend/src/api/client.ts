@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosInstance, AxiosError, AxiosResponse } from 'axios';
 import type { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -91,18 +91,18 @@ class ApiClient {
 
   private _setupInterceptors(axiosInstance: AxiosInstance) {
     axiosInstance.interceptors.request.use(
-      (config) => {
+      (config: InternalAxiosRequestConfig) => {
         const token = localStorage.getItem('cxhms-token');
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
         return config;
       },
-      (error) => Promise.reject(error)
+      (error: AxiosError) => Promise.reject(error)
     );
 
     axiosInstance.interceptors.response.use(
-      (response) => response,
+      (response: AxiosResponse) => response,
       async (error: AxiosError) => {
         if (error.response?.status === 401) {
           localStorage.removeItem('cxhms-token');
@@ -436,7 +436,7 @@ class ApiClient {
     return response.data;
   }
 
-  async getStats() {
+  async getAdminStats() {
     const response = await this.client.get('/api/admin/stats');
     return response.data;
   }
@@ -890,6 +890,186 @@ class ApiClient {
 
   async getAvailableModels() {
     const response = await this.client.get('/api/service/models');
+    return response.data;
+  }
+
+  // ========== Stats API ==========
+
+  async getStats() {
+    const response = await this.client.get('/api/stats');
+    return response.data;
+  }
+
+  // ========== Graph Database API ==========
+
+  async createNode(data: { name: string; type: string; properties?: Record<string, unknown>; library?: string }) {
+    const response = await this.client.post('/api/nodes', data);
+    return response.data;
+  }
+
+  async getNodes(params?: { library?: string; type?: string; limit?: number; offset?: number }) {
+    const response = await this.client.get('/api/nodes', { params });
+    return response.data;
+  }
+
+  async getNode(nodeId: string) {
+    const response = await this.client.get(`/api/nodes/${nodeId}`);
+    return response.data;
+  }
+
+  async updateNode(nodeId: string, data: { name?: string; properties?: Record<string, unknown> }) {
+    const response = await this.client.put(`/api/nodes/${nodeId}`, data);
+    return response.data;
+  }
+
+  async deleteNode(nodeId: string) {
+    const response = await this.client.delete(`/api/nodes/${nodeId}`);
+    return response.data;
+  }
+
+  async createEdge(data: { source_id: string; target_id: string; relation: string; properties?: Record<string, unknown> }) {
+    const response = await this.client.post('/api/edges', data);
+    return response.data;
+  }
+
+  async getEdges(params?: { node_id?: string; relation?: string; limit?: number; offset?: number }) {
+    const response = await this.client.get('/api/edges', { params });
+    return response.data;
+  }
+
+  async deleteEdge(edgeId: string) {
+    const response = await this.client.delete(`/api/edges/${edgeId}`);
+    return response.data;
+  }
+
+  async traverseBFS(data: { start_node_id: string; max_depth?: number; max_nodes?: number; direction?: string }) {
+    const response = await this.client.post('/api/traverse/bfs', data);
+    return response.data;
+  }
+
+  async traverseDFS(data: { start_node_id: string; max_depth?: number; max_nodes?: number; direction?: string }) {
+    const response = await this.client.post('/api/traverse/dfs', data);
+    return response.data;
+  }
+
+  async graphSemanticSearch(data: { query: string; limit?: number; threshold?: number }) {
+    const response = await this.client.post('/api/semantic/search', data);
+    return response.data;
+  }
+
+  async graphHybridSearch(data: { query: string; filters?: Record<string, unknown>; limit?: number }) {
+    const response = await this.client.post('/api/semantic/hybrid', data);
+    return response.data;
+  }
+
+  async getShortestPath(data: { start_node_id: string; end_node_id: string; max_depth?: number }) {
+    const response = await this.client.post('/api/paths/shortest', data);
+    return response.data;
+  }
+
+  async pageRank(params?: { damping?: number; max_iterations?: number }) {
+    const response = await this.client.get('/api/algorithm/pagerank', { params });
+    return response.data;
+  }
+
+  async detectCommunities(params?: { algorithm?: string }) {
+    const response = await this.client.get('/api/algorithm/communities', { params });
+    return response.data;
+  }
+
+  async exportGraph(format: string = 'json') {
+    const response = await this.client.get('/api/export/json', { params: { format } });
+    return response.data;
+  }
+
+  // ========== Vector Database API ==========
+
+  async getVectorConfig() {
+    const response = await this.client.get('/api/vector/config');
+    return response.data;
+  }
+
+  async getVectorStatus() {
+    const response = await this.client.get('/api/vector/status');
+    return response.data;
+  }
+
+  async getVectorHealth() {
+    const response = await this.client.get('/api/vector/health');
+    return response.data;
+  }
+
+  async vectorSync() {
+    const response = await this.client.post('/api/vector/sync');
+    return response.data;
+  }
+
+  async vectorRebuild() {
+    const response = await this.client.post('/api/vector/rebuild');
+    return response.data;
+  }
+
+  async vectorSearch(data: { query: string; limit?: number }) {
+    const response = await this.client.post('/api/vector/search', data);
+    return response.data;
+  }
+
+  async getVectorStats() {
+    const response = await this.client.get('/api/vector/stats');
+    return response.data;
+  }
+
+  // ========== CXFC API ==========
+
+  async registerCXFCPlugin(data: { name: string; version: string; description?: string; capabilities?: string[] }) {
+    const response = await this.client.post('/api/cxfc/register', data);
+    return response.data;
+  }
+
+  async cxfcHeartbeat(pluginId: string) {
+    const response = await this.client.post(`/api/cxfc/heartbeat/${pluginId}`);
+    return response.data;
+  }
+
+  async cxfcDiscover() {
+    const response = await this.client.get('/api/cxfc/discover');
+    return response.data;
+  }
+
+  async cxfcSkills(pluginId?: string) {
+    const response = await this.client.get('/api/cxfc/skills', { params: { plugin_id: pluginId } });
+    return response.data;
+  }
+
+  async cxfcConnect(pluginId: string) {
+    const response = await this.client.post(`/api/cxfc/connect/${pluginId}`);
+    return response.data;
+  }
+
+  async cxfcDisconnect(pluginId: string) {
+    const response = await this.client.post(`/api/cxfc/disconnect/${pluginId}`);
+    return response.data;
+  }
+
+  // ========== Unified Config API ==========
+
+  async getConfig() {
+    const response = await this.client.get('/api/config');
+    return response.data;
+  }
+
+  async setConfig(data: Record<string, unknown>) {
+    const response = await this.client.put('/api/config', data);
+    return response.data;
+  }
+
+  async getConfigSection(section: string) {
+    const response = await this.client.get(`/api/config/${section}`);
+    return response.data;
+  }
+
+  async setConfigSection(section: string, data: Record<string, unknown>) {
+    const response = await this.client.put(`/api/config/${section}`, data);
     return response.data;
   }
 }

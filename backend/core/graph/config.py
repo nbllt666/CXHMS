@@ -1,0 +1,102 @@
+"""
+图数据库配置管理
+"""
+
+import os
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any
+
+
+@dataclass
+class WeaviateConfig:
+    url: str = "http://localhost:8080"
+    api_key: Optional[str] = None
+    vector_dim: int = 384
+    batch_size: int = 100
+    ef_construction: int = 128
+    max_connections: int = 16
+
+
+@dataclass
+class EmbeddingConfig:
+    model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    batch_size: int = 32
+    device: str = "cpu"
+    cache_folder: Optional[str] = None
+
+
+@dataclass
+class GraphConfig:
+    database_path: str = "data/graph.db"
+    auto_create_schema: bool = True
+    pool_size: int = 10
+    timeout: int = 30
+    weaviate: WeaviateConfig = field(default_factory=WeaviateConfig)
+    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
+
+
+_config: Optional[GraphConfig] = None
+
+
+def get_graph_config() -> GraphConfig:
+    global _config
+    if _config is not None:
+        return _config
+    try:
+        from backend.config import get_config
+        unified = get_config()
+        if hasattr(unified, 'graph') and unified.graph.enabled:
+            gc = unified.graph
+            _config = GraphConfig(
+                database_path=gc.database_path,
+                auto_create_schema=gc.auto_create_schema,
+                pool_size=gc.pool_size,
+                timeout=gc.timeout,
+                weaviate=WeaviateConfig(
+                    url=gc.weaviate.url,
+                    api_key=gc.weaviate.api_key,
+                    vector_dim=gc.weaviate.vector_dim,
+                    batch_size=gc.weaviate.batch_size,
+                    ef_construction=gc.weaviate.ef_construction,
+                    max_connections=gc.weaviate.max_connections,
+                ),
+                embedding=EmbeddingConfig(
+                    model=gc.embedding.model,
+                    batch_size=gc.embedding.batch_size,
+                    device=gc.embedding.device,
+                    cache_folder=gc.embedding.cache_folder,
+                ),
+            )
+    except Exception:
+        pass
+    if _config is None:
+        _config = _load_config_from_env()
+    return _config
+
+
+def _load_config_from_env() -> GraphConfig:
+    return GraphConfig(
+        database_path=os.getenv("GRAPH_DATABASE_PATH", "data/graph.db"),
+        auto_create_schema=os.getenv("GRAPH_AUTO_CREATE", "true").lower() == "true",
+        pool_size=int(os.getenv("GRAPH_POOL_SIZE", "10")),
+        timeout=int(os.getenv("GRAPH_TIMEOUT", "30")),
+        weaviate=WeaviateConfig(
+            url=os.getenv("WEAVIATE_URL", "http://localhost:8080"),
+            api_key=os.getenv("WEAVIATE_API_KEY"),
+            vector_dim=int(os.getenv("WEAVIATE_VECTOR_DIM", "384")),
+            batch_size=int(os.getenv("WEAVIATE_BATCH_SIZE", "100")),
+            ef_construction=int(os.getenv("WEAVIATE_EF_CONSTRUCTION", "128")),
+            max_connections=int(os.getenv("WEAVIATE_MAX_CONNECTIONS", "16")),
+        ),
+        embedding=EmbeddingConfig(
+            model=os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"),
+            batch_size=int(os.getenv("EMBEDDING_BATCH_SIZE", "32")),
+            device=os.getenv("EMBEDDING_DEVICE", "cpu"),
+            cache_folder=os.getenv("EMBEDDING_CACHE_FOLDER"),
+        ),
+    )
+
+
+def set_graph_config(config: GraphConfig) -> None:
+    global _config
+    _config = config

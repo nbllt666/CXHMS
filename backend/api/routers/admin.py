@@ -9,12 +9,12 @@ from backend.core.logging_config import get_contextual_logger
 router = APIRouter()
 logger = get_contextual_logger(__name__)
 
-ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "chenxi-admin-default-key-change-in-production")
+ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY")
 
 
 def verify_admin_key(x_api_key: Optional[str] = Header(None)) -> bool:
     """验证管理员 API Key"""
-    if not x_api_key:
+    if not ADMIN_API_KEY or not x_api_key:
         return False
     return x_api_key == ADMIN_API_KEY
 

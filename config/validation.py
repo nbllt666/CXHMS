@@ -44,7 +44,7 @@ class ConfigValidator:
 
     VALID_VALUES: Dict[str, Set[str]] = {
         "models.main.provider": {"ollama", "vllm", "openai", "anthropic", "deepseek", "local"},
-        "memory.vector_backend": {"milvus_lite", "qdrant", "weaviate"},
+        "memory.vector_backend": {"milvus_lite", "qdrant", "weaviate", "chroma", "weaviate_embedded"},
         "memory.decay_model": {"exponential", "ebbinghaus"},
     }
 

@@ -206,6 +206,7 @@ async def create_agent(request: AgentCreateRequest):
             "use_tools": request.use_tools,
             "memory_scene": request.memory_scene,
             "decay_model": request.decay_model,
+            "vision_enabled": request.vision_enabled if hasattr(request, 'vision_enabled') else False,
             "is_default": False,
             "created_at": now,
             "updated_at": now,

@@ -593,7 +593,7 @@ describe('API Client', () => {
       const mockStats = { total_memories: 100, total_sessions: 50 };
       mockGet.mockResolvedValueOnce({ data: mockStats });
 
-      const result = await api.getStats();
+      const result = await api.getAdminStats();
       expect(result.total_memories).toBe(100);
     });
   });

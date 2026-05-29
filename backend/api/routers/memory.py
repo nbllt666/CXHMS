@@ -47,6 +47,20 @@ class MemorySearchRequest(BaseModel):
     agent_id: str = "default"
 
 
+class PermanentMemoryCreateRequest(BaseModel):
+    content: str
+    tags: List[str] = []
+    metadata: Dict = {}
+    emotion_score: float = 0.0
+    source: str = "user"
+
+
+class PermanentMemoryUpdateRequest(BaseModel):
+    content: Optional[str] = None
+    tags: Optional[List[str]] = None
+    metadata: Optional[Dict] = None
+
+
 @router.get("/memories/agents")
 async def list_agent_memory_tables():
     """获取所有Agent的记忆表列表"""
@@ -298,23 +312,17 @@ async def get_memory_stats(workspace_id: str = "default"):
 
 
 @router.post("/memories/permanent")
-async def create_permanent_memory(
-    content: str,
-    tags: List[str] = None,
-    metadata: Dict = None,
-    emotion_score: float = 0.0,
-    source: str = "user",
-):
+async def create_permanent_memory(request: PermanentMemoryCreateRequest):
     from backend.api.app import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
         memory_id = memory_mgr.write_permanent_memory(
-            content=content,
-            tags=tags or [],
-            metadata=metadata or {},
-            emotion_score=emotion_score,
-            source=source,
+            content=request.content,
+            tags=request.tags,
+            metadata=request.metadata,
+            emotion_score=request.emotion_score,
+            source=request.source,
             is_from_main=True,
         )
 
@@ -357,15 +365,13 @@ async def list_permanent_memories(limit: int = 20, offset: int = 0, tags: List[s
 
 
 @router.put("/memories/permanent/{memory_id}")
-async def update_permanent_memory(
-    memory_id: int, content: str = None, tags: List[str] = None, metadata: Dict = None
-):
+async def update_permanent_memory(memory_id: int, request: PermanentMemoryUpdateRequest):
     from backend.api.app import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
         success = memory_mgr.update_permanent_memory(
-            memory_id=memory_id, content=content, tags=tags, metadata=metadata
+            memory_id=memory_id, content=request.content, tags=request.tags, metadata=request.metadata
         )
 
         if not success:
