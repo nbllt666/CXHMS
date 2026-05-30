@@ -209,7 +209,7 @@ class ACPManager:
             await self._discovery.stop()
             logger.info("ACP Discovery服务已停止")
 
-        self._save_data()
+        await self._save_data()
         logger.info("ACP管理器已停止")
 
     def _load_data(self):
@@ -257,7 +257,7 @@ class ACPManager:
             f"ACP数据加载完成: agents={len(self.agents)}, connections={len(self.connections)}, groups={len(self.groups)}"
         )
 
-    def _save_data(self):
+    def _save_data_sync(self):
         import yaml
 
         agents_file = self.data_dir / "agents.yaml"
@@ -283,11 +283,14 @@ class ACPManager:
 
         logger.info("ACP数据已保存")
 
+    async def _save_data(self):
+        await asyncio.to_thread(self._save_data_sync)
+
     async def register_agent(self, agent: ACPAgentInfo) -> ACPAgentInfo:
         async with self._lock:
             agent.last_seen = datetime.now().isoformat()
             self.agents[agent.id] = agent
-            self._save_data()
+            await self._save_data()
             return agent
 
     async def update_agent_status(self, agent_id: str, status: str) -> bool:
@@ -295,7 +298,7 @@ class ACPManager:
             if agent_id in self.agents:
                 self.agents[agent_id].status = status
                 self.agents[agent_id].last_seen = datetime.now().isoformat()
-                self._save_data()
+                await self._save_data()
                 return True
             return False
 
@@ -313,14 +316,14 @@ class ACPManager:
         async with self._lock:
             if agent_id in self.agents:
                 del self.agents[agent_id]
-                self._save_data()
+                await self._save_data()
                 return True
             return False
 
     async def create_connection(self, connection: ACPConnectionInfo) -> ACPConnectionInfo:
         async with self._lock:
             self.connections[connection.id] = connection
-            self._save_data()
+            await self._save_data()
             return connection
 
     async def get_connection(self, connection_id: str) -> Optional[ACPConnectionInfo]:
@@ -340,7 +343,7 @@ class ACPManager:
                 for key, value in kwargs.items():
                     if hasattr(conn, key):
                         setattr(conn, key, value)
-                self._save_data()
+                await self._save_data()
                 return True
             return False
 
@@ -348,7 +351,7 @@ class ACPManager:
         async with self._lock:
             if connection_id in self.connections:
                 del self.connections[connection_id]
-                self._save_data()
+                await self._save_data()
                 return True
             return False
 
@@ -356,7 +359,7 @@ class ACPManager:
         async with self._lock:
             self.groups[group.id] = group
             self.messages[group.id] = []
-            self._save_data()
+            await self._save_data()
             return group
 
     async def get_group(self, group_id: str) -> Optional[ACPGroupInfo]:
@@ -374,7 +377,7 @@ class ACPManager:
                     if hasattr(group, key):
                         setattr(group, key, value)
                 group.updated_at = datetime.now().isoformat()
-                self._save_data()
+                await self._save_data()
                 return True
             return False
 
@@ -384,7 +387,7 @@ class ACPManager:
                 del self.groups[group_id]
                 if group_id in self.messages:
                     del self.messages[group_id]
-                self._save_data()
+                await self._save_data()
                 return True
             return False
 
@@ -394,7 +397,7 @@ class ACPManager:
                 group = self.groups[group_id]
                 group.members.append(member)
                 group.updated_at = datetime.now().isoformat()
-                self._save_data()
+                await self._save_data()
                 return True
             return False
 
@@ -404,7 +407,7 @@ class ACPManager:
                 group = self.groups[group_id]
                 group.members = [m for m in group.members if m.get("agent_id") != agent_id]
                 group.updated_at = datetime.now().isoformat()
-                self._save_data()
+                await self._save_data()
                 return True
             return False
 
@@ -420,7 +423,7 @@ class ACPManager:
                     self.messages[agent_id] = []
                 self.messages[agent_id].append(message)
 
-            self._save_data()
+            await self._save_data()
             return message
 
     async def get_messages(
@@ -444,7 +447,7 @@ class ACPManager:
                         msg.is_read = True
                         marked += 1
             if marked > 0:
-                self._save_data()
+                await self._save_data()
         return marked
 
     async def get_statistics(self) -> Dict:

@@ -5,6 +5,7 @@
 
 import logging
 import os
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -516,10 +517,13 @@ class Settings:
     _config: Optional[CXHMSConfig] = None
     _config_path: Optional[str] = None
     _validation_result: Optional[ValidationResult] = None
+    _lock = threading.Lock()
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
         return cls._instance
 
     def __init__(self):

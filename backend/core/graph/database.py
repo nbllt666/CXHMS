@@ -142,10 +142,13 @@ class Database:
 
 
 _db_instance: Optional[Database] = None
+_db_lock = threading.Lock()
 
 
 def get_database(config: GraphConfig = None) -> Database:
     global _db_instance
     if _db_instance is None:
-        _db_instance = Database(config)
+        with _db_lock:
+            if _db_instance is None:
+                _db_instance = Database(config)
     return _db_instance

@@ -367,9 +367,11 @@ class SecondaryModelRouter:
             summary = content[:max_length] + "..." if len(content) > max_length else content
 
         # 更新记忆的摘要
+        old_metadata = memory.get("metadata", {}) or {}
+        new_metadata = {"summary": summary, "summarized_at": datetime.now().isoformat()}
         self.memory_manager.update_memory(
             memory_id=memory_id,
-            new_metadata={"summary": summary, "summarized_at": datetime.now().isoformat()},
+            new_metadata={**old_metadata, **new_metadata},
         )
 
         return SecondaryResult(
@@ -389,13 +391,16 @@ class SecondaryModelRouter:
         memory_id = params.get("memory_id")
         reason = params.get("reason", "")
 
+        memory = self.memory_manager.get_memory(memory_id)
+        old_metadata = memory.get("metadata", {}) if memory else {}
+        new_metadata = {
+            "archived": True,
+            "archive_reason": reason,
+            "archived_at": datetime.now().isoformat(),
+        }
         success = self.memory_manager.update_memory(
             memory_id=memory_id,
-            new_metadata={
-                "archived": True,
-                "archive_reason": reason,
-                "archived_at": datetime.now().isoformat(),
-            },
+            new_metadata={**old_metadata, **new_metadata},
         )
 
         if success:

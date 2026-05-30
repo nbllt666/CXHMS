@@ -215,9 +215,9 @@ class MemoryConversationEngine:
         message_lower = user_message.lower()
 
         # 确认关键词
-        confirm_patterns = [r"是|确认|确定|yes|confirm|ok|y"]
+        confirm_patterns = [r"是(?![\u4e00-\u9fff])|确认|确定|yes|confirm|ok|y\b"]
         # 取消关键词
-        cancel_patterns = [r"否|取消|不|no|cancel|n"]
+        cancel_patterns = [r"(?:否|不)(?![\u4e00-\u9fff])|取消|no|cancel|n\b"]
 
         is_confirm = any(re.search(p, message_lower) for p in confirm_patterns)
         is_cancel = any(re.search(p, message_lower) for p in cancel_patterns)

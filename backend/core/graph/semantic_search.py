@@ -137,10 +137,13 @@ class SemanticSearch:
 
                 for item in nodes:
                     score = item.get("_additional", {}).get("certainty", 0.0)
+                    node = GraphNode(
+                        id=item["node_id"],
+                        type=item.get("node_type", ""),
+                        text_content=item.get("text_content"),
+                    )
                     results.append(SemanticSearchResult(
-                        node_id=item["node_id"],
-                        node_type=item["node_type"],
-                        text_content=item["text_content"],
+                        node=node,
                         score=score,
                     ))
 
@@ -184,9 +187,7 @@ class SemanticSearch:
 
             if score > 0:
                 results.append(SemanticSearchResult(
-                    node_id=node.id,
-                    node_type=node.type,
-                    text_content=node.text_content,
+                    node=node,
                     score=score,
                 ))
 
@@ -203,11 +204,11 @@ class SemanticSearch:
                 return True
             except Exception as e:
                 logger.error(f"删除向量失败: {e}")
-        return True
+        return False
 
     def health_check(self) -> bool:
         if not self._client:
-            return True
+            return False
         try:
             self._client.schema.get()
             return True

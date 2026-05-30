@@ -128,8 +128,10 @@ class HybridSearch:
         for r in vector_results:
             if r.memory_id in merged_dict:
                 existing = merged_dict[r.memory_id]
-                existing.score = existing.score * (1 - vector_weight) + r.score * vector_weight
-                existing.content = r.content
+                new_score = r.score * vector_weight
+                if new_score > existing.score:
+                    existing.score = new_score
+                    existing.content = r.content
             else:
                 merged_dict[r.memory_id] = SearchResult(
                     memory_id=r.memory_id,

@@ -87,6 +87,14 @@ class MCPManager:
         self._http_clients: Dict[str, httpx.AsyncClient] = {}
         self._tool_registry = None
 
+    def __del__(self):
+        for server in self.servers.values():
+            if server.process and server.process.poll() is not None:
+                try:
+                    server.process.wait()
+                except Exception:
+                    pass
+
     def set_tool_registry(self, tool_registry):
         """设置工具注册表
 
@@ -276,6 +284,11 @@ class MCPManager:
             server.last_check = datetime.now().isoformat()
             server.error = None
         else:
+            if server.process and server.process.poll() is not None:
+                try:
+                    server.process.wait()
+                except Exception:
+                    pass
             server.status = "disconnected"
             server.last_check = datetime.now().isoformat()
             server.error = "进程已退出"

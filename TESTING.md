@@ -15,10 +15,12 @@
 
 | 文件 | 描述 |
 |------|------|
-| `frontend/src/lib/utils.test.ts` | 工具函数测试 |
+| `frontend/src/api/client.test.ts` | API 客户端测试 |
 | `frontend/src/store/chatStore.test.ts` | 聊天状态管理测试 |
 | `frontend/src/store/themeStore.test.ts` | 主题状态管理测试 |
-| `frontend/src/api/client.test.ts` | API 客户端测试 |
+| `frontend/src/components/Header.test.tsx` | Header 组件测试 |
+| `frontend/src/components/ErrorBoundary.test.tsx` | ErrorBoundary 组件测试 |
+| `frontend/src/components/AppLayout.test.tsx` | AppLayout 组件测试 |
 
 ### 运行前端测试
 
@@ -50,16 +52,28 @@ npm run test:coverage
 ```
 backend/tests/
 ├── conftest.py              # 测试配置和 fixtures
-├── test_api/                # API 端点测试
-│   ├── test_health.py       # 健康检查测试
-│   ├── test_chat.py         # 聊天 API 测试
+├── performance_test.py      # 性能测试
+├── test_memory_manager.py   # 记忆管理器测试
+├── test_thread_safety.py    # 线程安全测试
+├── test_tool_calling.py     # 工具调用测试
+├── test_api/                # API 端点测试 (8个文件)
 │   ├── test_agents.py       # Agent API 测试
-│   └── test_memory.py       # 记忆 API 测试
-├── test_core/               # 核心模块单元测试
-│   ├── test_memory_manager.py
-│   └── test_llm_client.py
+│   ├── test_archive.py      # 归档 API 测试
+│   ├── test_backup.py       # 备份 API 测试
+│   ├── test_chat.py         # 聊天 API 测试
+│   ├── test_context.py      # 上下文 API 测试
+│   ├── test_health.py       # 健康检查测试
+│   ├── test_memory.py       # 记忆 API 测试
+│   └── test_tools.py        # 工具 API 测试
+├── test_core/               # 核心模块单元测试 (6个文件)
+│   ├── test_chroma_store.py # Chroma 向量存储测试
+│   ├── test_hybrid_search.py# 混合搜索测试
+│   ├── test_llm_client.py   # LLM 客户端测试
+│   ├── test_memory_manager.py# 记忆管理器测试
+│   ├── test_utils.py        # 工具函数测试
+│   └── test_vector_sync.py  # 向量同步测试
 └── test_integration/        # 集成测试
-    └── test_chat_flow.py
+    └── test_chat_flow.py    # 聊天流程测试
 ```
 
 ### 运行后端测试
@@ -105,13 +119,12 @@ python run_tests.py --test backend/tests/test_api/test_health.py
 
 ### 前端测试覆盖
 
-1. **工具函数** (`utils.test.ts`)
-   - `cn()` - Tailwind 类名合并
-   - `formatDate()` - 日期格式化
-   - `formatRelativeTime()` - 相对时间格式化
-   - `truncateText()` - 文本截断
-   - `getImportanceColor()` - 重要性颜色
-   - `getImportanceLabel()` - 重要性标签
+1. **API 客户端** (`client.test.ts`)
+   - 健康检查
+   - 聊天 API
+   - Agent API
+   - 记忆 API
+   - 错误处理
 
 2. **状态管理** (`chatStore.test.ts`, `themeStore.test.ts`)
    - 初始状态验证
@@ -120,32 +133,41 @@ python run_tests.py --test backend/tests/test_api/test_health.py
    - 错误处理
    - 本地存储持久化
 
-3. **API 客户端** (`client.test.ts`)
-   - 健康检查
-   - 聊天 API
-   - Agent API
-   - 记忆 API
-   - 错误处理
+3. **组件测试** (`Header.test.tsx`, `ErrorBoundary.test.tsx`, `AppLayout.test.tsx`)
+   - Header 组件渲染与交互
+   - ErrorBoundary 错误边界捕获
+   - AppLayout 布局组件渲染
 
 ### 后端测试覆盖
 
-1. **API 测试** (`test_api/`)
-   - 健康检查端点
-   - 聊天端点 (发送消息、流式响应、历史记录)
-   - Agent 端点 (CRUD 操作)
-   - 记忆端点 (CRUD、搜索、统计)
+1. **API 测试** (`test_api/` - 8个文件)
+   - 健康检查端点 (`test_health.py`)
+   - 聊天端点 (`test_chat.py`) - 发送消息、流式响应、历史记录
+   - Agent 端点 (`test_agents.py`) - CRUD 操作
+   - 归档端点 (`test_archive.py`) - 归档操作
+   - 备份端点 (`test_backup.py`) - 备份操作
+   - 上下文端点 (`test_context.py`) - 上下文管理
+   - 记忆端点 (`test_memory.py`) - CRUD、搜索、统计
+   - 工具端点 (`test_tools.py`) - 工具调用
    - 参数验证
    - 错误处理
 
-2. **核心模块测试** (`test_core/`)
-   - 记忆管理器 (添加、获取、更新、删除)
-   - 会话管理
-   - Agent 管理
-   - LLM 客户端
-   - 嵌入生成
+2. **核心模块测试** (`test_core/` - 6个文件)
+   - Chroma 向量存储 (`test_chroma_store.py`) - 向量存储操作
+   - 混合搜索 (`test_hybrid_search.py`) - 混合搜索功能
+   - LLM 客户端 (`test_llm_client.py`) - LLM 调用与响应
+   - 记忆管理器 (`test_memory_manager.py`) - 添加、获取、更新、删除
+   - 工具函数 (`test_utils.py`) - 通用工具函数
+   - 向量同步 (`test_vector_sync.py`) - 向量同步操作
 
-3. **集成测试** (`test_integration/`)
-   - 端到端聊天流程
+3. **根级测试** (4个文件)
+   - 性能测试 (`performance_test.py`) - 系统性能基准
+   - 记忆管理器测试 (`test_memory_manager.py`) - 记忆管理器集成测试
+   - 线程安全测试 (`test_thread_safety.py`) - 并发安全验证
+   - 工具调用测试 (`test_tool_calling.py`) - 工具调用流程
+
+4. **集成测试** (`test_integration/`)
+   - 端到端聊天流程 (`test_chat_flow.py`)
    - 多端点协调
    - API 文档访问
 
@@ -154,17 +176,28 @@ python run_tests.py --test backend/tests/test_api/test_health.py
 ### 前端配置 (`vitest.config.ts`)
 
 ```typescript
+import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react';
+import { resolve } from 'path';
+
 export default defineConfig({
+  plugins: [react()],
   test: {
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html']
-    }
-  }
-})
+      reporter: ['text', 'json', 'html'],
+      exclude: ['node_modules/', 'src/test/', '**/*.d.ts', '**/*.config.*', '**/mockData.ts'],
+    },
+  },
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, './src'),
+    },
+  },
+});
 ```
 
 ### 后端配置 (`pytest.ini`)
@@ -173,11 +206,18 @@ export default defineConfig({
 [pytest]
 testpaths = backend/tests
 python_files = test_*.py
-addopts = -v --tb=short --strict-markers
+python_classes = Test*
+python_functions = test_*
+addopts = 
+    -v
+    --tb=short
+    --strict-markers
+    -ra
 markers =
     unit: Unit tests
     integration: Integration tests
     api: API tests
+    slow: Slow tests
 ```
 
 ## 编写新测试
@@ -242,9 +282,10 @@ jobs:
 
 ## 测试状态
 
-- ✅ 前端测试: 4 个测试文件
-- ✅ 后端 API 测试: 30 个测试用例
-- ✅ 后端单元测试: 2 个测试文件
+- ✅ 前端测试: 6 个测试文件
+- ✅ 后端 API 测试: 8 个测试文件
+- ✅ 后端核心测试: 6 个测试文件
+- ✅ 后端根级测试: 4 个测试文件
 - ✅ 集成测试: 1 个测试文件
 
-总计: **30+ 测试用例** 覆盖所有主要功能模块
+总计: **17 个后端测试文件 + 6 个前端测试文件** 覆盖所有主要功能模块

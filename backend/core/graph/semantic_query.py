@@ -151,7 +151,7 @@ class SemanticQueryManager(BaseGraphRepository):
         return visited
 
     def _extract_node_text(self, node: GraphNode) -> str:
-        parts = [node.name or ""]
+        parts = [node.text_content or ""]
         if node.type:
             parts.append(node.type)
         if node.properties:
@@ -167,7 +167,7 @@ class SemanticQueryManager(BaseGraphRepository):
     def _get_query_embedding(self, query: str) -> Optional[List[float]]:
         try:
             vectorizer = get_vectorizer()
-            return vectorizer.embed(query)
+            return vectorizer.encode(query)
         except Exception as e:
             logger.warning(f"Failed to get query embedding: {e}")
             return None
@@ -175,7 +175,7 @@ class SemanticQueryManager(BaseGraphRepository):
     def _get_text_embedding(self, text: str) -> Optional[List[float]]:
         try:
             vectorizer = get_vectorizer()
-            return vectorizer.embed(text)
+            return vectorizer.encode(text)
         except Exception as e:
             logger.warning(f"Failed to get text embedding: {e}")
             return None

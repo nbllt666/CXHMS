@@ -52,7 +52,7 @@ export function ArchivePage() {
     try {
       const result = await api.autoArchiveProcess();
       setProcessResult(
-        `归档完成：归档 ${result.results.archived.length} 条，合并 ${result.results.merged.length} 条`
+        `归档完成：归档 ${result.results?.archived?.length ?? 0} 条，合并 ${result.results?.merged?.length ?? 0} 条`
       );
       refetchStats();
     } catch {

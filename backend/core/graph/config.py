@@ -3,6 +3,7 @@
 """
 
 import os
+import logging
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any
 
@@ -11,7 +12,7 @@ from typing import Optional, Dict, Any
 class WeaviateConfig:
     url: str = "http://localhost:8080"
     api_key: Optional[str] = None
-    vector_dim: int = 384
+    vector_dim: int = 768
     batch_size: int = 100
     ef_construction: int = 128
     max_connections: int = 16
@@ -36,6 +37,8 @@ class GraphConfig:
 
 
 _config: Optional[GraphConfig] = None
+
+logger = logging.getLogger(__name__)
 
 
 def get_graph_config() -> GraphConfig:
@@ -67,8 +70,8 @@ def get_graph_config() -> GraphConfig:
                     cache_folder=gc.embedding.cache_folder,
                 ),
             )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Failed to load graph config from settings: {e}")
     if _config is None:
         _config = _load_config_from_env()
     return _config
@@ -83,7 +86,7 @@ def _load_config_from_env() -> GraphConfig:
         weaviate=WeaviateConfig(
             url=os.getenv("WEAVIATE_URL", "http://localhost:8080"),
             api_key=os.getenv("WEAVIATE_API_KEY"),
-            vector_dim=int(os.getenv("WEAVIATE_VECTOR_DIM", "384")),
+            vector_dim=int(os.getenv("WEAVIATE_VECTOR_DIM", "768")),
             batch_size=int(os.getenv("WEAVIATE_BATCH_SIZE", "100")),
             ef_construction=int(os.getenv("WEAVIATE_EF_CONSTRUCTION", "128")),
             max_connections=int(os.getenv("WEAVIATE_MAX_CONNECTIONS", "16")),

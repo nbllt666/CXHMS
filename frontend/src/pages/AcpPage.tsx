@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Bot,
@@ -40,7 +40,6 @@ export function AcpPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
-  // Fetch ACP stats
   const { data: stats, isLoading: statsLoading } = useQuery<AcpStats>({
     queryKey: ['acp-stats'],
     queryFn: async () => {
@@ -50,17 +49,15 @@ export function AcpPage() {
     refetchInterval: 10000,
   });
 
-  // Fetch agents list
   const { data: agents, isLoading: agentsLoading } = useQuery<Agent[]>({
     queryKey: ['acp-agents'],
     queryFn: async () => {
-      const response = await api.getAgents();
+      const response = await api.getAcpAgents();
       return response.agents || [];
     },
     refetchInterval: 5000,
   });
 
-  // Create agent mutation
   const createAgentMutation = useMutation({
     mutationFn: api.createAgent,
     onSuccess: () => {
@@ -70,7 +67,6 @@ export function AcpPage() {
     },
   });
 
-  // Update agent mutation
   const updateAgentMutation = useMutation({
     mutationFn: ({
       id,
@@ -91,7 +87,6 @@ export function AcpPage() {
     },
   });
 
-  // Delete agent mutation
   const deleteAgentMutation = useMutation({
     mutationFn: api.deleteAgent,
     onSuccess: () => {
@@ -101,7 +96,6 @@ export function AcpPage() {
     },
   });
 
-  // Toggle agent status
   const toggleAgentStatus = (agent: Agent) => {
     updateAgentMutation.mutate({
       id: agent.id,
@@ -111,7 +105,6 @@ export function AcpPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -129,7 +122,6 @@ export function AcpPage() {
         </button>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard
           title="总代理数"
@@ -143,7 +135,9 @@ export function AcpPage() {
           icon={Activity}
           loading={statsLoading}
           trend={
-            stats ? `${Math.round((stats.active_agents / stats.total_agents) * 100)}%` : undefined
+            stats
+              ? `${stats.total_agents > 0 ? Math.round((stats.active_agents / stats.total_agents) * 100) : 0}%`
+              : undefined
           }
         />
         <StatCard
@@ -160,7 +154,6 @@ export function AcpPage() {
         />
       </div>
 
-      {/* Agents List */}
       <div className="bg-card rounded-lg border border-border">
         <div className="p-4 border-b border-border flex items-center justify-between">
           <h2 className="font-semibold flex items-center gap-2">
@@ -307,7 +300,6 @@ export function AcpPage() {
         )}
       </div>
 
-      {/* Create Modal */}
       {isCreateModalOpen && (
         <AgentModal
           title="创建代理"
@@ -317,7 +309,6 @@ export function AcpPage() {
         />
       )}
 
-      {/* Edit Modal */}
       {isEditModalOpen && selectedAgent && (
         <AgentModal
           title="编辑代理"
@@ -334,7 +325,6 @@ export function AcpPage() {
   );
 }
 
-// Stat Card Component
 function StatCard({
   title,
   value,
@@ -370,7 +360,6 @@ function StatCard({
   );
 }
 
-// Agent Modal Component
 interface AgentModalProps {
   title: string;
   agent?: Agent;

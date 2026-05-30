@@ -978,6 +978,410 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 ---
 
+## 图数据库 API
+
+### 1. 创建节点
+
+**端点**: `POST /api/nodes`
+
+**请求体**:
+```json
+{
+  "type": "person",
+  "name": "张三",
+  "properties": {"age": 30, "occupation": "工程师"},
+  "content": "张三是一名软件工程师"
+}
+```
+
+### 2. 获取节点列表
+
+**端点**: `GET /api/nodes`
+
+**参数**:
+- `type` (string, 可选): 节点类型
+- `limit` (integer, 可选): 返回数量限制
+- `offset` (integer, 可选): 偏移量
+
+### 3. 获取节点详情
+
+**端点**: `GET /api/nodes/{node_id}`
+
+### 4. 更新节点
+
+**端点**: `PUT /api/nodes/{node_id}`
+
+**请求体**:
+```json
+{
+  "name": "张三",
+  "properties": {"age": 31}
+}
+```
+
+### 5. 删除节点
+
+**端点**: `DELETE /api/nodes/{node_id}`
+
+### 6. 创建边
+
+**端点**: `POST /api/edges`
+
+**请求体**:
+```json
+{
+  "source_id": "node-1",
+  "target_id": "node-2",
+  "type": "knows",
+  "properties": {"since": "2020"},
+  "weight": 1.0
+}
+```
+
+### 7. 获取边列表
+
+**端点**: `GET /api/edges`
+
+**参数**:
+- `source_id` (string, 可选): 源节点ID
+- `target_id` (string, 可选): 目标节点ID
+- `type` (string, 可选): 边类型
+
+### 8. 删除边
+
+**端点**: `DELETE /api/edges/{edge_id}`
+
+### 9. BFS 遍历
+
+**端点**: `POST /api/traverse/bfs`
+
+**请求体**:
+```json
+{
+  "start_node_id": "node-1",
+  "max_depth": 3,
+  "edge_types": ["knows"],
+  "limit": 50
+}
+```
+
+### 10. DFS 遍历
+
+**端点**: `POST /api/traverse/dfs`
+
+**请求体**: 同 BFS
+
+### 11. 图语义搜索
+
+**端点**: `POST /api/semantic/search`
+
+**请求体**:
+```json
+{
+  "query": "软件工程师",
+  "limit": 10,
+  "min_score": 0.5
+}
+```
+
+### 12. 图混合搜索
+
+**端点**: `POST /api/semantic/hybrid`
+
+**请求体**:
+```json
+{
+  "query": "软件工程师",
+  "limit": 10,
+  "vector_weight": 0.7,
+  "keyword_weight": 0.3
+}
+```
+
+### 13. 最短路径
+
+**端点**: `POST /api/paths/shortest`
+
+**请求体**:
+```json
+{
+  "source_id": "node-1",
+  "target_id": "node-2",
+  "max_depth": 5
+}
+```
+
+### 14. PageRank 算法
+
+**端点**: `GET /api/algorithm/pagerank`
+
+**参数**:
+- `iterations` (integer, 可选): 迭代次数
+- `damping` (float, 可选): 阻尼系数
+
+### 15. 社区检测
+
+**端点**: `GET /api/algorithm/communities`
+
+**参数**:
+- `algorithm` (string, 可选): 算法类型
+- `resolution` (float, 可选): 分辨率参数
+
+### 16. 导出图数据
+
+**端点**: `GET /api/export/json`
+
+---
+
+## 向量数据库 API
+
+### 1. 获取向量配置
+
+**端点**: `GET /api/vector/config`
+
+### 2. 获取向量状态
+
+**端点**: `GET /api/vector/status`
+
+### 3. 向量健康检查
+
+**端点**: `GET /api/vector/health`
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "health": {
+    "backend": "weaviate",
+    "connected": true,
+    "vector_count": 1000
+  }
+}
+```
+
+### 4. 向量同步
+
+**端点**: `POST /api/vector/sync`
+
+### 5. 向量重建
+
+**端点**: `POST /api/vector/rebuild`
+
+### 6. 向量搜索
+
+**端点**: `POST /api/vector/search`
+
+**请求体**:
+```json
+{
+  "query": "搜索内容",
+  "limit": 10,
+  "threshold": 0.7
+}
+```
+
+### 7. 向量统计
+
+**端点**: `GET /api/vector/stats`
+
+---
+
+## CXFC 插件协议 API
+
+### 1. 注册插件
+
+**端点**: `POST /api/cxfc/register`
+
+**请求体**:
+```json
+{
+  "plugin_id": "my-plugin",
+  "name": "我的插件",
+  "version": "1.0.0",
+  "description": "插件描述",
+  "skills": [
+    {"name": "skill1", "description": "技能1", "parameters": {}}
+  ]
+}
+```
+
+### 2. 插件心跳
+
+**端点**: `POST /api/cxfc/heartbeat/{plugin_id}`
+
+### 3. 发现插件
+
+**端点**: `GET /api/cxfc/discover`
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "plugins": [
+    {
+      "plugin_id": "my-plugin",
+      "name": "我的插件",
+      "status": "online",
+      "skills": [...]
+    }
+  ]
+}
+```
+
+### 4. 获取插件技能
+
+**端点**: `GET /api/cxfc/skills`
+
+**参数**:
+- `plugin_id` (string, 可选): 插件ID
+
+### 5. 连接插件
+
+**端点**: `POST /api/cxfc/connect/{plugin_id}`
+
+### 6. 断开插件
+
+**端点**: `POST /api/cxfc/disconnect/{plugin_id}`
+
+---
+
+## 配置管理 API
+
+### 1. 获取全部配置
+
+**端点**: `GET /api/config`
+
+### 2. 设置全部配置
+
+**端点**: `PUT /api/config`
+
+**请求体**: 完整的 YAML 配置 JSON 表示
+
+### 3. 获取配置分区
+
+**端点**: `GET /api/config/{section}`
+
+**参数**:
+- `section` (string): 配置分区名（server, models, memory, tools, acp 等）
+
+### 4. 设置配置分区
+
+**端点**: `PUT /api/config/{section}`
+
+**请求体**: 该分区的配置 JSON
+
+---
+
+## 统计 API
+
+### 1. 获取系统统计
+
+**端点**: `GET /api/stats`
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "stats": {
+    "total_memories": 100,
+    "total_sessions": 50,
+    "total_agents": 5,
+    "total_tools": 10,
+    "uptime": 3600
+  }
+}
+```
+
+---
+
+## 服务管理 API
+
+### 1. 获取服务状态
+
+**端点**: `GET /api/service/status`
+
+### 2. 启动服务
+
+**端点**: `POST /api/service/start`
+
+### 3. 停止服务
+
+**端点**: `POST /api/service/stop`
+
+### 4. 重启服务
+
+**端点**: `POST /api/service/restart`
+
+### 5. 获取服务日志
+
+**端点**: `GET /api/service/logs`
+
+**参数**:
+- `lines` (integer, 可选): 返回日志行数
+
+### 6. 获取服务配置
+
+**端点**: `GET /api/service/config`
+
+### 7. 更新服务配置
+
+**端点**: `POST /api/service/config`
+
+### 8. 获取环境信息
+
+**端点**: `GET /api/service/environment`
+
+### 9. 获取可用模型
+
+**端点**: `GET /api/service/models`
+
+---
+
+## 备份恢复 API
+
+### 1. 创建备份
+
+**端点**: `POST /api/backup`
+
+**请求体**:
+```json
+{
+  "include_memories": true,
+  "include_sessions": true,
+  "include_agents": true,
+  "include_config": true
+}
+```
+
+### 2. 恢复备份
+
+**端点**: `POST /api/restore`
+
+**请求体**:
+```json
+{
+  "backup_id": "backup-20260216"
+}
+```
+
+---
+
+## WebSocket API
+
+### 连接
+
+**端点**: `ws://localhost:8000/ws`
+
+### 消息格式
+```json
+{
+  "type": "chat|alarm|system",
+  "data": {}
+}
+```
+
+---
+
 ## 注意事项
 
 1. **认证**: 当前版本未实现认证，生产环境请配置API密钥
@@ -985,6 +1389,8 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 3. **速率限制**: 当前未实现速率限制，建议生产环境配置
 4. **数据持久化**: 使用SQLite数据库，生产环境建议使用PostgreSQL
 5. **向量搜索**: 支持Milvus Lite和Qdrant，根据配置选择
+6. **图数据库**: 图数据库功能依赖后端图存储引擎，当前支持 NetworkX 内存图；生产环境建议集成 Neo4j 等持久化图数据库以获得更好的性能和可靠性
+7. **CXFC 插件协议**: CXFC 插件通过心跳机制维持在线状态，插件离线后系统会自动标记其状态为不可用；插件注册时需声明技能列表，系统据此进行技能发现与路由
 
 ---
 

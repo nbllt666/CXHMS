@@ -121,7 +121,7 @@ class GraphExporter:
             data_weight.set("key", "d3")
             data_weight.text = str(weight)
 
-            label = edge_data.get("type", "")
+            label = edge_data.get("relation_type", "")
             data_label = ET.SubElement(edge_elem, "data")
             data_label.set("key", "d4")
             data_label.text = label
@@ -176,7 +176,7 @@ class GraphExporter:
             edge_data = dict(row)
             source = edge_data["source_id"]
             target = edge_data["target_id"]
-            edge_type = edge_data.get("type", "")
+            edge_type = edge_data.get("relation_type", "")
             weight = edge_data.get("weight", 1.0)
 
             if source not in node_ids_seen or target not in node_ids_seen:
@@ -215,7 +215,7 @@ class GraphExporter:
             "id": row["id"],
             "source_id": row["source_id"],
             "target_id": row["target_id"],
-            "type": row.get("type", ""),
+            "type": row.get("relation_type", ""),
             "weight": row.get("weight", 1.0),
             "properties": json.loads(row["properties"]) if row.get("properties") else {},
             "created_at": row.get("created_at", ""),

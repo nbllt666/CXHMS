@@ -29,6 +29,8 @@ class ApiClient {
   private controlClient: AxiosInstance;
   private maxRetries: number = 3;
   private retryDelay: number = 1000;
+  private maxRetryDelay: number = 30000;
+  private maxCacheSize: number = 100;
   private cache: Map<string, { data: unknown; timestamp: number; ttl: number }>;
 
   constructor() {
@@ -70,6 +72,12 @@ class ApiClient {
   }
 
   private _setCache(key: string, data: unknown, ttl: number = 60000): void {
+    if (this.cache.size >= this.maxCacheSize) {
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.cache.delete(oldestKey);
+      }
+    }
     this.cache.set(key, {
       data,
       timestamp: Date.now(),
@@ -121,8 +129,9 @@ class ApiClient {
 
         if (config && config.retryCount !== undefined && config.retryCount < this.maxRetries) {
           config.retryCount += 1;
+          const delay = Math.min(this.retryDelay * Math.pow(2, config.retryCount - 1), this.maxRetryDelay);
           await new Promise((resolve) =>
-            setTimeout(resolve, this.retryDelay * (config.retryCount || 1))
+            setTimeout(resolve, delay)
           );
           return axiosInstance.request(config as AxiosRequestConfig);
         }
@@ -629,7 +638,8 @@ class ApiClient {
       result?: unknown;
     }) => void,
     agentId?: string,
-    images?: string[]
+    images?: string[],
+    signal?: AbortSignal
   ) {
     try {
       const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
@@ -643,6 +653,7 @@ class ApiClient {
           agent_id: agentId || 'default',
           images: images && images.length > 0 ? images : undefined,
         }),
+        signal,
       });
 
       if (!response.ok) {
@@ -823,7 +834,8 @@ class ApiClient {
       tool_name?: string;
       result?: unknown;
       thinking?: string;
-    }) => void
+    }) => void,
+    signal?: AbortSignal
   ) {
     try {
       const response = await fetch(`${API_BASE_URL}/api/memory-agent/chat/stream`, {
@@ -833,6 +845,7 @@ class ApiClient {
           Authorization: `Bearer ${localStorage.getItem('cxhms-token') || ''}`,
         },
         body: JSON.stringify({ message }),
+        signal,
       });
 
       if (!response.ok) {

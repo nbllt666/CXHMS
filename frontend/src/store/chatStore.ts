@@ -31,6 +31,7 @@ interface ChatState {
   currentAgentId: string | null;
   isLoadingAgents: boolean;
   agentsError: string | null;
+  isHydrated: boolean;
   setAgents: (agents: Agent[]) => void;
   setCurrentAgentId: (id: string | null) => void;
   fetchAgents: () => Promise<void>;
@@ -56,6 +57,7 @@ export const useChatStore = create<ChatState>()(
       currentAgentId: null,
       isLoadingAgents: false,
       agentsError: null,
+      isHydrated: false,
 
       setAgents: (agents) => set({ agents }),
 
@@ -66,7 +68,7 @@ export const useChatStore = create<ChatState>()(
         try {
           const data = await api.getAgents();
           const filteredAgents = data.filter((agent: Agent) => agent.id !== 'memory-agent');
-          set({ agents: filteredAgents });
+          set({ agents: filteredAgents, isHydrated: true });
 
           const { currentAgentId } = get();
           if (!currentAgentId && filteredAgents.length > 0) {
@@ -76,7 +78,7 @@ export const useChatStore = create<ChatState>()(
           }
         } catch (error) {
           console.error('Failed to fetch agents:', error);
-          set({ agentsError: '加载失败' });
+          set({ agentsError: '加载失败', isHydrated: true });
         } finally {
           set({ isLoadingAgents: false });
         }
@@ -95,7 +97,8 @@ export const useChatStore = create<ChatState>()(
         set({ isLoadingSessions: true, sessionsError: null });
         try {
           const data = await api.getSessions();
-          set({ sessions: data.sessions || [] });
+          const sessionsList = Array.isArray(data) ? data : data.sessions || [];
+          set({ sessions: sessionsList });
         } catch (error) {
           console.error('Failed to fetch sessions:', error);
           set({ sessionsError: '加载失败' });

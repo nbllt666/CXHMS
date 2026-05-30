@@ -275,7 +275,7 @@ def user_graph_merge_entities(entity1_id: str, entity2_id: str) -> Dict[str, Any
             return {"error": f"实体 {entity2_id} 不存在"}
         merged_memory_ids = list(set(entity1.memory_ids + entity2.memory_ids))
         merged_properties = {**entity1.properties, **entity2.properties}
-        _graph_store.update_entity(entity1_id, {"memory_ids": merged_memory_ids, "properties": merged_properties}, GraphLibrary.USER)
+        _graph_store.update_entity(entity1_id, {"memory_ids": merged_memory_ids, **merged_properties}, GraphLibrary.USER)
         _graph_store.delete_entity(entity2_id, GraphLibrary.USER, hard=False)
         return {
             "status": "success",
@@ -628,7 +628,7 @@ def thing_graph_merge_entities(entity1_id: str, entity2_id: str) -> Dict[str, An
             return {"error": f"实体 {entity2_id} 不存在"}
         merged_memory_ids = list(set(entity1.memory_ids + entity2.memory_ids))
         merged_properties = {**entity1.properties, **entity2.properties}
-        _graph_store.update_entity(entity1_id, {"memory_ids": merged_memory_ids, "properties": merged_properties}, GraphLibrary.THING)
+        _graph_store.update_entity(entity1_id, {"memory_ids": merged_memory_ids, **merged_properties}, GraphLibrary.THING)
         _graph_store.delete_entity(entity2_id, GraphLibrary.THING, hard=False)
         return {
             "status": "success",
@@ -980,7 +980,7 @@ def concept_graph_merge_entities(entity1_id: str, entity2_id: str) -> Dict[str, 
             return {"error": f"实体 {entity2_id} 不存在"}
         merged_memory_ids = list(set(entity1.memory_ids + entity2.memory_ids))
         merged_properties = {**entity1.properties, **entity2.properties}
-        _graph_store.update_entity(entity1_id, {"memory_ids": merged_memory_ids, "properties": merged_properties}, GraphLibrary.CONCEPT)
+        _graph_store.update_entity(entity1_id, {"memory_ids": merged_memory_ids, **merged_properties}, GraphLibrary.CONCEPT)
         _graph_store.delete_entity(entity2_id, GraphLibrary.CONCEPT, hard=False)
         return {
             "status": "success",
@@ -1334,7 +1334,7 @@ def event_graph_merge_entities(entity1_id: str, entity2_id: str) -> Dict[str, An
             return {"error": f"实体 {entity2_id} 不存在"}
         merged_memory_ids = list(set(entity1.memory_ids + entity2.memory_ids))
         merged_properties = {**entity1.properties, **entity2.properties}
-        _graph_store.update_entity(entity1_id, {"memory_ids": merged_memory_ids, "properties": merged_properties}, GraphLibrary.EVENT)
+        _graph_store.update_entity(entity1_id, {"memory_ids": merged_memory_ids, **merged_properties}, GraphLibrary.EVENT)
         _graph_store.delete_entity(entity2_id, GraphLibrary.EVENT, hard=False)
         return {
             "status": "success",
@@ -1703,8 +1703,7 @@ def register_graph_tools():
             name=name,
             description=description,
             parameters=parameters,
-            handler=func,
-            models=models,
+            function=func,
         )
 
     return len(all_tools)

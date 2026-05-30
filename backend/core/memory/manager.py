@@ -159,7 +159,7 @@ class MemoryManager:
                     is_deleted BOOLEAN DEFAULT FALSE,
                     source VARCHAR(50) DEFAULT 'user',
                     workspace_id VARCHAR(100) DEFAULT 'default',
-                    agent_id VARCHAR(100) DEFAULT '{agent_id}'
+                    agent_id VARCHAR(100) DEFAULT 'default'
                 )
             """
             )
@@ -747,15 +747,6 @@ class MemoryManager:
             raise
 
     def get_memory(self, memory_id: int, include_deleted: bool = False) -> Optional[Dict]:
-        """获取记忆
-
-        Args:
-            memory_id: 记忆ID
-            include_deleted: 是否包含已删除的记忆
-
-        Returns:
-            记忆字典，如果不存在则返回None
-        """
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -769,6 +760,22 @@ class MemoryManager:
 
             if row:
                 return self._row_to_memory(row)
+
+            cursor.execute("SELECT table_name FROM agent_memory_tables")
+            agent_tables = [r[0] for r in cursor.fetchall()]
+
+            for table_name in agent_tables:
+                try:
+                    agent_query = f"SELECT * FROM {table_name} WHERE id = ?"
+                    if not include_deleted:
+                        agent_query += " AND is_deleted = FALSE"
+                    cursor.execute(agent_query, (memory_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        return self._row_to_memory(row)
+                except Exception:
+                    continue
+
             return None
         except Exception as e:
             logger.error(f"获取记忆失败: {e}", exc_info=True)
@@ -1487,8 +1494,9 @@ class MemoryManager:
             params = [workspace_id]
 
             if query:
-                conditions.append("content LIKE ?")
-                params.append(f"%{query}%")
+                escaped_query = query.replace('%', '\\%').replace('_', '\\_')
+                conditions.append("content LIKE ? ESCAPE '\\'")
+                params.append(f"%{escaped_query[:500]}%")
 
             if memory_type:
                 conditions.append("type = ?")
@@ -1496,8 +1504,9 @@ class MemoryManager:
 
             if tags:
                 for tag in tags:
-                    conditions.append("tags LIKE ?")
-                    params.append(f'%"{tag}"%')
+                    escaped_tag = tag.replace('%', '\\%').replace('_', '\\_')
+                    conditions.append("tags LIKE ? ESCAPE '\\'")
+                    params.append(f'%"{escaped_tag[:100]}"%')
 
             where_clause = " AND ".join(conditions)
             params.append(limit * 2)

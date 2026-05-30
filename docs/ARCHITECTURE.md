@@ -9,30 +9,38 @@ CXHMS (CX-O History & Memory Service) 是一个AI代理中间层服务，提供�
 ### 整体架构图
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         CXHMS 服务层                              │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
-│  │   API    │  │  WebUI   │  │  Memory  │  │  Tools   │        │
-│  │  Layer   │  │  Layer   │  │  Layer   │  │  Layer   │        │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘        │
-│       │             │             │             │               │
-│  ┌────▼─────────────▼─────────────▼─────────────▼─────┐        │
-│  │              Core Services Layer                   │        │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐  │        │
-│  │  │ Memory  │ │ Context │ │  Tools  │ │   ACP   │  │        │
-│  │  │ Manager │ │ Manager │ │Registry │ │ Manager │  │        │
-│  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘  │        │
-│  └───────┼───────────┼───────────┼───────────┼────────┘        │
-│          │           │           │           │                  │
-│  ┌───────▼───────────▼───────────▼───────────▼────────┐        │
-│  │              Storage Layer                         │        │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐  │        │
-│  │  │ SQLite  │ │  Redis  │ │ Milvus  │ │ Qdrant  │  │        │
-│  │  │ (Local) │ │ (Cache) │ │  (Lite) │ │(Server) │  │        │
-│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘  │        │
-│  └────────────────────────────────────────────────────┘        │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                            CXHMS 服务层                                   │
+├──────────────────────────────────────────────────────────────────────────┤
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
+│  │   API    │  │  WebUI   │  │  Memory  │  │  Tools   │  │WebSocket │  │
+│  │  Layer   │  │  Layer   │  │  Layer   │  │  Layer   │  │  Layer   │  │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  │
+│       │             │             │             │             │          │
+│  ┌────▼─────────────▼─────────────▼─────────────▼─────────────▼────┐    │
+│  │                      Core Services Layer                        │    │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐  │    │
+│  │  │ Memory  │ │ Context │ │  Tools  │ │   ACP   │ │ Session │  │    │
+│  │  │ Manager │ │ Manager │ │Registry │ │ Manager │ │ Manager │  │    │
+│  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘  │    │
+│  │  ┌────┴────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴────┐  │    │
+│  │  │  Graph  │ │  CXFC   │ │  Alarm  │ │ Backup  │ │ Plugins │  │    │
+│  │  │Database │ │ Manager │ │ Manager │ │ Manager │ │ Manager │  │    │
+│  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘  │    │
+│  └───────┼───────────┼───────────┼───────────┼───────────┼────────┘    │
+│          │           │           │           │           │              │
+│  ┌───────▼───────────▼───────────▼───────────▼───────────▼────────┐    │
+│  │                        Storage Layer                           │    │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐  │    │
+│  │  │ SQLite  │ │ Milvus  │ │ Chroma  │ │ Qdrant  │ │Weaviate│  │    │
+│  │  │ (Local) │ │  (Lite) │ │(Win兼容)│ │(Server) │ │(Embed) │  │    │
+│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └────────┘  │    │
+│  └────────────────────────────────────────────────────────────────┘    │
+│                                                                        │
+│  ┌────────────────────────────────────────────────────────────────┐    │
+│  │                    Control Service (port 8765)                  │    │
+│  └────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## 核心组件
@@ -67,7 +75,7 @@ class Memory:
 
 **存储架构**:
 - **SQLite**: 结构化数据存储
-- **向量存储**: Milvus Lite / Qdrant（可选）
+- **向量存储**: Milvus Lite / Chroma / Qdrant / Weaviate（可选）
 
 ### 2. 上下文管理系统 (Context Manager)
 
@@ -149,18 +157,114 @@ class Memory:
 - `summary`: 摘要生成模型
 - `memory`: 记忆处理模型
 
-### 7. API 路由系统
+### 7. 图数据库系统 (Graph Database)
 
-FastAPI 应用包含多个路由模块：
+**位置**: `backend/core/graph/`
+
+**职责**:
+- 知识图谱管理
+- 节点/边CRUD操作
+- 语义搜索
+- 路径分析
+- 社区检测
+- PageRank算法
+
+**文件列表** (15个):
+- `config.py`: 图数据库配置
+- `database.py`: 数据库连接管理
+- `edges.py`: 边操作
+- `hybrid_query.py`: 混合查询
+- `migration.py`: 数据迁移
+- `models.py`: 数据模型
+- `monitoring.py`: 监控
+- `nodes.py`: 节点操作
+- `repository.py`: 数据仓库
+- `semantic_query.py`: 语义查询
+- `semantic_search.py`: 语义搜索
+- `traversal.py`: 图遍历
+- `vectorizer.py`: 向量化
+- `visualization.py`: 可视化
+
+### 8. CXFC 插件协议 (CXFC Manager)
+
+**位置**: `backend/core/cxfc/`
+
+**职责**:
+- 插件发现
+- 技能注册
+- 心跳管理
+- 连接管理
+
+**文件列表** (6个):
+- `discovery.py`: 插件发现
+- `manager.py`: 管理器
+- `models.py`: 数据模型
+- `skill_registry.py`: 技能注册表
+- `storage.py`: 存储
+
+### 9. 提醒管理系统 (Alarm Manager)
+
+**位置**: `backend/core/alarm/`
+
+**职责**:
+- 定时提醒
+- 闹钟管理
+- 触发回调
+
+### 10. 备份管理系统 (Backup Manager)
+
+**位置**: `backend/core/backup/`
+
+**职责**:
+- 数据备份
+- 数据恢复
+
+### 11. 插件管理系统 (Plugin Manager)
+
+**位置**: `backend/core/plugins/`
+
+**职责**:
+- 插件加载
+- 生命周期管理
+
+### 12. WebSocket 管理
+
+**位置**: `backend/core/websocket/`
+
+**职责**:
+- WebSocket连接管理
+- 实时通信
+- 离线消息保存
+
+### 13. 会话管理系统 (Session Manager)
+
+**位置**: `backend/core/session/`
+
+**职责**:
+- 会话存储
+- 会话清理
+- 模型定义
+
+### 14. API 路由系统
+
+FastAPI 应用包含17个路由模块：
 - `chat.py`: 处理聊天对话请求（支持Agent和多模态）
 - `memory.py`: 处理记忆 CRUD 操作
 - `context.py`: 处理会话和消息管理
 - `tools.py`: 处理工具注册和调用
 - `acp.py`: 处理 ACP 协议
-- `agents.py`: 处理 Agent 配置和上下文管理
+- `admin.py`: 处理管理员操作
 - `archive.py`: 处理归档管理
+- `service.py`: 处理服务管理
+- `agents.py`: 处理 Agent 配置和上下文管理
 - `backup.py`: 处理备份恢复
 - `websocket.py`: 处理 WebSocket 连接
+- `memory_chat.py`: 处理记忆聊天
+- `stats.py`: 处理统计信息
+- `config.py`: 处理配置管理
+- `vector.py`: 处理向量搜索
+- `graph.py`: 处理图数据库操作
+- `cxfc.py`: 处理 CXFC 插件协议
 
 **聊天流程**:
 1. 用户发送消息后，系统获取 Agent 配置
@@ -172,7 +276,7 @@ FastAPI 应用包含多个路由模块：
 7. 处理工具调用（如有）
 8. 保存助手响应到上下文
 
-### 8. Agent 系统
+### 15. Agent 系统
 
 **位置**: `backend/api/routers/agents.py`
 
@@ -256,12 +360,34 @@ server:        # 服务器配置
 llm:           # LLM配置
   provider: "ollama"
   host: "http://localhost:11434"
-  model: "llama3.2"
+  model: "qwen3-vl:8b"
+
+models:        # 模型槽位配置
+  main: "qwen3-vl:8b"
+  summary: "qwen3-vl:8b"
+  memory: "qwen3-vl:8b"
+
+llm_params:    # LLM参数配置
+  temperature: 1.3
+  topP: 0.9
+  timeout: 30
 
 memory:        # 记忆配置
   enabled: true
   vector_enabled: true
-  vector_backend: "milvus_lite"
+  vector_backend: "weaviate"
+
+tools:         # 工具配置
+  auto_discovery: true
+  mcp_enabled: true
+  builtin_tools:
+    - memory_write
+    - memory_search
+    - memory_delete
+    - context_search
+
+monitoring:    # 监控配置
+  enabled: true
 
 acp:           # ACP配置
   enabled: true
@@ -348,13 +474,19 @@ acp:           # ACP配置
 │  ┌───────────────────────────────┐  │
 │  │         CXHMS Service         │  │
 │  │  - FastAPI (port 8000)        │  │
-│  │  - Gradio (port 7860)         │  │
+│  │  - Control (port 8765)        │  │
 │  └───────────────────────────────┘  │
 │  ┌───────────────────────────────┐  │
 │  │      SQLite Database          │  │
 │  └───────────────────────────────┘  │
 │  ┌───────────────────────────────┐  │
+│  │  Weaviate Embedded (default)  │  │
+│  └───────────────────────────────┘  │
+│  ┌───────────────────────────────┐  │
 │  │    Milvus Lite (optional)     │  │
+│  └───────────────────────────────┘  │
+│  ┌───────────────────────────────┐  │
+│  │     Chroma (Win compatible)   │  │
 │  └───────────────────────────────┘  │
 └─────────────────────────────────────┘
 ```
@@ -378,16 +510,17 @@ acp:           # ACP配置
         ┌─────────▼──────────┐
         │   Shared Storage   │
         │  - PostgreSQL      │
-        │  - Redis           │
         │  - Qdrant Cluster  │
+        │  - Weaviate Cluster│
         └────────────────────┘
 ```
 
 ## 扩展性设计
 
-### 1. 插件系统（预留）
-- 工具插件
-- 存储后端插件
+### 1. 插件系统
+- CXFC 插件协议（发现、注册、心跳）
+- 工具插件（MCP协议）
+- 存储后端插件（多向量后端支持）
 - LLM提供商插件
 
 ### 2. 水平扩展
@@ -417,6 +550,7 @@ acp:           # ACP配置
 ### 健康检查
 - `/health` - 基础健康检查
 - `/api/admin/health` - 详细组件状态
+- `/api/vector/health` - 向量存储健康检查
 
 ## 版本兼容性
 
@@ -454,10 +588,10 @@ acp:           # ACP配置
 - **RAG**: Retrieval-Augmented Generation，检索增强生成
 - **MCP**: Model Context Protocol，模型上下文协议
 - **ACP**: Agent Communication Protocol，代理通信协议
+- **CXFC**: CXHMS Function Call Protocol，CXHMS 函数调用协议
 - **LLM**: Large Language Model，大语言模型
 
 ### 参考文档
 
 - [FastAPI文档](https://fastapi.tiangolo.com/)
-- [Gradio文档](https://gradio.app/docs)
 - [MCP协议规范](https://modelcontextprotocol.io/)

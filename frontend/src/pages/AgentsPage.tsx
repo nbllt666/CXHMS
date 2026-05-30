@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
+import { useChatStore } from '../store/chatStore';
 import { formatRelativeTime } from '../lib/utils';
 import { PageHeader } from '../components/layout';
 import { Button, Card, CardBody, Modal, Input, Textarea, Badge } from '../components/ui';
@@ -168,6 +169,7 @@ export function AgentsPage() {
       setShowCreateModal(false);
       resetForm();
       loadAgents();
+      useChatStore.getState().fetchAgents();
     } catch (error) {
       console.error('创建 Agent 失败:', error);
       alert('创建失败，请检查名称是否重复');
@@ -187,6 +189,7 @@ export function AgentsPage() {
       setEditingAgent(null);
       resetForm();
       loadAgents();
+      useChatStore.getState().fetchAgents();
     } catch (error) {
       console.error('更新 Agent 失败:', error);
       alert('更新失败');
@@ -198,6 +201,7 @@ export function AgentsPage() {
     try {
       await api.deleteAgent(id);
       loadAgents();
+      useChatStore.getState().fetchAgents();
     } catch (error) {
       console.error('删除 Agent 失败:', error);
       alert('删除失败');
@@ -208,6 +212,7 @@ export function AgentsPage() {
     try {
       await api.cloneAgent(agent.id);
       loadAgents();
+      useChatStore.getState().fetchAgents();
     } catch (error) {
       console.error('克隆 Agent 失败:', error);
       alert('克隆失败');

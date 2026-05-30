@@ -58,14 +58,15 @@ export const DashboardPage: React.FC = () => {
   const { data: stats, isLoading: statsLoading } = useQuery<Stats>({
     queryKey: ['dashboard-stats'],
     queryFn: async () => {
-      const [memories, sessions, agents] = await Promise.all([
+      const [memories, sessionsData, agents] = await Promise.all([
         api.getMemories({ limit: 1 }),
         api.getSessions(),
         api.getAgents(),
       ]);
+      const sessionsList = Array.isArray(sessionsData) ? sessionsData : sessionsData.sessions || [];
       return {
         memoryCount: memories.total || 0,
-        sessionCount: sessions.length || 0,
+        sessionCount: sessionsList.length || 0,
         agentCount: agents.filter((a: { id: string }) => a.id !== 'memory-agent').length || 0,
         todayMessages: 0,
       };
@@ -75,8 +76,9 @@ export const DashboardPage: React.FC = () => {
   const { data: recentActivity, isLoading: activityLoading } = useQuery<RecentActivity[]>({
     queryKey: ['recent-activity'],
     queryFn: async () => {
-      const sessions = await api.getSessions();
-      return sessions.slice(0, 5).map((s: { id: string; title?: string; updated_at?: string }) => ({
+      const sessionsData = await api.getSessions();
+      const sessionsList = Array.isArray(sessionsData) ? sessionsData : sessionsData.sessions || [];
+      return sessionsList.slice(0, 5).map((s: { id: string; title?: string; updated_at?: string }) => ({
         id: s.id,
         type: 'chat' as const,
         title: s.title || '新对话',

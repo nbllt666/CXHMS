@@ -4,6 +4,7 @@
 
 import json
 import logging
+import re
 from typing import Optional, List, Dict, Any
 
 from backend.core.graph.database import Database
@@ -90,16 +91,13 @@ class NodeManager:
 
     def delete(self, node_id: str, cascade: bool = True) -> bool:
         if cascade:
-            operations = [
-                ("DELETE FROM edges WHERE source_id = ? OR target_id = ?", (node_id, node_id)),
-                ("DELETE FROM nodes WHERE id = ?", (node_id,)),
-            ]
-            self.db.transaction(operations)
+            self.db.execute_modify("DELETE FROM edges WHERE source_id = ? OR target_id = ?", (node_id, node_id))
+            rowcount = self.db.execute_modify("DELETE FROM nodes WHERE id = ?", (node_id,))
         else:
-            self.db.execute_modify("DELETE FROM nodes WHERE id = ?", (node_id,))
+            rowcount = self.db.execute_modify("DELETE FROM nodes WHERE id = ?", (node_id,))
 
         logger.info(f"删除节点: {node_id} (cascade={cascade})")
-        return True
+        return rowcount > 0
 
     def list(
         self,
@@ -185,6 +183,8 @@ class NodeManager:
 
         if properties_filter:
             for key, value in properties_filter.items():
+                if not re.match(r'^[a-zA-Z0-9_]+$', key):
+                    continue
                 conditions.append(f"json_extract(properties, '$.{key}') = ?")
                 params.append(json.dumps(value))
 

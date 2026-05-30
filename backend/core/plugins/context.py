@@ -17,6 +17,7 @@ class PluginContext:
     plugin_id: str
     plugin_name: str
     config: Dict[str, Any] = field(default_factory=dict)
+    _storage: Dict[str, Any] = field(default_factory=dict)
 
     # 系统API（由PluginManager注入）
     _memory_manager: Optional[Any] = field(default=None, repr=False)
@@ -131,17 +132,25 @@ class PluginContext:
         return self._ws_manager
 
     def broadcast_message(self, message: Dict[str, Any], channel: str = None):
-        """广播消息"""
         if self._ws_manager:
             try:
+                import asyncio
+
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+
                 if channel:
-                    import asyncio
-
-                    asyncio.create_task(self._ws_manager.broadcast_to_channel(channel, message))
+                    if loop and loop.is_running():
+                        asyncio.ensure_future(self._ws_manager.broadcast_to_channel(channel, message))
+                    else:
+                        asyncio.run(self._ws_manager.broadcast_to_channel(channel, message))
                 else:
-                    import asyncio
-
-                    asyncio.create_task(self._ws_manager.broadcast(message))
+                    if loop and loop.is_running():
+                        asyncio.ensure_future(self._ws_manager.broadcast(message))
+                    else:
+                        asyncio.run(self._ws_manager.broadcast(message))
             except Exception as e:
                 self.log_error(f"广播消息失败: {e}")
 
@@ -156,12 +165,7 @@ class PluginContext:
 
     # 存储API（插件私有存储）
     def get_storage(self, key: str, default=None) -> Any:
-        """获取存储数据"""
-        # 实际实现应该使用数据库或文件存储
-        # 这里简化处理，仅返回默认值
-        return default
+        return self._storage.get(key, default)
 
     def set_storage(self, key: str, value: Any):
-        """存储数据"""
-        # 实际实现应该使用数据库或文件存储
-        pass
+        self._storage[key] = value

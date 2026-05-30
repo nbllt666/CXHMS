@@ -217,7 +217,7 @@ class BackupManager:
                         if filename in zf.namelist():
                             # 临时解压验证
                             temp_path = target_dir / filename
-                            zf.extract(filename, target_dir.parent)
+                            zf.extract(filename, target_dir)
                             actual_checksum = self._calculate_checksum(temp_path)
 
                             if actual_checksum != expected_checksum:

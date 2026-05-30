@@ -2,6 +2,7 @@
 文本向量化
 """
 
+import hashlib
 import logging
 from typing import List, Optional, Union
 import numpy as np
@@ -66,7 +67,7 @@ class TextVectorizer:
         words = text.split()
         vector = np.zeros(self.config.vector_dim, dtype=np.float32)
         for i, word in enumerate(words[:self.config.vector_dim]):
-            vector[i] = hash(word) % 1000 / 1000.0
+            vector[i] = int(hashlib.sha256(word.encode()).hexdigest(), 16) % 1000 / 1000.0
         return vector
 
     def get_dimension(self) -> int:

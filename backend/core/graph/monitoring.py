@@ -205,13 +205,13 @@ class GraphMonitor:
     def _get_edge_type_distribution(self) -> Dict[str, int]:
         try:
             query = """
-                SELECT type, COUNT(*) as cnt
+                SELECT relation_type, COUNT(*) as cnt
                 FROM edges
-                WHERE type IS NOT NULL AND type != ''
-                GROUP BY type
+                WHERE relation_type IS NOT NULL AND relation_type != ''
+                GROUP BY relation_type
             """
             rows = self.db.execute(query)
-            return {row["type"]: row["cnt"] for row in rows}
+            return {row["relation_type"]: row["cnt"] for row in rows}
         except Exception:
             return {}
 

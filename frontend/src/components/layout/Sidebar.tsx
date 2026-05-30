@@ -3,7 +3,6 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { Tooltip } from '../ui';
 import { useChatStore } from '../../store/chatStore';
-import { api } from '../../api/client';
 
 interface SidebarProps {
   collapsed?: boolean;
@@ -15,12 +14,6 @@ interface NavItem {
   label: string;
   icon: React.ReactNode;
   hasSubmenu?: boolean;
-}
-
-interface Agent {
-  id: string;
-  name: string;
-  description?: string;
 }
 
 const navItems: NavItem[] = [
@@ -134,26 +127,12 @@ const navItems: NavItem[] = [
 export const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [agents, setAgents] = useState<Agent[]>([]);
   const [isChatExpanded, setIsChatExpanded] = useState(false);
-  const { currentAgentId, setCurrentAgentId } = useChatStore();
+  const { currentAgentId, setCurrentAgentId, agents, fetchAgents } = useChatStore();
 
-  // 加载Agent列表
   useEffect(() => {
-    const loadAgents = async () => {
-      try {
-        const data = await api.getAgents();
-        // API 返回的是数组格式
-        let agentList = Array.isArray(data) ? data : data.agents || [];
-        // 过滤掉记忆管理助手（memory-agent），它有独立的入口
-        agentList = agentList.filter((agent: Agent) => agent.id !== 'memory-agent');
-        setAgents(agentList);
-      } catch (error) {
-        console.error('加载Agent列表失败:', error);
-      }
-    };
-    loadAgents();
-  }, []);
+    fetchAgents();
+  }, [fetchAgents]);
 
   // 当在对话页面时自动展开
   useEffect(() => {

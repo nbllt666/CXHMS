@@ -126,6 +126,7 @@ class VectorizationQueue:
         
         with self._status_lock:
             self._task_status[memory_id] = task
+        with self._stats_lock:
             self._stats["total_tasks"] += 1
             self._stats["pending_tasks"] += 1
         

@@ -109,17 +109,8 @@ class SyncConnectionPool:
 
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
 
-        for _ in range(self.pool_size):
-            conn = self._create_connection()
-            if conn:
-                import threading
-
-                thread_id = threading.get_ident()
-                self._connections[thread_id] = conn
-                self._last_used[thread_id] = 0
-
         self._initialized = True
-        logger.info(f"同步连接池初始化完成: {len(self._connections)} 个连接")
+        logger.info("同步连接池初始化完成（懒加载模式）")
 
     def _create_connection(self) -> Optional[sqlite3.Connection]:
         try:

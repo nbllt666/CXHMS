@@ -122,7 +122,27 @@ class EmotionAnalyzer:
 
     def _analyze_with_rules(self, text: str) -> EmotionResult:
         text = text.lower()
-        words = re.findall(r"[\w\u4e00-\u9fff]+", text)
+        raw_tokens = re.findall(r"[a-zA-Z]+|[\u4e00-\u9fff]", text)
+
+        words = []
+        i = 0
+        while i < len(raw_tokens):
+            if len(raw_tokens[i]) == 1 and '\u4e00' <= raw_tokens[i] <= '\u9fff':
+                found = False
+                for end in range(min(i + 4, len(raw_tokens)), i + 1, -1):
+                    candidate = ''.join(raw_tokens[i:end])
+                    if (candidate in self.POSITIVE_PATTERNS or candidate in self.NEGATIVE_PATTERNS
+                            or candidate in self.NEUTRAL_PATTERNS or candidate in self.INTENSITY_WORDS):
+                        words.append(candidate)
+                        i = end
+                        found = True
+                        break
+                if not found:
+                    words.append(raw_tokens[i])
+                    i += 1
+            else:
+                words.append(raw_tokens[i])
+                i += 1
 
         total_score = 0.0
         matched_keywords = []

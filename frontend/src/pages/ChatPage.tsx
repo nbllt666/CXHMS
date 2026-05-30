@@ -189,6 +189,8 @@ export function ChatPage() {
   const [alarms, setAlarms] = useState<{ message: string; triggeredAt: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const tempAssistantIdRef = useRef<string>('');
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const alarmTimeoutRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const { agents, currentAgentId, fetchAgents } = useChatStore();
 
@@ -229,7 +231,7 @@ export function ChatPage() {
                 tool_calls: [
                   ...(lastMsg.tool_calls || []),
                   {
-                    id: tc.id || Date.now().toString(),
+                    id: tc.id || crypto.randomUUID(),
                     name: tc.name || tc.function?.name || 'unknown',
                     arguments: tc.arguments || tc.function?.arguments,
                     status: 'pending',
@@ -341,9 +343,10 @@ export function ChatPage() {
 
   const handleAlarm = useCallback((message: string, triggeredAt: string) => {
     setAlarms((prev) => [...prev, { message, triggeredAt }]);
-    setTimeout(() => {
+    const id = setTimeout(() => {
       setAlarms((prev) => prev.slice(1));
     }, 5000);
+    alarmTimeoutRef.current.push(id);
   }, []);
 
   const {
@@ -368,29 +371,7 @@ export function ChatPage() {
   const currentAgent = agents.find((a) => a.id === currentAgentId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (currentAgentId) {
-      loadAgentHistory(currentAgentId);
-    } else {
-      setMessages([]);
-    }
-  }, [currentAgentId]);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  // 只在用户发送消息或AI开始响应时自动滚动
-  const [shouldAutoScroll, setShouldAutoScroll] = useState(false);
-
-  useEffect(() => {
-    if (shouldAutoScroll) {
-      scrollToBottom();
-      setShouldAutoScroll(false);
-    }
-  }, [messages, shouldAutoScroll]);
-
-  const loadAgentHistory = async (agentId: string) => {
+  const loadAgentHistory = useCallback(async (agentId: string) => {
     try {
       const data = await api.getChatHistory(agentId);
       if (data.messages) {
@@ -417,7 +398,35 @@ export function ChatPage() {
       console.error('加载历史消息失败:', error);
       setMessages([]);
     }
+  }, []);
+
+  useEffect(() => {
+    if (currentAgentId) {
+      loadAgentHistory(currentAgentId);
+    } else {
+      setMessages([]);
+    }
+  }, [currentAgentId, loadAgentHistory]);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+      alarmTimeoutRef.current.forEach((id) => clearTimeout(id));
+    };
+  }, []);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(false);
+
+  useEffect(() => {
+    if (shouldAutoScroll) {
+      scrollToBottom();
+      setShouldAutoScroll(false);
+    }
+  }, [messages, shouldAutoScroll]);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -449,14 +458,14 @@ export function ChatPage() {
     if ((!input.trim() && selectedImages.length === 0) || isLoading) return;
 
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       role: 'user',
       content: input,
       timestamp: new Date().toISOString(),
       images: selectedImages.length > 0 ? selectedImages : undefined,
     };
 
-    const tempAssistantId = (Date.now() + 1).toString();
+    const tempAssistantId = crypto.randomUUID();
     tempAssistantIdRef.current = tempAssistantId;
     const streamingMessage: Message = {
       id: tempAssistantId,
@@ -477,6 +486,8 @@ export function ChatPage() {
       wsSendMessage(userMessage.content, userMessage.images);
     } else {
       try {
+        const abortController = new AbortController();
+        abortControllerRef.current = abortController;
         await api.sendMessageStream(
           userMessage.content,
           (chunk) => {
@@ -506,7 +517,7 @@ export function ChatPage() {
                       tool_calls: [
                         ...(lastMsg.tool_calls || []),
                         {
-                          id: tc.id || Date.now().toString(),
+                          id: tc.id || crypto.randomUUID(),
                           name: tc.name || tc.function?.name || 'unknown',
                           arguments: tc.arguments || tc.function?.arguments,
                           status: 'pending',
@@ -589,7 +600,8 @@ export function ChatPage() {
             }
           },
           currentAgentId || 'default',
-          userMessage.images
+          userMessage.images,
+          abortController.signal
         );
       } catch (error) {
         console.error('发送消息失败:', error);
@@ -608,6 +620,7 @@ export function ChatPage() {
         });
       } finally {
         setIsLoading(false);
+        abortControllerRef.current = null;
       }
     }
   };

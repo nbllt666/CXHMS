@@ -4,6 +4,9 @@ const WS_BASE_URL =
   import.meta.env.VITE_WS_URL ||
   (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace('http', 'ws');
 
+const MAX_RECONNECT_ATTEMPTS = 5;
+const BASE_RECONNECT_DELAY = 1000;
+
 export interface WebSocketMessage {
   type: string;
   content?: string;
@@ -57,8 +60,21 @@ export function useWebSocket(options: WebSocketOptions): UseWebSocketReturn {
   const wsRef = useRef<WebSocket | null>(null);
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectCountRef = useRef(0);
   const [isConnected, setIsConnected] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+
+  const onMessageRef = useRef(onMessage);
+  const onAlarmRef = useRef(onAlarm);
+  const onErrorRef = useRef(onError);
+  const onConnectRef = useRef(onConnect);
+  const onDisconnectRef = useRef(onDisconnect);
+
+  onMessageRef.current = onMessage;
+  onAlarmRef.current = onAlarm;
+  onErrorRef.current = onError;
+  onConnectRef.current = onConnect;
+  onDisconnectRef.current = onDisconnect;
 
   const clearPingInterval = useCallback(() => {
     if (pingIntervalRef.current) {
@@ -86,20 +102,29 @@ export function useWebSocket(options: WebSocketOptions): UseWebSocketReturn {
 
     ws.onopen = () => {
       setIsConnected(true);
+      reconnectCountRef.current = 0;
       startPingInterval();
-      onConnect?.();
+      onConnectRef.current?.();
     };
 
     ws.onclose = () => {
       setIsConnected(false);
       setIsGenerating(false);
       clearPingInterval();
-      onDisconnect?.();
+      onDisconnectRef.current?.();
+
+      if (reconnectCountRef.current < MAX_RECONNECT_ATTEMPTS) {
+        const delay = BASE_RECONNECT_DELAY * Math.pow(2, reconnectCountRef.current);
+        reconnectCountRef.current += 1;
+        reconnectTimeoutRef.current = setTimeout(() => {
+          connect();
+        }, delay);
+      }
     };
 
     ws.onerror = (event) => {
       console.error('WebSocket error:', event);
-      onError?.('WebSocket connection error');
+      onErrorRef.current?.('WebSocket connection error');
     };
 
     ws.onmessage = (event) => {
@@ -110,27 +135,27 @@ export function useWebSocket(options: WebSocketOptions): UseWebSocketReturn {
           case 'pong':
             break;
           case 'alarm':
-            onAlarm?.(data.message || '', data.triggered_at || '');
+            onAlarmRef.current?.(data.message || '', data.triggered_at || '');
             break;
           case 'content':
           case 'tool_call':
           case 'tool_result':
-            onMessage?.(data);
+            onMessageRef.current?.(data);
             break;
           case 'done':
             setIsGenerating(false);
-            onMessage?.(data);
+            onMessageRef.current?.(data);
             break;
           case 'error':
             setIsGenerating(false);
-            onError?.(data.error || 'Unknown error');
+            onErrorRef.current?.(data.error || 'Unknown error');
             break;
           case 'cancelled':
             setIsGenerating(false);
-            onMessage?.(data);
+            onMessageRef.current?.(data);
             break;
           default:
-            onMessage?.(data);
+            onMessageRef.current?.(data);
         }
       } catch (e) {
         console.error('Failed to parse WebSocket message:', e);
@@ -141,11 +166,6 @@ export function useWebSocket(options: WebSocketOptions): UseWebSocketReturn {
   }, [
     agentId,
     timeout,
-    onMessage,
-    onAlarm,
-    onError,
-    onConnect,
-    onDisconnect,
     startPingInterval,
     clearPingInterval,
   ]);
@@ -155,6 +175,7 @@ export function useWebSocket(options: WebSocketOptions): UseWebSocketReturn {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
+    reconnectCountRef.current = MAX_RECONNECT_ATTEMPTS;
     clearPingInterval();
     if (wsRef.current) {
       wsRef.current.close();
@@ -164,13 +185,14 @@ export function useWebSocket(options: WebSocketOptions): UseWebSocketReturn {
 
   const reconnect = useCallback(() => {
     disconnect();
-    window.setTimeout(connect, 100);
+    reconnectCountRef.current = 0;
+    connect();
   }, [connect, disconnect]);
 
   const sendMessage = useCallback(
     (message: string, images?: string[]) => {
       if (wsRef.current?.readyState !== WebSocket.OPEN) {
-        onError?.('WebSocket is not connected');
+        onErrorRef.current?.('WebSocket is not connected');
         return;
       }
 
@@ -183,7 +205,7 @@ export function useWebSocket(options: WebSocketOptions): UseWebSocketReturn {
         })
       );
     },
-    [onError]
+    []
   );
 
   const cancelGeneration = useCallback(() => {

@@ -261,7 +261,11 @@ class SQLiteGraphStore(GraphStoreBase):
             self._db.nodes.delete(entity_id, cascade=True)
         else:
             from backend.core.graph.models import NodeUpdate
-            self._db.nodes.update(entity_id, NodeUpdate(properties={"deleted": True}))
+            node = self._db.nodes.get(entity_id)
+            if node:
+                existing_props = dict(node.properties or {})
+                existing_props["deleted"] = True
+                self._db.nodes.update(entity_id, NodeUpdate(properties=existing_props))
         return True
 
     def delete_relation(self, from_entity: str, to_entity: str, relation_type: str, library: GraphLibrary, hard: bool = False) -> bool:
@@ -273,14 +277,20 @@ class SQLiteGraphStore(GraphStoreBase):
                     self._db.edges.delete(edge.id)
                 else:
                     from backend.core.graph.models import EdgeUpdate
-                    self._db.edges.update(edge.id, EdgeUpdate(properties={"deleted": True}))
+                    existing_props = dict(edge.properties or {})
+                    existing_props["deleted"] = True
+                    self._db.edges.update(edge.id, EdgeUpdate(properties=existing_props))
                 return True
         return False
 
     def update_entity(self, entity_id: str, updates: dict, library: GraphLibrary) -> Entity | None:
         from backend.core.graph.models import NodeUpdate
-        node_update = NodeUpdate(properties=updates)
-        node = self._db.nodes.update(entity_id, node_update)
+        node = self._db.nodes.get(entity_id)
+        if node is None:
+            return None
+        existing_props = dict(node.properties or {})
+        existing_props.update(updates)
+        node = self._db.nodes.update(entity_id, NodeUpdate(properties=existing_props))
         if node is None:
             return None
         return self._entity_from_node(node, library)
@@ -291,8 +301,9 @@ class SQLiteGraphStore(GraphStoreBase):
         for edge in edges.items:
             if edge.target_id == to_entity:
                 from backend.core.graph.models import EdgeUpdate
-                edge_update = EdgeUpdate(properties=updates)
-                updated = self._db.edges.update(edge.id, edge_update)
+                existing_props = dict(edge.properties or {})
+                existing_props.update(updates)
+                updated = self._db.edges.update(edge.id, EdgeUpdate(properties=existing_props))
                 if updated:
                     return self._relation_from_edge(updated)
         return None

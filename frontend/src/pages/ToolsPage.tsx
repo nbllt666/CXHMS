@@ -238,7 +238,7 @@ export function ToolsPage() {
           icon={CheckCircle2}
           loading={statsLoading}
           trend={
-            stats ? `${Math.round((stats.active_tools / stats.total_tools) * 100)}%` : undefined
+            stats ? `${stats.total_tools > 0 ? Math.round((stats.active_tools / stats.total_tools) * 100) : 0}%` : undefined
           }
         />
         <StatCard

@@ -107,13 +107,15 @@ class ToolRegistry:
 
     _instance = None
     _tools: Dict[str, Tool] = {}
-    _lock = None
+    _lock = threading.Lock()
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._tools = {}
-            cls._instance._lock = threading.Lock()
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._tools = {}
+                    cls._instance._ops_lock = threading.Lock()
         return cls._instance
 
     def register(
@@ -129,7 +131,7 @@ class ToolRegistry:
         examples: List[str] = None,
     ) -> Tool:
         """注册工具"""
-        with self._lock:
+        with self._ops_lock:
             if name in self._tools:
                 tool = self._tools[name]
                 tool.description = description

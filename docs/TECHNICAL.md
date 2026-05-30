@@ -8,13 +8,13 @@ CXHMS (CX-O History & Memory Service) 是一个基于 FastAPI 的智能记忆管
 
 ### 整体架构设计
 
-系统采用分层架构设计，从上到下依次为：服务层 (API/WebUI/Memory/Tools)、核心服务层 (Memory Manager/Context Manager/Tools Registry/ACP Manager)、存储层 (SQLite/Redis/Milvus/Qdrant)。这种分层设计使得各模块职责清晰，便于维护和扩展。
+系统采用分层架构设计，从上到下依次为：服务层 (API/WebUI/Memory/Tools)、核心服务层 (Memory Manager/Context Manager/Tools Registry/ACP Manager/Graph Database/CXFC Manager/Alarm Manager/Backup Manager/Plugin Manager/WebSocket Manager/Session Manager)、存储层 (SQLite/Redis/Weaviate/Chroma/Milvus Lite/Qdrant)。这种分层设计使得各模块职责清晰，便于维护和扩展。
 
 ### 技术栈详情
 
-**后端技术栈** 包含 Python 3.10+、FastAPI 0.104.1+ 作为 Web 框架、Pydantic 2.5.0+ 用于数据验证、SQLAlchemy 作为 ORM 层、Milvus Lite 2.3.3+ 作为默认向量存储，以及支持 Qdrant 和 Weaviate 作为可选向量存储后端。LLM 集成方面支持 Ollama、OpenAI 和 Anthropic 兼容接口，工具协议采用 MCP (Model Context Protocol)。
+**后端技术栈** 包含 Python 3.10+、FastAPI 0.104.1+ 作为 Web 框架、Pydantic 2.5.0+ 用于数据验证、SQLAlchemy 作为 ORM 层。向量存储支持 Weaviate（默认后端）、Chroma（Windows 兼容，0.4.x 版本）、Milvus Lite、Qdrant 等多种后端。LLM 集成方面支持 Ollama、OpenAI 和 Anthropic 兼容接口，工具协议采用 MCP (Model Context Protocol)。
 
-**前端技术栈** 使用 React 18.3.1 构建 UI 框架、TypeScript 5.7.2 确保类型安全、Vite 6.0.6 作为构建工具、Tailwind CSS 3.4.17 处理样式、Zustand 5.0.2 进行状态管理、React Query 5.62.11 负责数据获取、Framer Motion 11.15.0 实现动画效果、Recharts 2.15.0 绘制图表、Lucide React 0.469.0 提供图标、Vitest 2.1.8 作为测试框架。
+**前端技术栈** 使用 React 18.3.1 构建 UI 框架、TypeScript 5.7.2 确保类型安全、Vite 6.0.6 作为构建工具、Tailwind CSS 3.4.17 处理样式、Zustand 5.0.2 进行状态管理、React Query 5.62.11 负责数据获取、Framer Motion 11.15.0 实现动画效果、Recharts 2.15.0 绘制图表、Lucide React 0.469.0 提供图标、Vitest 2.1.8 作为测试框架。此外还依赖：React Router 6.28.0（路由管理）、i18next 25.8.4 + react-i18next 16.5.4 + i18next-browser-languagedetector 8.2.0（国际化）、Axios 1.7.9（HTTP 客户端）、React Markdown 9.0.1 + remark-gfm 4.0.0（Markdown 渲染）、date-fns 4.1.0（日期处理）、class-variance-authority 0.7.1 + clsx 2.1.1 + tailwind-merge 2.6.0（样式工具）。
 
 ## 核心模块详解
 
@@ -34,7 +34,7 @@ CXHMS (CX-O History & Memory Service) 是一个基于 FastAPI 的智能记忆管
 
 ### 2. 向量搜索系统
 
-系统支持三种向量存储后端：Milvus Lite（默认，无需额外安装）、Qdrant（需要 Docker 部署）和 Weaviate（支持嵌入式和客户端模式）。向量搜索默认使用余弦相似度 (COSINE) 度量。
+系统支持六种向量存储后端：Chroma（Windows 兼容，0.4.x 版本）、Milvus Lite（默认选项之一，无需额外安装）、Qdrant（需要 Docker 部署）、Weaviate（支持嵌入式和客户端模式）、Weaviate Embedded（嵌入式模式）。默认后端为 Weaviate。向量搜索默认使用余弦相似度 (COSINE) 度量。
 
 HybridSearch 类实现了混合搜索功能，将向量搜索和 SQLite 关键词搜索的结果进行融合排序。搜索流程包括：生成查询向量、执行向量搜索、执行关键词搜索、分数融合（RFF 算法）、可选的重排序。
 
@@ -52,13 +52,14 @@ ContextManager 负责管理会话和消息历史，采用 SQLite 存储会话和
 
 工具系统采用注册表模式设计，ToolRegistry 类负责工具的注册、发现和调用执行。
 
-**内置工具** 包括 calculator（数学计算）、datetime（日期时间获取）、random（生成随机数）、json_format（格式化JSON字符串）等。工具使用装饰器模式注册，通过 @registry.register() 装饰器将函数注册为工具。
+**内置工具** 包括 calculator（数学计算）、datetime（日期时间获取）、weather（天气查询）等。工具使用装饰器模式注册，通过 @registry.register() 装饰器将函数注册为工具。
 
 **工具分类**:
-- `builtin`: 内置工具（calculator, datetime, random, json_format）
+- `builtin`: 内置工具（calculator, datetime, weather）
 - `master`: 主模型专属工具（write_long_term_memory, search_all_memories, call_assistant, set_alarm, mono, write_permanent_memory, ACP相关工具）
 - `summary`: 摘要模型工具
 - `assistant`: 记忆管理模型工具（16个记忆管理工具）
+- `graph`: 图数据库工具
 - `mcp`: MCP协议工具
 
 **主模型专属工具**:
@@ -105,7 +106,58 @@ ACP 协议用于多 Agent 通信，支持局域网发现、点对点通信、群
 
 **群组管理** 支持创建群组、加入/离开群组、向群组发送消息等操作。群组消息会被发送到所有群组成员。
 
-### 6. LLM 客户端系统
+### 6. 图数据库系统 (Graph Database)
+
+图数据库系统位于 `backend/core/graph/`（15个文件），负责知识图谱管理、节点/边 CRUD、语义搜索、路径分析、社区检测、PageRank 算法和可视化。
+
+**核心文件**:
+- `database.py`: 数据库管理，负责图数据库的初始化和连接
+- `repository.py`: 数据操作，提供图数据的增删改查接口
+- `nodes.py`: 节点管理，支持节点的创建、更新、删除和查询
+- `edges.py`: 边管理，支持边的创建、更新、删除和查询
+- `semantic_search.py`: 语义搜索，基于向量相似度的图搜索
+- `traversal.py`: 图遍历，支持 BFS、DFS 等遍历算法
+- `hybrid_query.py`: 混合查询，结合结构化查询和语义搜索
+- `vectorizer.py`: 向量化，将图数据转换为向量表示
+- `visualization.py`: 可视化，生成图结构的可视化数据
+- `monitoring.py`: 监控，图数据库运行状态监控
+
+图数据库为条件启用模块，通过配置文件控制是否在启动时初始化。
+
+### 7. CXFC 插件协议 (CXFC Manager)
+
+CXFC 插件协议系统位于 `backend/core/cxfc/`（6个文件），负责插件发现、技能注册、心跳管理和连接管理。
+
+**核心文件**:
+- `manager.py`: 管理器，CXFC 协议的核心调度
+- `discovery.py`: 发现服务，自动发现网络中的 CXFC 插件
+- `skill_registry.py`: 技能注册，管理插件提供的技能
+- `storage.py`: 存储，持久化插件和技能信息
+- `models.py`: 数据模型，定义 CXFC 相关的数据结构
+
+CXFC 管理器为条件启用模块，通过配置文件控制是否在启动时初始化。
+
+### 8. 提醒管理系统 (Alarm Manager)
+
+提醒管理系统位于 `backend/core/alarm/`，负责定时提醒、闹钟管理和触发回调。系统与 WebSocket 集成，实现实时提醒推送，确保用户在连接时能即时收到提醒通知。
+
+### 9. 备份管理系统 (Backup Manager)
+
+备份管理系统位于 `backend/core/backup/`，负责数据备份与恢复。支持选择性备份，可按类别选择备份内容，包括记忆、会话、Agent 配置等。备份文件以结构化格式存储，支持完整恢复和部分恢复。
+
+### 10. 插件管理系统 (Plugin Manager)
+
+插件管理系统位于 `backend/core/plugins/`，负责插件的加载、生命周期管理和上下文注入。插件系统支持动态加载和卸载，为插件提供运行时上下文注入能力，使插件能够访问系统核心功能。
+
+### 11. WebSocket 管理
+
+WebSocket 管理系统位于 `backend/core/websocket/`，负责 WebSocket 连接管理、实时通信和离线消息保存。系统与提醒管理器集成，支持实时提醒推送。当客户端离线时，消息会被保存，待客户端重新连接后推送。
+
+### 12. 会话管理系统 (Session)
+
+会话管理系统位于 `backend/core/session/`，负责会话存储、清理策略和数据模型定义。系统实现了自动化的会话清理策略，根据配置的时间和数量阈值清理过期会话。
+
+### 13. LLM 客户端系统
 
 **模型路由器** ModelRouter 类管理多个 LLM 模型客户端，支持按需切换不同模型。系统预配置三种模型用途：main（主对话模型，128k上下文）、summary（摘要生成）、memory（记忆处理）。
 
@@ -115,7 +167,7 @@ ACP 协议用于多 Agent 通信，支持局域网发现、点对点通信、群
 
 **流式响应** 使用 Server-Sent Events (SSE) 实现流式输出，客户端通过异步迭代器接收增量响应。支持多种事件类型：session、thinking、content、tool_call、tool_start、tool_result、done、error。
 
-### 7. Agent 系统
+### 14. Agent 系统
 
 **Agent 配置管理** 位于 backend/api/routers/agents.py，提供 Agent 的 CRUD 操作、克隆、统计和上下文管理功能。
 
@@ -127,9 +179,9 @@ ACP 协议用于多 Agent 通信，支持局域网发现、点对点通信、群
 
 **聊天架构** 每个 Agent 对应一个固定会话（session_id = agent-{agent_id}），前端只发送最新消息，后端根据 Agent 配置构建完整上下文。
 
-### 8. API 路由系统
+### 15. API 路由系统
 
-FastAPI 应用包含多个路由模块：
+FastAPI 应用包含17个路由模块：
 - `chat.py`: 处理聊天对话请求（支持Agent和多模态）
 - `memory.py`: 处理记忆 CRUD 操作、批量操作、语义搜索
 - `context.py`: 处理会话和消息管理
@@ -137,9 +189,14 @@ FastAPI 应用包含多个路由模块：
 - `acp.py`: 处理 ACP 协议
 - `agents.py`: 处理 Agent 配置和上下文管理
 - `archive.py`: 处理归档管理
+- `config.py`: 处理配置管理
+- `cxfc.py`: 处理 CXFC 插件协议
+- `graph.py`: 处理图数据库操作
+- `stats.py`: 处理统计数据
+- `vector.py`: 处理向量搜索操作
+- `service.py`: 处理服务管理
 - `backup.py`: 处理备份恢复
 - `websocket.py`: 处理 WebSocket 连接
-- `service.py`: 处理服务状态
 - `admin.py`: 处理管理员功能
 
 **聊天流程**:
@@ -161,10 +218,10 @@ FastAPI 应用包含多个路由模块：
 - `ChatPage`: 聊天页面（支持Agent选择、流式响应、工具调用展示）
 - `MemoriesPage`: 记忆管理页面
 - `ArchivePage`: 归档管理页面
-- `SettingsPage`: 设置页面
+- `AgentsPage`: Agent 配置页面
 - `AcpPage`: ACP 控制页面
 - `ToolsPage`: 工具管理页面
-- `AgentsPage`: Agent 配置页面
+- `SettingsPage`: 设置页面
 - `MemoryAgentPage`: 记忆管理 Agent 专用页面
 
 ### 状态管理
@@ -173,11 +230,21 @@ FastAPI 应用包含多个路由模块：
 
 ### API 客户端
 
-APIClient 类封装了所有 API 调用，使用 Axios 发送 HTTP 请求，支持请求拦截器和响应拦截器。主要功能包括：记忆 CRUD、聊天发送（支持流式接收）、会话管理、ACP 操作、工具管理。
+APIClient 类封装了所有 API 调用，使用 Axios 发送 HTTP 请求，支持请求拦截器和响应拦截器。主要功能包括：记忆 CRUD、聊天发送（支持流式接收）、会话管理、ACP 操作、工具管理。此外还封装了：控制服务 API（端口 8765）、图数据库 API、向量数据库 API、CXFC API、配置 API。
+
+### 国际化
+
+前端使用 i18next + react-i18next 实现多语言支持，i18next-browser-languagedetector 自动检测用户语言偏好。语言资源文件按模块组织，支持动态切换语言。
 
 ### 组件设计
 
-主要组件包括：Layout（布局容器）、Header（顶部导航）、Sidebar（侧边栏）、LanguageSwitcher（语言切换）、SummaryModal（摘要保存弹窗）、ErrorBoundary（错误边界）。聊天页面实现了 Markdown 渲染、代码高亮、思考过程显示、工具调用状态展示等功能。
+**布局组件**：Layout（布局容器）、Header（顶部导航）、Sidebar（侧边栏）、PageHeader（页面标题栏）。
+
+**UI 组件库**：Badge（徽标）、Button（按钮）、Card（卡片）、Drawer（抽屉）、Dropdown（下拉菜单）、EmptyState（空状态）、Input（输入框）、Modal（弹窗）、Skeleton（骨架屏）、Toast（消息提示）、Tooltip（提示框）。
+
+**功能组件**：VirtualList（虚拟列表）、LanguageSwitcher（语言切换）、SummaryModal（摘要保存弹窗）、ErrorBoundary（错误边界）。
+
+聊天页面实现了 Markdown 渲染（React Markdown + remark-gfm）、代码高亮、思考过程显示、工具调用状态展示等功能。
 
 ## 配置系统
 
@@ -193,7 +260,25 @@ Settings 类采用单例模式，使用 PyYAML 解析配置文件。配置类使
 
 ### 启动流程
 
-主程序 main.py 加载配置、初始化日志、启动 Uvicorn 服务器。FastAPI 应用使用 lifespan 上下文管理器处理启动和关闭逻辑，启动时依次初始化：模型路由器、记忆管理器、上下文管理器、ACP 管理器、LLM 客户端、副模型路由器、MCP 管理器、注册内置工具、启用向量搜索、启动批量衰减处理器。
+主程序 main.py 加载配置、初始化日志、启动 Uvicorn 服务器。FastAPI 应用使用 lifespan 上下文管理器处理启动和关闭逻辑，启动时依次初始化18个组件：
+1. 模型路由器
+2. 记忆管理器
+3. 上下文管理器
+4. ACP 管理器
+5. LLM 客户端
+6. 副模型路由器
+7. MCP 管理器
+8. 内置工具注册
+9. 主模型工具注册
+10. 摘要模型工具注册
+11. 记忆管理模型工具注册
+12. 向量搜索启用
+13. 提醒管理器 + WebSocket 离线保存
+14. 批量衰减处理器
+15. 异步记忆管理器
+16. 图数据库（条件启用）
+17. CXFC 管理器（条件启用）
+18. 图数据库工具注册（条件注册）
 
 ### Docker 部署
 
@@ -217,7 +302,7 @@ run_tests.py 提供统一的测试入口，支持选择性运行前后端测试�
 
 ### 插件系统
 
-项目预留了插件系统接口，支持工具插件、存储后端插件、LLM 提供商插件的扩展。插件目录为 plugins/，包含示例插件实现。
+项目实现了完整的插件管理系统（位于 `backend/core/plugins/`），支持工具插件、存储后端插件、LLM 提供商插件的扩展。插件系统提供动态加载、生命周期管理和上下文注入能力。此外，CXFC 插件协议（位于 `backend/core/cxfc/`）提供了插件发现、技能注册、心跳管理和连接管理功能，支持网络中的插件自动发现和协同工作。插件目录为 plugins/，包含示例插件实现。
 
 ### 水平扩展
 
@@ -225,5 +310,5 @@ run_tests.py 提供统一的测试入口，支持选择性运行前后端测试�
 
 ---
 
-*文档版本: v1.0.0*  
-*最后更新: 2026-02-16*
+*文档版本: v2.0.0*  
+*最后更新: 2026-05-30*

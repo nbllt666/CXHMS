@@ -4,6 +4,7 @@
 
 import json
 import logging
+import re
 from typing import Optional, List, Dict, Any
 
 from backend.core.graph.database import Database
@@ -93,9 +94,9 @@ class EdgeManager:
         return edge
 
     def delete(self, edge_id: str) -> bool:
-        self.db.execute_modify("DELETE FROM edges WHERE id = ?", (edge_id,))
+        rowcount = self.db.execute_modify("DELETE FROM edges WHERE id = ?", (edge_id,))
         logger.info(f"删除边: {edge_id}")
-        return True
+        return rowcount > 0
 
     def list(
         self,
@@ -179,6 +180,8 @@ class EdgeManager:
 
         if properties_filter:
             for key, value in properties_filter.items():
+                if not re.match(r'^[a-zA-Z0-9_]+$', key):
+                    continue
                 conditions.append(f"json_extract(properties, '$.{key}') = ?")
                 params.append(json.dumps(value))
 

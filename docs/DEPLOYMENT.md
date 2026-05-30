@@ -28,8 +28,11 @@
   - 或其他兼容OpenAI API的服务
 
 - **向量存储**（可选）:
+  - Chroma: 嵌入式，无需额外服务
   - Milvus Lite: 嵌入式，无需额外服务
   - Qdrant: 需要独立部署
+  - Weaviate: 需要独立部署
+  - Weaviate Embedded: 嵌入式，无需额外服务
 
 ---
 
@@ -92,9 +95,32 @@ server:
 llm:
   provider: "ollama"   # LLM提供商: ollama, vllm, openai
   host: "http://localhost:11434"  # LLM服务地址
-  model: "llama3.2"    # 模型名称
-  temperature: 0.7     # 温度参数
-  max_tokens: 2048     # 最大token数
+  model: "qwen3-vl:8b" # 模型名称
+  temperature: 1.3     # 温度参数
+  max_tokens: 0        # 最大token数（0表示不限制）
+  top_p: 0.9           # Top-P采样参数
+```
+
+#### 模型配置
+
+```yaml
+models:
+  main:
+    provider: ollama
+    model: qwen3-vl:8b
+    enabled: true
+  summary:
+    provider: ollama
+    model: qwen3-vl:8b
+    enabled: false
+  memory:
+    provider: ollama
+    model: qwen3-vl:8b
+    enabled: false
+
+model_defaults:
+  summary_fallback: main
+  memory_fallback: main
 ```
 
 #### 记忆配置
@@ -103,7 +129,9 @@ llm:
 memory:
   enabled: true                    # 启用记忆功能
   vector_enabled: true             # 启用向量搜索
-  vector_backend: "milvus_lite"    # 向量后端: milvus_lite, qdrant
+  vector_backend: "weaviate"       # 向量后端: chroma / milvus_lite / qdrant / weaviate / weaviate_embedded
+  chroma:
+    collection_name: "cxhms_memories"  # Chroma集合名称
   milvus_lite:
     db_path: "data/milvus_lite.db" # Milvus Lite数据库路径
     vector_size: 768               # 向量维度
@@ -111,6 +139,10 @@ memory:
     host: "localhost"              # Qdrant主机
     port: 6333                     # Qdrant端口
     vector_size: 768
+  weaviate:
+    host: "localhost"              # Weaviate主机
+    port: 8080                     # Weaviate端口
+    embedded: false                # 是否使用嵌入式模式
 ```
 
 #### ACP配置
@@ -156,6 +188,27 @@ cors:
   allow_credentials: true
 ```
 
+#### 工具配置
+
+```yaml
+tools:
+  auto_discovery: true             # 自动发现工具
+  mcp_enabled: false               # 启用MCP工具
+  builtin:                         # 内置工具列表
+    - calculator
+    - datetime
+    - weather
+```
+
+#### 监控配置
+
+```yaml
+monitoring:
+  enabled: true                    # 启用监控
+  performance_tracking: true       # 性能追踪
+  error_tracking: true             # 错误追踪
+```
+
 ---
 
 ## 启动服务
@@ -169,6 +222,7 @@ python main.py
 服务启动后访问:
 - API文档: http://localhost:8000/docs
 - WebUI: http://localhost:7860
+- 控制服务: http://localhost:8765
 - 健康检查: http://localhost:8000/health
 
 ### 生产环境
@@ -231,7 +285,7 @@ COPY . .
 RUN mkdir -p data logs
 
 # 暴露端口
-EXPOSE 8000 7860
+EXPOSE 8000 8765
 
 # 启动命令
 CMD ["python", "main.py"]
@@ -247,7 +301,7 @@ services:
     build: .
     ports:
       - "8000:8000"
-      - "7860:7860"
+      - "8765:8765"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -256,7 +310,6 @@ services:
       - CXHMS_CONFIG_PATH=/app/config/default.yaml
     restart: unless-stopped
     
-  # 可选: Qdrant向量数据库
   qdrant:
     image: qdrant/qdrant:latest
     ports:
@@ -264,9 +317,26 @@ services:
     volumes:
       - qdrant_storage:/qdrant/storage
     restart: unless-stopped
+    profiles:
+      - qdrant
+
+  weaviate:
+    image: semitechnologies/weaviate:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - QUERY_DEFAULTS_LIMIT=20
+      - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
+      - PERSISTENCE_DATA_PATH=/var/lib/weaviate
+    volumes:
+      - weaviate_storage:/var/lib/weaviate
+    restart: unless-stopped
+    profiles:
+      - weaviate
 
 volumes:
   qdrant_storage:
+  weaviate_storage:
 ```
 
 ---
@@ -453,14 +523,29 @@ chmod 755 data
 **解决方案**:
 1. 检查向量存储依赖是否安装:
    ```bash
+   # Chroma
+   pip install chromadb>=0.4.0
+   # Milvus Lite
    pip install pymilvus>=2.3.0
-   # 或
+   # Qdrant
    pip install qdrant-client>=1.7.0
+   # Weaviate
+   pip install weaviate-client>=4.0.0
    ```
 
 2. 检查配置文件中的向量存储设置
 
-3. 如果使用Qdrant，确保Qdrant服务已启动
+3. 如果使用Qdrant，确保Qdrant服务已启动:
+   ```bash
+   docker-compose --profile qdrant up -d
+   ```
+
+4. 如果使用Weaviate，确保Weaviate服务已启动:
+   ```bash
+   docker-compose --profile weaviate up -d
+   ```
+
+5. 如果使用Chroma或Milvus Lite，无需额外服务，检查数据目录权限
 
 #### 5. MCP服务器启动失败
 
@@ -607,7 +692,6 @@ sudo systemctl start cxhms
 
 - [API文档](API.md)
 - [架构文档](ARCHITECTURE.md)
-- [开发文档](DEVELOPMENT.md)
 
 ### 社区支持
 

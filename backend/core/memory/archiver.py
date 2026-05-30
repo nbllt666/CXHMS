@@ -161,9 +161,6 @@ class AdvancedArchiver:
             logger.error(f"初始化归档数据库失败: {e}")
             if conn:
                 conn.rollback()
-        finally:
-            if conn:
-                conn.close()
 
     async def archive_memory(
         self, memory_id: int, target_level: int = 1, compress: bool = True
@@ -249,9 +246,6 @@ class AdvancedArchiver:
                 if conn:
                     conn.rollback()
                 raise
-            finally:
-                if conn:
-                    conn.close()
 
         except Exception as e:
             logger.error(f"归档记忆失败: {e}")

@@ -187,7 +187,7 @@ class QdrantVectorStore(VectorStoreBase):
             # 使用 1/(1+distance) 转换为相似度分数，这样分数越大越相似
             filtered_results = []
             for r in results:
-                similarity_score = 1 / (1 + r.score)  # 将距离转换为相似度
+                similarity_score = 1 - r.score / 2  # 将距离转换为相似度
                 if similarity_score >= min_score:
                     filtered_results.append(
                         {

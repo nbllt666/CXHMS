@@ -182,7 +182,7 @@ class MemoryRouter:
         try:
             recent_count = 0
             memories = []
-            page = 1
+            page = 0
             page_size = 20
 
             while recent_count < 50:
@@ -191,6 +191,7 @@ class MemoryRouter:
                     memory_type=None,
                     tags=[session_id] if session_id else None,
                     limit=page_size,
+                    offset=page * page_size,
                 )
 
                 if not results:

@@ -413,7 +413,7 @@ async def lifespan(app: FastAPI):
         if getattr(settings.config, 'cxfc', None) and settings.config.cxfc.enabled:
             from backend.core.cxfc.manager import CXFCManager
             cxfc_manager = CXFCManager()
-            await cxfc_manager.initialize()
+            await cxfc_manager.start()
             logger.info("CXFC管理器已启动")
     except Exception as e:
         logger.warning(f"CXFC管理器启动失败: {e}")
@@ -422,7 +422,7 @@ async def lifespan(app: FastAPI):
     try:
         if graph_database and graph_store:
             from backend.core.tools.graph_tools import register_graph_tools
-            register_graph_tools(graph_database, graph_store)
+            register_graph_tools()
             logger.info("图数据库工具已注册")
     except Exception as e:
         logger.warning(f"图数据库工具注册失败: {e}")

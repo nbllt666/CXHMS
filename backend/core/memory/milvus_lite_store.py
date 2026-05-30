@@ -124,7 +124,7 @@ class MilvusLiteVectorStore:
             for result in results[0]:
                 # Milvus返回的是距离，距离越小越相似，所以需要转换为相似度分数
                 # 使用 1/(1+distance) 转换为相似度分数，这样分数越大越相似
-                similarity_score = 1 / (1 + result["distance"])  # 将距离转换为相似度
+                similarity_score = 1 - result["distance"] / 2  # 将距离转换为相似度
                 if similarity_score >= min_score:
                     filtered_results.append(
                         {
@@ -162,7 +162,7 @@ class MilvusLiteVectorStore:
 
             results = self._client.query(
                 collection_name=self.collection_name,
-                filter=f"memory_id == {memory_id}",
+                filter=f'memory_id == "{memory_id}"',
                 output_fields=["content", "memory_id", "created_at"],
             )
 

@@ -164,7 +164,6 @@ class TraversalManager(BaseGraphRepository):
             path.append(current)
             if current in previous:
                 prev_node, edge_id = previous[current]
-                path.append(prev_node)
                 if edge_id:
                     edge = self.get_edge(edge_id)
                     if edge:
