@@ -1,8 +1,169 @@
-from typing import Any, Dict, List
+import json
+import re
+import uuid
+from typing import Any, Dict, List, Optional
 
 from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
+
+
+def parse_text_tool_calls(text: str, available_tool_names: set = None) -> List[Dict]:
+    """从 LLM 文本输出中解析工具调用意图。
+
+    当 LLM 不支持 function calling 时，它会用文本模拟工具调用。
+    此函数尝试从文本中提取这些工具调用，返回标准格式。
+
+    支持的格式：
+    - <execute_tool>tool_name(args)</execute_tool>
+    - <tool_call>tool_name(args)</tool_call>
+    - [调用工具: tool_name(args)]
+    - [调用工具: tool_name()]  (无参数)
+    - tool_name(arg1="value1", arg2=123)  (独立行)
+    - ```tool\nname: tool_name\narguments: {...}\n```
+
+    Args:
+        text: LLM 的文本输出
+        available_tool_names: 可用工具名称集合，用于验证
+
+    Returns:
+        解析出的工具调用列表，格式与 OpenAI function calling 一致
+    """
+    if not text:
+        return []
+
+    parsed_calls = []
+
+    # 模式1: <execute_tool>tool_name(args)</execute_tool> 或 <tool_call>tool_name(args)</tool_call>
+    pattern1 = r'<(?:execute_tool|tool_call)>\s*(\w+)\s*\((.*?)\)\s*</(?:execute_tool|tool_call)>'
+    for match in re.finditer(pattern1, text, re.DOTALL):
+        tool_name, args_str = match.group(1), match.group(2).strip()
+        args = _parse_args_string(args_str)
+        if available_tool_names is None or tool_name in available_tool_names:
+            parsed_calls.append(_make_tool_call(tool_name, args))
+            logger.info(f"文本工具调用解析(模式1): {tool_name}({args})")
+
+    # 模式2: [调用工具: tool_name(args)] 或 [调用工具: tool_name()]
+    pattern2 = r'\[调用工具[：:]\s*(\w+)\s*\((.*?)\)\s*\]'
+    for match in re.finditer(pattern2, text, re.DOTALL):
+        tool_name, args_str = match.group(1), match.group(2).strip()
+        args = _parse_args_string(args_str)
+        if available_tool_names is None or tool_name in available_tool_names:
+            parsed_calls.append(_make_tool_call(tool_name, args))
+            logger.info(f"文本工具调用解析(模式2): {tool_name}({args})")
+
+    # 模式3: ```tool\nname: tool_name\narguments: {...}\n```
+    pattern3 = r'```tool\s*\n\s*name[：:]\s*(\w+)\s*\n\s*arguments[：:]\s*(\{.*?\})\s*\n```'
+    for match in re.finditer(pattern3, text, re.DOTALL):
+        tool_name, args_str = match.group(1), match.group(2).strip()
+        try:
+            args = json.loads(args_str)
+        except json.JSONDecodeError:
+            args = {}
+        if available_tool_names is None or tool_name in available_tool_names:
+            parsed_calls.append(_make_tool_call(tool_name, args))
+            logger.info(f"文本工具调用解析(模式3): {tool_name}({args})")
+
+    # 模式4: 独立行的 tool_name(key="value", key2=123) - 仅匹配已知工具名
+    if available_tool_names:
+        pattern4 = r'^\s*(\w+)\s*\((.*?)\)\s*$'
+        for line in text.split('\n'):
+            line = line.strip()
+            match = re.match(pattern4, line)
+            if match:
+                tool_name, args_str = match.group(1), match.group(2).strip()
+                if tool_name in available_tool_names:
+                    args = _parse_args_string(args_str)
+                    # 检查是否已被前面的模式匹配过（避免重复）
+                    if not any(c["function"]["name"] == tool_name for c in parsed_calls):
+                        parsed_calls.append(_make_tool_call(tool_name, args))
+                        logger.info(f"文本工具调用解析(模式4): {tool_name}({args})")
+
+    return parsed_calls
+
+
+def _parse_args_string(args_str: str) -> Dict[str, Any]:
+    """解析工具参数字符串为字典。
+
+    支持格式：
+    - key="value", key2=123
+    - key='value', key2=True
+    - 空字符串 -> {}
+    - JSON 字符串
+    """
+    if not args_str:
+        return {}
+
+    # 尝试作为 JSON 解析
+    args_str = args_str.strip()
+    if args_str.startswith('{'):
+        try:
+            return json.loads(args_str)
+        except json.JSONDecodeError:
+            pass
+
+    # 解析 key=value 对
+    result = {}
+    # 匹配 key="value" 或 key='value' 或 key=123 或 key=True/False/None
+    pattern = r'(\w+)\s*=\s*("(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'|\w+)'
+    for match in re.finditer(pattern, args_str):
+        key = match.group(1)
+        value = match.group(2)
+
+        # 去掉引号
+        if (value.startswith('"') and value.endswith('"')) or \
+           (value.startswith("'") and value.endswith("'")):
+            value = value[1:-1]
+        elif value.lower() == 'true':
+            value = True
+        elif value.lower() == 'false':
+            value = False
+        elif value.lower() == 'none':
+            value = None
+        else:
+            try:
+                value = int(value)
+            except ValueError:
+                try:
+                    value = float(value)
+                except ValueError:
+                    pass  # 保持字符串
+
+        result[key] = value
+
+    return result
+
+
+def _make_tool_call(tool_name: str, args: Dict[str, Any]) -> Dict:
+    """创建标准格式的工具调用对象"""
+    call_id = f"call_{uuid.uuid4().hex[:8]}"
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {
+            "name": tool_name,
+            "arguments": json.dumps(args, ensure_ascii=False) if args else "{}",
+        },
+    }
+
+
+def strip_text_tool_calls(text: str) -> str:
+    """从文本中移除工具调用标记，只保留纯文本内容"""
+    if not text:
+        return text
+
+    # 移除 <execute_tool>...</execute_tool> 和 <tool_call>...</tool_call>
+    text = re.sub(r'<(?:execute_tool|tool_call)>.*?</(?:execute_tool|tool_call)>', '', text, flags=re.DOTALL)
+    # 移除 [调用工具: ...]
+    text = re.sub(r'\[调用工具[：:].*?\]', '', text, flags=re.DOTALL)
+    # 移除 ```tool\n...\n```
+    text = re.sub(r'```tool\s*\n.*?\n```', '', text, flags=re.DOTALL)
+    # 移除 "(假设工具执行成功...)" 之类的模拟数据标记
+    text = re.sub(r'\(假设工具执行成功.*?\)', '', text, flags=re.DOTALL)
+    # 移除 "[调用工具: xxx()]" 后跟的模拟结果标记
+    text = re.sub(r'\[调用工具[：:].*?\]\s*\(.*?\)', '', text, flags=re.DOTALL)
+
+    return text.strip()
 
 
 class LLMTools:
@@ -100,6 +261,3 @@ class LLMTools:
             "tool_calls": tool_calls,
             "warning": "达到最大迭代次数",
         }
-
-
-import json

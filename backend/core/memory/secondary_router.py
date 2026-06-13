@@ -1022,25 +1022,29 @@ class SecondaryModelRouter:
                 # 执行工具调用
                 BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
 
+                # 构建标准的 assistant tool_calls 消息
+                assistant_tool_calls = []
+                for tc in tool_calls:
+                    func = tc.get("function", {})
+                    assistant_tool_calls.append({
+                        "id": tc.get("id", ""),
+                        "type": "function",
+                        "function": {
+                            "name": func.get("name", tc.get("name", "")),
+                            "arguments": func.get("arguments", tc.get("arguments", "{}")),
+                        },
+                    })
+
                 messages.append({
                     "role": "assistant",
                     "content": response_text or None,
-                    "tool_calls": [
-                        {
-                            "id": tc.get("id", ""),
-                            "type": "function",
-                            "function": {
-                                "name": tc.get("name") or tc.get("function", {}).get("name", ""),
-                                "arguments": tc.get("arguments") or tc.get("function", {}).get("arguments", "{}"),
-                            },
-                        }
-                        for tc in tool_calls
-                    ],
+                    "tool_calls": assistant_tool_calls,
                 })
 
                 for tc in tool_calls:
-                    tool_name = tc.get("name") or tc.get("function", {}).get("name", "")
-                    tool_args = tc.get("arguments") or tc.get("function", {}).get("arguments", "{}")
+                    func = tc.get("function", {})
+                    tool_name = func.get("name", tc.get("name", ""))
+                    tool_args = func.get("arguments", tc.get("arguments", "{}"))
 
                     if isinstance(tool_args, str):
                         try:

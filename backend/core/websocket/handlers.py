@@ -227,24 +227,37 @@ class ChatWebSocketHandler:
 
             # 处理工具调用
             if tool_calls_buffer:
+                # 构建标准的 assistant tool_calls 消息
+                assistant_tool_calls = []
                 for tool_call in tool_calls_buffer:
-                    tool_name = tool_call.get("name") or tool_call.get("function", {}).get(
-                        "name"
-                    )
-                    tool_args = tool_call.get("arguments") or tool_call.get("function", {}).get(
-                        "arguments", "{}"
-                    )
+                    func = tool_call.get("function", {})
+                    assistant_tool_calls.append({
+                        "id": tool_call.get("id", ""),
+                        "type": "function",
+                        "function": {
+                            "name": func.get("name", tool_call.get("name", "")),
+                            "arguments": func.get("arguments", tool_call.get("arguments", "{}")),
+                        },
+                    })
+
+                messages.append({
+                    "role": "assistant",
+                    "content": full_response or None,
+                    "tool_calls": assistant_tool_calls,
+                })
+
+                for tool_call in tool_calls_buffer:
+                    func = tool_call.get("function", {})
+                    tool_name = func.get("name", tool_call.get("name", ""))
+                    tool_args = func.get("arguments", tool_call.get("arguments", "{}"))
 
                     if isinstance(tool_args, str):
                         try:
                             tool_args = json.loads(tool_args)
                         except json.JSONDecodeError as e:
-                            logger.warning(
-                                f"工具参数 JSON 解析失败: {e}, 原始参数: {tool_args}"
-                            )
+                            logger.warning(f"工具参数 JSON 解析失败: {e}, 原始参数: {tool_args}")
                             try:
                                 import ast
-
                                 tool_args = ast.literal_eval(tool_args)
                                 if not isinstance(tool_args, dict):
                                     tool_args = {}
@@ -256,27 +269,23 @@ class ChatWebSocketHandler:
                         client_id, {"type": "tool_start", "tool_name": tool_name}
                     )
 
-                    # 执行工具（区分内置工具和注册工具）
-                    if tool_name in BUILTIN_TOOL_NAMES:
-                        tool_result = call_builtin_tool(tool_name, tool_args or {})
-                        logger.info(f"内置工具 {tool_name} 执行结果: {tool_result}")
-                    else:
-                        tool_result = tool_registry.call_tool(tool_name, tool_args)
-                        logger.info(f"注册工具 {tool_name} 执行结果: {tool_result}")
+                    # 执行工具
+                    try:
+                        if tool_name in BUILTIN_TOOL_NAMES:
+                            tool_result = call_builtin_tool(tool_name, tool_args or {})
+                        else:
+                            tool_result = tool_registry.call_tool(tool_name, tool_args)
+                    except Exception as e:
+                        logger.warning(f"工具 {tool_name} 执行失败: {e}")
+                        tool_result = {"success": False, "error": str(e)}
 
                     # 发送工具执行结果事件
-                    logger.info(
-                        f"发送工具结果事件: tool_name={tool_name}, result type={type(tool_result)}"
-                    )
                     await self.ws_manager.send_to_client(
                         client_id,
                         {"type": "tool_result", "tool_name": tool_name, "result": tool_result},
                     )
 
-                    # 添加工具调用结果到消息
-                    messages.append(
-                        {"role": "assistant", "content": None, "tool_calls": [tool_call]}
-                    )
+                    # 添加工具结果到消息
                     messages.append(
                         {
                             "role": "tool",
@@ -315,6 +324,13 @@ class ChatWebSocketHandler:
                                 await self.ws_manager.send_to_client(
                                     client_id, {"type": "thinking", "content": thinking_content}
                                 )
+                            elif chunk_type == "tool_calls":
+                                new_tool_calls = chunk.get("tool_calls", [])
+                                tool_calls_buffer.extend(new_tool_calls)
+                                for tc in new_tool_calls:
+                                    await self.ws_manager.send_to_client(
+                                        client_id, {"type": "tool_call", "tool_call": tc}
+                                    )
                         elif isinstance(chunk, str):
                             full_response += chunk
                             await self.ws_manager.send_to_client(

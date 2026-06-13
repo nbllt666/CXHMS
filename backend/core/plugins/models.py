@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class HookType(str, Enum):
@@ -62,8 +62,7 @@ class PluginMetadata(BaseModel):
     config_schema: Optional[Dict[str, Any]] = Field(default=None, description="配置项Schema")
     default_config: Dict[str, Any] = Field(default_factory=dict, description="默认配置")
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
 
 class PluginHook(BaseModel):
@@ -74,8 +73,7 @@ class PluginHook(BaseModel):
     priority: int = Field(default=100, description="优先级，数字越小优先级越高")
     plugin_id: str = Field(..., description="所属插件ID")
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class Plugin(BaseModel):
@@ -94,9 +92,7 @@ class Plugin(BaseModel):
     hook_calls: int = Field(default=0, description="钩子调用次数")
     errors: int = Field(default=0, description="错误次数")
 
-    class Config:
-        arbitrary_types_allowed = True
-        json_encoders = {datetime: lambda v: v.isoformat() if v else None}
+    model_config = ConfigDict(arbitrary_types_allowed=True, json_encoders={datetime: lambda v: v.isoformat() if v else None})
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典（用于API返回）"""
@@ -118,8 +114,7 @@ class PluginEvent(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now, description="时间戳")
     source: Optional[str] = Field(default=None, description="事件来源")
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
 
 class PluginResult(BaseModel):

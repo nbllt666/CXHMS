@@ -525,6 +525,11 @@ class VLLMClient(LLMClient):
 
             url = f"{self.host}/v1/chat/completions"
 
+            # 增量拼接 tool_calls 的缓冲区
+            # vLLM 流式返回 tool_calls 时是增量的：第一个 chunk 包含 id/name，
+            # 后续 chunk 只包含 arguments 的片段，需要拼接
+            tool_calls_accumulator: Dict[int, Dict] = {}
+
             async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0), trust_env=False) as client:
                 async with client.stream("POST", url, json=request_body, headers=headers) as response:
                     if response.status_code != 200:
@@ -549,9 +554,37 @@ class VLLMClient(LLMClient):
                                         yield {"type": "content", "content": content}
                                     tool_calls = delta.get("tool_calls")
                                     if tool_calls:
-                                        yield {"type": "tool_calls", "tool_calls": tool_calls}
+                                        # 增量拼接 tool_calls
+                                        for tc in tool_calls:
+                                            idx = tc.get("index", 0)
+                                            if idx not in tool_calls_accumulator:
+                                                # 新的 tool_call，初始化
+                                                tool_calls_accumulator[idx] = {
+                                                    "id": tc.get("id", ""),
+                                                    "type": tc.get("type", "function"),
+                                                    "function": {
+                                                        "name": tc.get("function", {}).get("name", ""),
+                                                        "arguments": tc.get("function", {}).get("arguments", ""),
+                                                    },
+                                                }
+                                            else:
+                                                # 增量更新，拼接 arguments
+                                                func_delta = tc.get("function", {})
+                                                if func_delta.get("name"):
+                                                    tool_calls_accumulator[idx]["function"]["name"] += func_delta["name"]
+                                                if func_delta.get("arguments"):
+                                                    tool_calls_accumulator[idx]["function"]["arguments"] += func_delta["arguments"]
+                                                if tc.get("id"):
+                                                    tool_calls_accumulator[idx]["id"] = tc["id"]
                                 except (json.JSONDecodeError, KeyError, IndexError):
                                     continue
+
+                    # 流结束后，yield 拼接完成的 tool_calls
+                    if tool_calls_accumulator:
+                        complete_tool_calls = [tool_calls_accumulator[i] for i in sorted(tool_calls_accumulator.keys())]
+                        logger.info(f"流式 tool_calls 拼接完成: {len(complete_tool_calls)} 个工具调用")
+                        yield {"type": "tool_calls", "tool_calls": complete_tool_calls}
+
         except Exception as e:
             logger.error(f"VLLM流式调用失败: {e}")
             yield {"type": "error", "content": str(e)}
