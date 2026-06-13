@@ -12,7 +12,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend.api.routers.agents import _load_agents
+from backend.core.context.agent_context_manager import AgentContextManager
 from backend.core.logging_config import get_contextual_logger
+from backend.core.tools import tool_registry
+call_builtin_tool, get_builtin_tools
 
 logger = get_contextual_logger(__name__)
 
@@ -235,7 +238,7 @@ def _try_auto_store_memory(
     try:
         memory_content = _auto_extract_memory(user_message, assistant_response)
         if memory_content:
-            from backend.core.tools import tool_registry
+            tool_registry
 
             result = tool_registry.call_tool(
                 "write_long_term_memory",
@@ -424,7 +427,7 @@ async def chat(request: ChatRequest):
         )
 
         # 7. 获取工具（只过滤 summary 类别）
-        from backend.core.tools import tool_registry
+        tool_registry
 
         all_tools = tool_registry.list_openai_functions(include_builtin=True)
         # 只过滤 summary 类别的工具
@@ -443,13 +446,13 @@ async def chat(request: ChatRequest):
         response = await llm.chat(messages=messages, stream=False, tools=tools if tools else None)
 
         # 9. 循环处理工具调用（最多5轮）
-        max_tool_rounds = 5
+        max_tool_rounds = 50
         for _ in range(max_tool_rounds):
             if not (hasattr(response, "tool_calls") and response.tool_calls):
                 break
 
-            from backend.core.tools import tool_registry
-            from backend.core.tools.builtin import call_builtin_tool
+            tool_registry
+            call_builtin_tool
 
             BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
 
@@ -578,8 +581,8 @@ async def chat_stream(request: ChatRequest):
         )
 
         # 7. 获取工具（只过滤 summary 类别）
-        from backend.core.tools import tool_registry
-        from backend.core.tools.builtin import get_builtin_tools
+        tool_registry
+        get_builtin_tools
 
         # 获取内置工具
         builtin_tools = get_builtin_tools()
@@ -684,8 +687,8 @@ async def chat_stream(request: ChatRequest):
 
                 # 处理工具调用
                 if tool_calls_buffer:
-                    from backend.core.tools import tool_registry
-                    from backend.core.tools.builtin import call_builtin_tool
+                    tool_registry
+                    call_builtin_tool
 
                     # 定义内置工具名称集合
                     BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
@@ -863,7 +866,7 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
     记忆管理Agent只有一个固定会话
     """
     from backend.api.app import get_context_manager, get_memory_manager, get_model_router
-    from backend.core.context.agent_context_manager import AgentContextManager
+    AgentContextManager
 
     try:
         # 1. 获取记忆管理Agent配置
@@ -917,7 +920,7 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
                 messages.append({"role": msg["role"], "content": msg.get("content", "")})
 
         # 7. 获取记忆管理工具（16个assistant类别工具）
-        from backend.core.tools import tool_registry
+        tool_registry
 
         tools = tool_registry.list_openai_functions(include_builtin=False, category="assistant")
 
@@ -995,7 +998,7 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
 
                 # 处理工具调用
                 if tool_calls_buffer:
-                    from backend.core.tools.builtin import call_builtin_tool
+                    call_builtin_tool
 
                     BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
 

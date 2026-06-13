@@ -1000,7 +1000,7 @@ class SecondaryModelRouter:
             )
 
             # 处理工具调用循环（最多 5 轮）
-            max_rounds = 5
+            max_rounds = 50
             for _ in range(max_rounds):
                 # 提取工具调用
                 tool_calls = None
