@@ -1744,36 +1744,20 @@ class MemoryManager:
         return results
 
     def sync_decay_values(self, workspace_id: str = "default") -> Dict:
-        """同步衰减值 - 已改为实时计算模式，此函数仅返回统计信息
-
-        注意：时间分数现在实时计算，不再预存储到数据库
-        """
+        """获取衰减统计信息（实时计算模式，不写入数据库）"""
         from backend.core.memory.decay import DecayCalculator
 
         try:
-            # 获取所有记忆用于统计
             memories = self.search_memories(limit=10000, workspace_id=workspace_id)
 
             decay_calculator = DecayCalculator()
             total = len(memories)
             permanent_count = sum(1 for m in memories if m.get("permanent"))
 
-            # 实时计算统计信息
             time_scores = []
             for memory in memories:
                 if not memory.get("permanent"):
-                    time_score = decay_calculator.calculate_time_score_realtime(
-                        importance=memory.get(
-                            "importance_score", memory.get("importance", 3) / 5.0
-                        ),
-                        created_at=memory.get("created_at", datetime.now().isoformat()),
-                        decay_type=memory.get("decay_type", "exponential"),
-                        decay_params=memory.get("decay_params"),
-                        permanent=False,
-                        reactivation_count=memory.get("reactivation_count", 0),
-                        emotion_score=memory.get("emotion_score", 0.0),
-                    )
-                    time_scores.append(time_score)
+                    time_scores.append(memory.get("time_score", 0.0))
 
             avg_time_score = sum(time_scores) / len(time_scores) if time_scores else 0.0
 
@@ -1782,16 +1766,14 @@ class MemoryManager:
             )
 
             return {
-                "updated": 0,  # 不再更新数据库
-                "failed": 0,
                 "total": total,
                 "permanent_count": permanent_count,
-                "avg_time_score": avg_time_score,
-                "mode": "realtime",  # 标记为实时计算模式
+                "avg_time_score": round(avg_time_score, 4),
+                "mode": "realtime",
             }
         except Exception as e:
             logger.error(f"统计衰减值失败: {e}", exc_info=True)
-            return {"updated": 0, "failed": 0, "total": 0, "error": str(e)}
+            return {"total": 0, "error": str(e), "mode": "realtime"}
 
     def get_decay_statistics(self, workspace_id: str = "default") -> Dict:
         from backend.core.memory.decay import DecayCalculator

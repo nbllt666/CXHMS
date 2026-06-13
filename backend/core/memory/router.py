@@ -120,12 +120,14 @@ class MemoryRouter:
                 applied_rules.append("最近交互记忆优先")
 
             search_results = await self._search_memories(query, options)
+            logger.info(f"记忆路由: query='{query}', hybrid_search={self.hybrid_search is not None}, search_results={len(search_results)}")
 
             scored_memories = self._score_memories(
                 search_results, query, applied_weights, context or {}
             )
 
             filtered = self._apply_filters(scored_memories)
+            logger.info(f"记忆路由: scored={len(scored_memories)}, filtered={len(filtered)}")
 
             final_memories = self._apply_scene_adjustment(filtered, scene_type, applied_weights)
 

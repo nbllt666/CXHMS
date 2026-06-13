@@ -20,12 +20,16 @@ class ValidationResult:
     def __init__(self):
         self.errors: List[ValidationError] = []
         self.warnings: List[Tuple[str, str]] = []
+        self.repairs: List[str] = []
 
     def add_error(self, field: str, message: str):
         self.errors.append(ValidationError(field, message))
 
     def add_warning(self, field: str, message: str):
         self.warnings.append((field, message))
+
+    def add_repair(self, repair_message: str):
+        self.repairs.append(repair_message)
 
     @property
     def is_valid(self) -> bool:

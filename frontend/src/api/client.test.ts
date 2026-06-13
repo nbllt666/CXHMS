@@ -282,26 +282,24 @@ describe('API Client', () => {
     });
 
     it('should create ACP agent', async () => {
-      const mockAgent = { id: 'new-acp-agent', name: 'New Agent' };
-      mockPost.mockResolvedValueOnce({ data: mockAgent });
+      const mockConnection = { id: 'new-connection', status: 'success' };
+      mockPost.mockResolvedValueOnce({ data: mockConnection });
 
-      const result = await api.createAcpAgent({ name: 'New Agent', capabilities: ['chat'] });
-      expect(result.id).toBe('new-acp-agent');
+      const result = await api.createAcpAgent({ agent_id: 'remote-agent', host: 'localhost', port: 8080 });
+      expect(result.status).toBe('success');
+      expect(mockPost).toHaveBeenCalledWith('/api/acp/connect', { agent_id: 'remote-agent', host: 'localhost', port: 8080 });
     });
 
-    it('should update ACP agent', async () => {
-      const mockAgent = { id: 'agent-1', name: 'Updated Agent' };
-      mockPut.mockResolvedValueOnce({ data: mockAgent });
-
+    it('should update ACP agent (no-op)', async () => {
       const result = await api.updateAcpAgent('agent-1', { name: 'Updated Agent' });
-      expect(result.name).toBe('Updated Agent');
+      expect(result.status).toBe('error');
     });
 
     it('should delete ACP agent', async () => {
       mockDelete.mockResolvedValueOnce({ data: {} });
 
-      await api.deleteAcpAgent('agent-1');
-      expect(mockDelete).toHaveBeenCalledWith('/api/acp/agents/agent-1');
+      await api.deleteAcpAgent('connection-1');
+      expect(mockDelete).toHaveBeenCalledWith('/api/acp/connect/connection-1');
     });
   });
 
@@ -339,11 +337,12 @@ describe('API Client', () => {
     });
 
     it('should update tool', async () => {
-      const mockTool = { id: 'tool-1', name: 'Updated Tool' };
-      mockPut.mockResolvedValueOnce({ data: mockTool });
+      const mockTool = { status: 'success', message: '工具 test-tool 注册成功' };
+      mockPost.mockResolvedValueOnce({ data: mockTool });
 
-      const result = await api.updateTool('tool-1', { name: 'Updated Tool' });
-      expect(result.name).toBe('Updated Tool');
+      const result = await api.updateTool('test-tool', { description: 'Updated' });
+      expect(result.status).toBe('success');
+      expect(mockPost).toHaveBeenCalledWith('/api/tools', { name: 'test-tool', description: 'Updated' });
     });
 
     it('should delete tool', async () => {

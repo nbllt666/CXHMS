@@ -1,12 +1,16 @@
 import asyncio
+import json
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from backend.core.logging_config import get_contextual_logger
 
 from .manager import get_websocket_manager
 
 logger = get_contextual_logger(__name__)
+
+# 内置工具名称集合，用于区分内置工具和注册工具
+BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
 
 
 class ChatWebSocketHandler:
@@ -31,8 +35,10 @@ class ChatWebSocketHandler:
         self.ws_manager.register_handler("cancel", self._handle_cancel)
         self.ws_manager.register_handler("config", self._handle_config)
 
-    async def _handle_chat(self, client_id: str, message: Dict[str, Any]):
-        """处理普通聊天消息"""
+    async def _prepare_chat(
+        self, client_id: str, message: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """准备聊天所需的上下文，返回准备结果或 None（出错时已发送错误消息）"""
         from backend.api.app import get_context_manager, get_memory_manager
         from backend.api.routers.chat import (
             build_messages,
@@ -40,185 +46,150 @@ class ChatWebSocketHandler:
             get_llm_client_for_agent,
         )
 
-        try:
-            agent_id = message.get("agent_id", "default")
-            session_id = message.get("session_id")
-            user_message = message.get("message", "")
+        agent_id = message.get("agent_id", "default")
+        session_id = message.get("session_id")
+        user_message = message.get("message", "")
 
-            if not user_message:
-                await self.ws_manager.send_to_client(
-                    client_id, {"type": "error", "error": "消息不能为空"}
-                )
-                return
-
-            # 获取配置
-            agent_config = get_agent_config(agent_id)
-            if not agent_config:
-                await self.ws_manager.send_to_client(
-                    client_id, {"type": "error", "error": f"Agent '{agent_id}' 不存在"}
-                )
-                return
-
-            # 获取管理器
-            memory_mgr = get_memory_manager()
-            context_mgr = get_context_manager()
-            llm = get_llm_client_for_agent(agent_config)
-
-            # 获取/创建会话
-            if session_id:
-                try:
-                    context_mgr.get_session(session_id)
-                except Exception:
-                    await self.ws_manager.send_to_client(
-                        client_id, {"type": "error", "error": f"会话 '{session_id}' 不存在"}
-                    )
-                    return
-            else:
-                session_id = context_mgr.create_session(
-                    workspace_id="default", title=f"与 {agent_config['name']} 的对话"
-                )
-
-            # 添加用户消息
-            context_mgr.add_message(session_id=session_id, role="user", content=user_message)
-
-            # 检索记忆
-            memory_context = None
-            if agent_config.get("use_memory", True) and memory_mgr:
-                from backend.core.memory.router import MemoryRouter
-
-                router = MemoryRouter(memory_manager=memory_mgr)
-                routing_result = await router.route(
-                    query=user_message,
-                    session_id=session_id,
-                    scene_type=agent_config.get("memory_scene", "chat"),
-                )
-                if routing_result.memories:
-                    memory_context = "\n".join(
-                        [f"- {m['content']}" for m in routing_result.memories[:5]]
-                    )
-
-            # 构建消息列表
-            messages = build_messages(
-                agent_config=agent_config,
-                context_mgr=context_mgr,
-                session_id=session_id,
-                user_message=user_message,
-                memory_context=memory_context,
-            )
-
-            # 调用 LLM
-            response = await llm.chat(messages=messages, stream=False)
-
-            # 保存助手响应
-            context_mgr.add_message(
-                session_id=session_id, role="assistant", content=response.content
-            )
-
-            # 发送响应
+        if not user_message:
             await self.ws_manager.send_to_client(
-                client_id,
-                {
-                    "type": "chat_response",
-                    "session_id": session_id,
-                    "content": response.content,
-                    "tokens_used": response.usage.get("total_tokens", 0) if response.usage else 0,
-                    "timestamp": datetime.now().isoformat(),
-                },
+                client_id, {"type": "error", "error": "消息不能为空"}
+            )
+            return None
+
+        # 获取配置
+        agent_config = get_agent_config(agent_id)
+        if not agent_config:
+            await self.ws_manager.send_to_client(
+                client_id, {"type": "error", "error": f"Agent '{agent_id}' 不存在"}
+            )
+            return None
+
+        # 获取管理器
+        memory_mgr = get_memory_manager()
+        context_mgr = get_context_manager()
+        llm = get_llm_client_for_agent(agent_config)
+
+        # 获取/创建会话
+        if session_id:
+            try:
+                context_mgr.get_session(session_id)
+            except Exception:
+                await self.ws_manager.send_to_client(
+                    client_id, {"type": "error", "error": f"会话 '{session_id}' 不存在"}
+                )
+                return None
+        else:
+            session_id = context_mgr.create_session(
+                workspace_id="default", title=f"与 {agent_config['name']} 的对话"
             )
 
-        except Exception as e:
-            logger.error(f"处理聊天消息失败: {e}")
-            await self.ws_manager.send_to_client(client_id, {"type": "error", "error": str(e)})
+        # 添加用户消息
+        context_mgr.add_message(session_id=session_id, role="user", content=user_message)
 
-    async def _handle_chat_stream(self, client_id: str, message: Dict[str, Any]):
-        """处理流式聊天消息"""
-        from backend.api.app import get_context_manager, get_memory_manager
-        from backend.api.routers.chat import (
-            build_messages,
-            get_agent_config,
-            get_llm_client_for_agent,
+        # 检索记忆
+        memory_context = None
+        if agent_config.get("use_memory", True) and memory_mgr:
+            from backend.core.memory.router import MemoryRouter
+
+            router = MemoryRouter(memory_manager=memory_mgr)
+            routing_result = await router.route(
+                query=user_message,
+                session_id=session_id,
+                scene_type=agent_config.get("memory_scene", "chat"),
+            )
+            if routing_result.memories:
+                memory_context = "\n".join(
+                    [f"- {m['content']}" for m in routing_result.memories[:5]]
+                )
+
+        # 构建消息列表
+        messages = build_messages(
+            agent_config=agent_config,
+            context_mgr=context_mgr,
+            session_id=session_id,
+            user_message=user_message,
+            memory_context=memory_context,
+        )
+
+        # 获取工具（只过滤 summary 类别）
+        from backend.core.tools import tool_registry
+        from backend.core.tools.builtin import get_builtin_tools
+
+        builtin_tools = get_builtin_tools()
+
+        EXCLUDED_CATEGORIES = {"summary"}
+        main_tool_names = {
+            "write_long_term_memory",
+            "search_all_memories",
+            "call_assistant",
+            "set_alarm",
+            "mono",
+            "write_permanent_memory",
+            "acp_list_agents",
+            "acp_connect",
+            "acp_disconnect",
+            "acp_send_message",
+            "acp_create_group",
+            "acp_join_group",
+            "acp_leave_group",
+        }
+        main_tools = []
+        for tool_name in main_tool_names:
+            tool = tool_registry.get_tool(tool_name)
+            if tool and tool.enabled and tool.category not in EXCLUDED_CATEGORIES:
+                main_tools.append(tool.to_openai_function())
+
+        tools = builtin_tools + main_tools
+
+        logger.info(
+            f"为 Agent '{agent_config.get('name')}' 配置了 {len(tools)} 个工具: {[t['function']['name'] for t in tools]}"
+        )
+
+        return {
+            "agent_config": agent_config,
+            "session_id": session_id,
+            "context_mgr": context_mgr,
+            "llm": llm,
+            "messages": messages,
+            "tools": tools,
+        }
+
+    async def _stream_chat_to_client(
+        self,
+        client_id: str,
+        llm,
+        messages: List[Dict],
+        agent_config: Dict,
+        tools: List[Dict],
+        context_mgr,
+        session_id: str,
+    ):
+        """核心流式聊天逻辑：流式调用 LLM，处理工具调用，发送正确类型的 WebSocket 消息"""
+        from backend.core.tools import tool_registry
+        from backend.core.tools.builtin import call_builtin_tool
+
+        full_response = ""
+        full_thinking = ""
+        tool_calls_buffer: List[Dict] = []
+
+        # 发送会话ID作为第一个消息
+        await self.ws_manager.send_to_client(
+            client_id, {"type": "session", "session_id": session_id}
         )
 
         try:
-            agent_id = message.get("agent_id", "default")
-            session_id = message.get("session_id")
-            user_message = message.get("message", "")
-
-            if not user_message:
-                await self.ws_manager.send_to_client(
-                    client_id, {"type": "error", "error": "消息不能为空"}
-                )
-                return
-
-            # 获取配置
-            agent_config = get_agent_config(agent_id)
-            if not agent_config:
-                await self.ws_manager.send_to_client(
-                    client_id, {"type": "error", "error": f"Agent '{agent_id}' 不存在"}
-                )
-                return
-
-            # 获取管理器
-            memory_mgr = get_memory_manager()
-            context_mgr = get_context_manager()
-            llm = get_llm_client_for_agent(agent_config)
-
-            # 获取/创建会话
-            if session_id:
-                try:
-                    context_mgr.get_session(session_id)
-                except Exception:
-                    await self.ws_manager.send_to_client(
-                        client_id, {"type": "error", "error": f"会话 '{session_id}' 不存在"}
-                    )
-                    return
-            else:
-                session_id = context_mgr.create_session(
-                    workspace_id="default", title=f"与 {agent_config['name']} 的对话"
-                )
-
-            # 发送会话ID
-            await self.ws_manager.send_to_client(
-                client_id, {"type": "session_info", "session_id": session_id}
+            logger.info(
+                f"开始流式聊天，消息数: {len(messages)}, 工具数: {len(tools) if tools else 0}"
             )
 
-            # 添加用户消息
-            context_mgr.add_message(session_id=session_id, role="user", content=user_message)
-
-            # 检索记忆
-            memory_context = None
-            if agent_config.get("use_memory", True) and memory_mgr:
-                from backend.core.memory.router import MemoryRouter
-
-                router = MemoryRouter(memory_manager=memory_mgr)
-                routing_result = await router.route(
-                    query=user_message,
-                    session_id=session_id,
-                    scene_type=agent_config.get("memory_scene", "chat"),
-                )
-                if routing_result.memories:
-                    memory_context = "\n".join(
-                        [f"- {m['content']}" for m in routing_result.memories[:5]]
-                    )
-
-            # 构建消息列表
-            messages = build_messages(
-                agent_config=agent_config,
-                context_mgr=context_mgr,
-                session_id=session_id,
-                user_message=user_message,
-                memory_context=memory_context,
-            )
-
-            # 流式响应
-            full_response = ""
-            self._cancel_flags[client_id] = False
-
+            # 调用 LLM 流式接口
             async for chunk in llm.stream_chat(
                 messages=messages,
                 temperature=agent_config.get("temperature", 0.7),
-                max_tokens=agent_config.get("max_tokens", 4096),
+                max_tokens=agent_config.get("max_tokens") or 4096,
+                tools=tools if tools else None,
             ):
+                # 检查取消
                 if self._cancel_flags.get(client_id, False):
                     await self.ws_manager.send_to_client(
                         client_id, {"type": "cancelled", "timestamp": datetime.now().isoformat()}
@@ -226,12 +197,130 @@ class ChatWebSocketHandler:
                     return
 
                 if chunk:
-                    full_response += chunk
-                    await self.ws_manager.send_to_client(
-                        client_id, {"type": "chat_chunk", "content": chunk}
+                    if isinstance(chunk, dict):
+                        chunk_type = chunk.get("type")
+                        if chunk_type == "thinking":
+                            thinking_content = chunk.get("content", "")
+                            full_thinking += thinking_content
+                            await self.ws_manager.send_to_client(
+                                client_id, {"type": "thinking", "content": thinking_content}
+                            )
+                        elif chunk_type == "content":
+                            content = chunk.get("content", "")
+                            full_response += content
+                            await self.ws_manager.send_to_client(
+                                client_id, {"type": "content", "content": content}
+                            )
+                        elif chunk_type == "tool_calls":
+                            new_tool_calls = chunk.get("tool_calls", [])
+                            logger.info(f"检测到工具调用: {new_tool_calls}")
+                            tool_calls_buffer.extend(new_tool_calls)
+                            for tool_call in new_tool_calls:
+                                await self.ws_manager.send_to_client(
+                                    client_id, {"type": "tool_call", "tool_call": tool_call}
+                                )
+                    elif isinstance(chunk, str):
+                        full_response += chunk
+                        await self.ws_manager.send_to_client(
+                            client_id, {"type": "content", "content": chunk}
+                        )
+
+            # 处理工具调用
+            if tool_calls_buffer:
+                for tool_call in tool_calls_buffer:
+                    tool_name = tool_call.get("name") or tool_call.get("function", {}).get(
+                        "name"
+                    )
+                    tool_args = tool_call.get("arguments") or tool_call.get("function", {}).get(
+                        "arguments", "{}"
                     )
 
-            # 保存完整响应
+                    if isinstance(tool_args, str):
+                        try:
+                            tool_args = json.loads(tool_args)
+                        except json.JSONDecodeError as e:
+                            logger.warning(
+                                f"工具参数 JSON 解析失败: {e}, 原始参数: {tool_args}"
+                            )
+                            try:
+                                import ast
+
+                                tool_args = ast.literal_eval(tool_args)
+                                if not isinstance(tool_args, dict):
+                                    tool_args = {}
+                            except Exception:
+                                tool_args = {}
+
+                    # 发送工具执行开始事件
+                    await self.ws_manager.send_to_client(
+                        client_id, {"type": "tool_start", "tool_name": tool_name}
+                    )
+
+                    # 执行工具（区分内置工具和注册工具）
+                    if tool_name in BUILTIN_TOOL_NAMES:
+                        tool_result = call_builtin_tool(tool_name, tool_args or {})
+                        logger.info(f"内置工具 {tool_name} 执行结果: {tool_result}")
+                    else:
+                        tool_result = tool_registry.call_tool(tool_name, tool_args)
+                        logger.info(f"注册工具 {tool_name} 执行结果: {tool_result}")
+
+                    # 发送工具执行结果事件
+                    logger.info(
+                        f"发送工具结果事件: tool_name={tool_name}, result type={type(tool_result)}"
+                    )
+                    await self.ws_manager.send_to_client(
+                        client_id,
+                        {"type": "tool_result", "tool_name": tool_name, "result": tool_result},
+                    )
+
+                    # 添加工具调用结果到消息
+                    messages.append(
+                        {"role": "assistant", "content": None, "tool_calls": [tool_call]}
+                    )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.get("id", ""),
+                            "name": tool_name,
+                            "content": json.dumps(tool_result, ensure_ascii=False),
+                        }
+                    )
+
+                # 再次调用 LLM 获取最终响应（流式）
+                full_response = ""
+                async for chunk in llm.stream_chat(
+                    messages=messages,
+                    temperature=agent_config.get("temperature", 0.7),
+                    max_tokens=agent_config.get("max_tokens") or 4096,
+                ):
+                    # 检查取消
+                    if self._cancel_flags.get(client_id, False):
+                        await self.ws_manager.send_to_client(
+                            client_id, {"type": "cancelled", "timestamp": datetime.now().isoformat()}
+                        )
+                        return
+
+                    if chunk:
+                        if isinstance(chunk, dict):
+                            chunk_type = chunk.get("type")
+                            if chunk_type == "content":
+                                content = chunk.get("content", "")
+                                full_response += content
+                                await self.ws_manager.send_to_client(
+                                    client_id, {"type": "content", "content": content}
+                                )
+                            elif chunk_type == "thinking":
+                                thinking_content = chunk.get("content", "")
+                                await self.ws_manager.send_to_client(
+                                    client_id, {"type": "thinking", "content": thinking_content}
+                                )
+                        elif isinstance(chunk, str):
+                            full_response += chunk
+                            await self.ws_manager.send_to_client(
+                                client_id, {"type": "content", "content": chunk}
+                            )
+
+            # 保存完整响应到上下文
             if full_response:
                 context_mgr.add_message(
                     session_id=session_id, role="assistant", content=full_response
@@ -239,14 +328,51 @@ class ChatWebSocketHandler:
 
             # 发送完成消息
             await self.ws_manager.send_to_client(
-                client_id,
-                {
-                    "type": "chat_done",
-                    "session_id": session_id,
-                    "timestamp": datetime.now().isoformat(),
-                },
+                client_id, {"type": "done", "session_id": session_id}
             )
 
+        except Exception as e:
+            logger.error(f"流式聊天错误: {e}", exc_info=True)
+            await self.ws_manager.send_to_client(
+                client_id, {"type": "error", "error": str(e)}
+            )
+
+    async def _handle_chat(self, client_id: str, message: Dict[str, Any]):
+        """处理普通聊天消息（使用流式响应）"""
+        try:
+            self._cancel_flags[client_id] = False
+            prep = await self._prepare_chat(client_id, message)
+            if prep is None:
+                return
+            await self._stream_chat_to_client(
+                client_id=client_id,
+                llm=prep["llm"],
+                messages=prep["messages"],
+                agent_config=prep["agent_config"],
+                tools=prep["tools"],
+                context_mgr=prep["context_mgr"],
+                session_id=prep["session_id"],
+            )
+        except Exception as e:
+            logger.error(f"处理聊天消息失败: {e}")
+            await self.ws_manager.send_to_client(client_id, {"type": "error", "error": str(e)})
+
+    async def _handle_chat_stream(self, client_id: str, message: Dict[str, Any]):
+        """处理流式聊天消息"""
+        try:
+            self._cancel_flags[client_id] = False
+            prep = await self._prepare_chat(client_id, message)
+            if prep is None:
+                return
+            await self._stream_chat_to_client(
+                client_id=client_id,
+                llm=prep["llm"],
+                messages=prep["messages"],
+                agent_config=prep["agent_config"],
+                tools=prep["tools"],
+                context_mgr=prep["context_mgr"],
+                session_id=prep["session_id"],
+            )
         except Exception as e:
             logger.error(f"处理流式聊天消息失败: {e}")
             await self.ws_manager.send_to_client(client_id, {"type": "error", "error": str(e)})

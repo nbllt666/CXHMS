@@ -1,8 +1,12 @@
 import axios, { AxiosInstance, AxiosError, AxiosResponse } from 'axios';
 import type { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001';
 const CONTROL_SERVICE_URL = import.meta.env.VITE_CONTROL_SERVICE_URL || 'http://localhost:8765';
+
+// 动态获取当前 API URL（优先 localStorage 保存的地址）
+const getCurrentApiUrl = () => localStorage.getItem('cxhms-api-url') || API_BASE_URL;
+const getCurrentControlUrl = () => localStorage.getItem('cxhms-control-url') || CONTROL_SERVICE_URL;
 
 interface RetryConfig extends InternalAxiosRequestConfig {
   retryCount?: number;
@@ -22,6 +26,11 @@ export interface Agent {
   memory_scene?: string;
   tools?: string[];
   capabilities?: string[];
+  decay_model?: string;
+  use_tools?: boolean;
+  vision_enabled?: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 class ApiClient {
@@ -35,7 +44,7 @@ class ApiClient {
 
   constructor() {
     this.client = axios.create({
-      baseURL: API_BASE_URL,
+      baseURL: getCurrentApiUrl(),
       timeout: 30000,
       headers: {
         'Content-Type': 'application/json',
@@ -43,7 +52,7 @@ class ApiClient {
     });
 
     this.controlClient = axios.create({
-      baseURL: CONTROL_SERVICE_URL,
+      baseURL: getCurrentControlUrl(),
       timeout: 30000,
       headers: {
         'Content-Type': 'application/json',
@@ -114,7 +123,8 @@ class ApiClient {
       async (error: AxiosError) => {
         if (error.response?.status === 401) {
           localStorage.removeItem('cxhms-token');
-          window.location.href = '/login';
+          console.warn('Authentication required. Redirecting to home page.');
+          window.location.href = '/';
           return Promise.reject(error);
         }
 
@@ -433,6 +443,11 @@ class ApiClient {
     return response.data;
   }
 
+  async clearSessionMessages(sessionId: string): Promise<any> {
+    const response = await this.client.delete(`/api/context/sessions/${sessionId}/messages`);
+    return response.data;
+  }
+
   async clearAllSessions() {
     this._clearCache('/api/context/sessions');
     const response = await this.client.delete('/api/context/sessions/all');
@@ -468,30 +483,29 @@ class ApiClient {
   }
 
   async createAcpAgent(data: {
-    name: string;
-    description?: string;
-    capabilities?: string[];
-    status?: 'active' | 'inactive';
+    agent_id: string;
+    host: string;
+    port: number;
   }) {
-    const response = await this.client.post('/api/acp/agents', data);
+    const response = await this.client.post('/api/acp/connect', data);
     return response.data;
   }
 
   async updateAcpAgent(
-    id: string,
-    data: Partial<{
+    id?: string,
+    data?: Partial<{
       name: string;
       description: string;
       capabilities: string[];
       status: 'active' | 'inactive';
     }>
   ) {
-    const response = await this.client.put(`/api/acp/agents/${id}`, data);
-    return response.data;
+    console.warn('updateAcpAgent: No backend endpoint exists for updating ACP agents. This operation is not supported.', { id, data });
+    return { status: 'error', message: 'Updating ACP agents is not supported' };
   }
 
   async deleteAcpAgent(id: string) {
-    const response = await this.client.delete(`/api/acp/agents/${id}`);
+    const response = await this.client.delete(`/api/acp/connect/${id}`);
     return response.data;
   }
 
@@ -609,10 +623,12 @@ class ApiClient {
       status: 'active' | 'inactive';
     }>
   ) {
-    const response = await this.client.put(`/api/tools/${id}`, data);
+    // No PUT endpoint exists; re-register the tool via POST to effectively update it
+    const response = await this.client.post('/api/tools', { name: id, ...data });
     return response.data;
   }
 
+  // Note: `id` parameter is actually the tool name, not a numeric id
   async deleteTool(id: string) {
     const response = await this.client.delete(`/api/tools/${id}`);
     return response.data;
@@ -642,7 +658,7 @@ class ApiClient {
     signal?: AbortSignal
   ) {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
+      const response = await fetch(`${this.client.defaults.baseURL}/api/chat/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -838,7 +854,7 @@ class ApiClient {
     signal?: AbortSignal
   ) {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/memory-agent/chat/stream`, {
+      const response = await fetch(`${this.client.defaults.baseURL}/api/memory-agent/chat/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -866,9 +882,11 @@ class ApiClient {
       try {
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
 
-          buffer += decoder.decode(value, { stream: true });
+          if (value) {
+            buffer += decoder.decode(value, { stream: true });
+          }
+
           const lines = buffer.split('\n');
           buffer = lines.pop() || '';
 
@@ -881,6 +899,19 @@ class ApiClient {
                 console.error('Failed to parse SSE data:', e);
               }
             }
+          }
+
+          if (done) {
+            // Process remaining buffer data
+            if (buffer.trim().startsWith('data: ')) {
+              try {
+                const data = JSON.parse(buffer.trim().slice(6));
+                onChunk(data);
+              } catch (e) {
+                console.error('Failed to parse remaining buffer:', e);
+              }
+            }
+            break;
           }
         }
       } catch (streamError) {
@@ -915,13 +946,13 @@ class ApiClient {
 
   // ========== Graph Database API ==========
 
-  async createNode(data: { name: string; type: string; properties?: Record<string, unknown>; library?: string }) {
+  async createNode(data: { type: string; properties?: Record<string, unknown>; text_content?: string }) {
     const response = await this.client.post('/api/nodes', data);
     return response.data;
   }
 
-  async getNodes(params?: { library?: string; type?: string; limit?: number; offset?: number }) {
-    const response = await this.client.get('/api/nodes', { params });
+  async getNodes(params?: { node_type?: string; limit?: number; offset?: number }) {
+    const response = await this.client.get('/api/nodes/search', { params });
     return response.data;
   }
 
@@ -930,23 +961,23 @@ class ApiClient {
     return response.data;
   }
 
-  async updateNode(nodeId: string, data: { name?: string; properties?: Record<string, unknown> }) {
+  async updateNode(nodeId: string, data: { type?: string; properties?: Record<string, unknown>; text_content?: string }) {
     const response = await this.client.put(`/api/nodes/${nodeId}`, data);
     return response.data;
   }
 
-  async deleteNode(nodeId: string) {
-    const response = await this.client.delete(`/api/nodes/${nodeId}`);
+  async deleteNode(nodeId: string, cascade: boolean = true) {
+    const response = await this.client.delete(`/api/nodes/${nodeId}`, { params: { cascade } });
     return response.data;
   }
 
-  async createEdge(data: { source_id: string; target_id: string; relation: string; properties?: Record<string, unknown> }) {
+  async createEdge(data: { source_id: string; target_id: string; relation_type: string; properties?: Record<string, unknown>; text_content?: string }) {
     const response = await this.client.post('/api/edges', data);
     return response.data;
   }
 
-  async getEdges(params?: { node_id?: string; relation?: string; limit?: number; offset?: number }) {
-    const response = await this.client.get('/api/edges', { params });
+  async getEdges(params?: { relation_type?: string; source_id?: string; target_id?: string; limit?: number; offset?: number }) {
+    const response = await this.client.get('/api/edges/search', { params });
     return response.data;
   }
 
@@ -955,28 +986,48 @@ class ApiClient {
     return response.data;
   }
 
-  async traverseBFS(data: { start_node_id: string; max_depth?: number; max_nodes?: number; direction?: string }) {
+  async getNodeNeighbors(nodeId: string, params?: { max_depth?: number; direction?: string }) {
+    const response = await this.client.get(`/api/nodes/${nodeId}/neighbors`, { params });
+    return response.data;
+  }
+
+  async traverseBFS(data: { start_id: string; max_depth?: number; node_type_filter?: string }) {
     const response = await this.client.post('/api/traverse/bfs', data);
     return response.data;
   }
 
-  async traverseDFS(data: { start_node_id: string; max_depth?: number; max_nodes?: number; direction?: string }) {
+  async traverseDFS(data: { start_id: string; max_depth?: number; node_type_filter?: string }) {
     const response = await this.client.post('/api/traverse/dfs', data);
     return response.data;
   }
 
-  async graphSemanticSearch(data: { query: string; limit?: number; threshold?: number }) {
+  async getShortestPath(params: { start_id: string; end_id: string; max_length?: number }) {
+    const response = await this.client.get('/api/paths/shortest', { params });
+    return response.data;
+  }
+
+  async graphSemanticSearch(data: { query: string; node_type?: string; limit?: number }) {
     const response = await this.client.post('/api/semantic/search', data);
     return response.data;
   }
 
-  async graphHybridSearch(data: { query: string; filters?: Record<string, unknown>; limit?: number }) {
+  async graphHybridSearch(data: { query: string; node_type?: string; properties_filter?: Record<string, unknown>; limit?: number }) {
     const response = await this.client.post('/api/semantic/hybrid', data);
     return response.data;
   }
 
-  async getShortestPath(data: { start_node_id: string; end_node_id: string; max_depth?: number }) {
-    const response = await this.client.post('/api/paths/shortest', data);
+  async getGraphStats() {
+    const response = await this.client.get('/api/stats');
+    return response.data;
+  }
+
+  async getGraphHealth() {
+    const response = await this.client.get('/api/health');
+    return response.data;
+  }
+
+  async getImportantNodes(params?: { limit?: number }) {
+    const response = await this.client.get('/api/algorithm/important-nodes', { params });
     return response.data;
   }
 
@@ -985,13 +1036,13 @@ class ApiClient {
     return response.data;
   }
 
-  async detectCommunities(params?: { algorithm?: string }) {
+  async detectCommunities(params?: { method?: string }) {
     const response = await this.client.get('/api/algorithm/communities', { params });
     return response.data;
   }
 
   async exportGraph(format: string = 'json') {
-    const response = await this.client.get('/api/export/json', { params: { format } });
+    const response = await this.client.get(`/api/export/${format}`);
     return response.data;
   }
 
@@ -1040,7 +1091,7 @@ class ApiClient {
   }
 
   async cxfcHeartbeat(pluginId: string) {
-    const response = await this.client.post(`/api/cxfc/heartbeat/${pluginId}`);
+    const response = await this.client.post('/api/cxfc/heartbeat', { plugin_id: pluginId });
     return response.data;
   }
 
@@ -1054,13 +1105,13 @@ class ApiClient {
     return response.data;
   }
 
-  async cxfcConnect(pluginId: string) {
-    const response = await this.client.post(`/api/cxfc/connect/${pluginId}`);
+  async cxfcConnect(host: string, port: number) {
+    const response = await this.client.post('/api/cxfc/connect', { host, port });
     return response.data;
   }
 
   async cxfcDisconnect(pluginId: string) {
-    const response = await this.client.post(`/api/cxfc/disconnect/${pluginId}`);
+    const response = await this.client.delete(`/api/cxfc/plugins/${pluginId}`);
     return response.data;
   }
 
@@ -1077,13 +1128,47 @@ class ApiClient {
   }
 
   async getConfigSection(section: string) {
-    const response = await this.client.get(`/api/config/${section}`);
+    const sectionEndpoints: Record<string, string> = {
+      'vector': '/api/config/vector',
+      'graph': '/api/config/graph',
+      'cxfc': '/api/config/cxfc',
+      'llm': '/api/config',
+    };
+    const endpoint = sectionEndpoints[section] || '/api/config';
+    const response = await this.client.get(endpoint);
     return response.data;
   }
 
   async setConfigSection(section: string, data: Record<string, unknown>) {
-    const response = await this.client.put(`/api/config/${section}`, data);
+    const response = await this.client.put('/api/config', { section, data });
     return response.data;
+  }
+  /** 检查后端连接是否可用 */
+  async checkHealth(apiUrl?: string): Promise<boolean> {
+    try {
+      const url = apiUrl || this.client.defaults.baseURL;
+      const response = await axios.get(`${url}/health`, { timeout: 5000 });
+      return response.status === 200;
+    } catch {
+      return false;
+    }
+  }
+
+  /** 动态修改后端地址 */
+  setBaseUrls(apiUrl: string, controlUrl?: string) {
+    this.client.defaults.baseURL = apiUrl;
+    if (controlUrl) {
+      this.controlClient.defaults.baseURL = controlUrl;
+    }
+    localStorage.setItem('cxhms-api-url', apiUrl);
+    if (controlUrl) {
+      localStorage.setItem('cxhms-control-url', controlUrl);
+    }
+  }
+
+  /** 获取当前 API 地址 */
+  getApiUrl(): string {
+    return this.client.defaults.baseURL || API_BASE_URL;
   }
 }
 

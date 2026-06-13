@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+﻿﻿﻿﻿import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Bot,
@@ -8,21 +8,21 @@ import {
   RefreshCw,
   Plus,
   Trash2,
-  Edit3,
-  CheckCircle2,
-  XCircle,
   Loader2,
   Network,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { cn } from '../lib/utils';
 
-interface Agent {
+interface AcpAgent {
   id: string;
-  name: string;
-  description: string;
+  agent_id: string;
+  name?: string;
+  description?: string;
   status: 'active' | 'inactive' | 'error';
-  capabilities: string[];
+  capabilities?: string[];
+  host: string;
+  port: number;
   created_at: string;
   last_active?: string;
 }
@@ -36,9 +36,8 @@ interface AcpStats {
 
 export function AcpPage() {
   const queryClient = useQueryClient();
-  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<AcpAgent | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   const { data: stats, isLoading: statsLoading } = useQuery<AcpStats>({
     queryKey: ['acp-stats'],
@@ -49,7 +48,7 @@ export function AcpPage() {
     refetchInterval: 10000,
   });
 
-  const { data: agents, isLoading: agentsLoading } = useQuery<Agent[]>({
+  const { data: agents, isLoading: agentsLoading } = useQuery<AcpAgent[]>({
     queryKey: ['acp-agents'],
     queryFn: async () => {
       const response = await api.getAcpAgents();
@@ -59,7 +58,8 @@ export function AcpPage() {
   });
 
   const createAgentMutation = useMutation({
-    mutationFn: api.createAgent,
+    mutationFn: (data: { agent_id: string; host: string; port: number }) =>
+      api.createAcpAgent(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['acp-agents'] });
       queryClient.invalidateQueries({ queryKey: ['acp-stats'] });
@@ -67,41 +67,14 @@ export function AcpPage() {
     },
   });
 
-  const updateAgentMutation = useMutation({
-    mutationFn: ({
-      id,
-      data,
-    }: {
-      id: string;
-      data: {
-        name?: string;
-        description?: string;
-        capabilities?: string[];
-        status?: 'active' | 'inactive';
-      };
-    }) => api.updateAgent(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['acp-agents'] });
-      setIsEditModalOpen(false);
-      setSelectedAgent(null);
-    },
-  });
-
   const deleteAgentMutation = useMutation({
-    mutationFn: api.deleteAgent,
+    mutationFn: api.deleteAcpAgent,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['acp-agents'] });
       queryClient.invalidateQueries({ queryKey: ['acp-stats'] });
       setSelectedAgent(null);
     },
   });
-
-  const toggleAgentStatus = (agent: Agent) => {
-    updateAgentMutation.mutate({
-      id: agent.id,
-      data: { status: agent.status === 'active' ? 'inactive' : 'active' },
-    });
-  };
 
   return (
     <div className="space-y-6">
@@ -118,7 +91,7 @@ export function AcpPage() {
           className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
         >
           <Plus className="w-4 h-4" />
-          创建代理
+          连接代理
         </button>
       </div>
 
@@ -208,8 +181,10 @@ export function AcpPage() {
                       />
                     </div>
                     <div>
-                      <h3 className="font-medium">{agent.name}</h3>
-                      <p className="text-sm text-muted-foreground">{agent.description}</p>
+                      <h3 className="font-medium">{agent.name || agent.agent_id}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {agent.description || `${agent.host}:${agent.port}`}
+                      </p>
                       <div className="flex items-center gap-2 mt-2">
                         <span
                           className={cn(
@@ -227,7 +202,10 @@ export function AcpPage() {
                               ? '错误'
                               : '停用'}
                         </span>
-                        {agent.capabilities.map((cap) => (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600">
+                          {agent.host}:{agent.port}
+                        </span>
+                        {agent.capabilities?.map((cap) => (
                           <span
                             key={cap}
                             className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary"
@@ -242,42 +220,12 @@ export function AcpPage() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        toggleAgentStatus(agent);
-                      }}
-                      className={cn(
-                        'p-2 rounded-lg transition-colors',
-                        agent.status === 'active'
-                          ? 'hover:bg-red-500/10 hover:text-red-500'
-                          : 'hover:bg-green-500/10 hover:text-green-500'
-                      )}
-                      title={agent.status === 'active' ? '停用' : '启用'}
-                    >
-                      {agent.status === 'active' ? (
-                        <XCircle className="w-4 h-4" />
-                      ) : (
-                        <CheckCircle2 className="w-4 h-4" />
-                      )}
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedAgent(agent);
-                        setIsEditModalOpen(true);
-                      }}
-                      className="p-2 hover:bg-accent rounded-lg transition-colors"
-                      title="编辑"
-                    >
-                      <Edit3 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm('确定要删除此代理吗？')) {
+                        if (confirm('确定要断开此代理吗？')) {
                           deleteAgentMutation.mutate(agent.id);
                         }
                       }}
                       className="p-2 hover:bg-red-500/10 hover:text-red-500 rounded-lg transition-colors"
-                      title="删除"
+                      title="断开连接"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -294,31 +242,18 @@ export function AcpPage() {
               onClick={() => setIsCreateModalOpen(true)}
               className="mt-4 text-primary hover:underline"
             >
-              创建第一个代理
+              连接第一个代理
             </button>
           </div>
         )}
       </div>
 
       {isCreateModalOpen && (
-        <AgentModal
-          title="创建代理"
+        <AcpAgentModal
+          title="连接 ACP 代理"
           onClose={() => setIsCreateModalOpen(false)}
           onSubmit={(data) => createAgentMutation.mutate(data)}
           isLoading={createAgentMutation.isPending}
-        />
-      )}
-
-      {isEditModalOpen && selectedAgent && (
-        <AgentModal
-          title="编辑代理"
-          agent={selectedAgent}
-          onClose={() => {
-            setIsEditModalOpen(false);
-            setSelectedAgent(null);
-          }}
-          onSubmit={(data) => updateAgentMutation.mutate({ id: selectedAgent.id, data })}
-          isLoading={updateAgentMutation.isPending}
         />
       )}
     </div>
@@ -360,37 +295,26 @@ function StatCard({
   );
 }
 
-interface AgentModalProps {
+interface AcpAgentModalProps {
   title: string;
-  agent?: Agent;
   onClose: () => void;
-  onSubmit: (data: {
-    name: string;
-    description?: string;
-    capabilities?: string[];
-    status?: 'active' | 'inactive';
-  }) => void;
+  onSubmit: (data: { agent_id: string; host: string; port: number }) => void;
   isLoading: boolean;
 }
 
-function AgentModal({ title, agent, onClose, onSubmit, isLoading }: AgentModalProps) {
+function AcpAgentModal({ title, onClose, onSubmit, isLoading }: AcpAgentModalProps) {
   const [formData, setFormData] = useState({
-    name: agent?.name || '',
-    description: agent?.description || '',
-    capabilities: agent?.capabilities?.join(', ') || '',
-    status: (agent?.status as 'active' | 'inactive') || 'inactive',
+    agent_id: '',
+    host: 'localhost',
+    port: 8000,
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSubmit({
-      name: formData.name,
-      description: formData.description,
-      capabilities: formData.capabilities
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean),
-      status: formData.status,
+      agent_id: formData.agent_id,
+      host: formData.host,
+      port: formData.port,
     });
   };
 
@@ -400,46 +324,39 @@ function AgentModal({ title, agent, onClose, onSubmit, isLoading }: AgentModalPr
         <h2 className="text-xl font-semibold mb-4">{title}</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1">名称</label>
+            <label className="block text-sm font-medium mb-1">代理 ID <span className="text-red-500">*</span></label>
             <input
               type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              value={formData.agent_id}
+              onChange={(e) => setFormData({ ...formData, agent_id: e.target.value })}
               className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+              placeholder="my-agent"
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">描述</label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-              rows={3}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">能力（逗号分隔）</label>
+            <label className="block text-sm font-medium mb-1">主机地址 <span className="text-red-500">*</span></label>
             <input
               type="text"
-              value={formData.capabilities}
-              onChange={(e) => setFormData({ ...formData, capabilities: e.target.value })}
+              value={formData.host}
+              onChange={(e) => setFormData({ ...formData, host: e.target.value })}
               className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-              placeholder="chat, memory, tool"
+              placeholder="localhost"
+              required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">状态</label>
-            <select
-              value={formData.status}
-              onChange={(e) =>
-                setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })
-              }
+            <label className="block text-sm font-medium mb-1">端口 <span className="text-red-500">*</span></label>
+            <input
+              type="number"
+              value={formData.port}
+              onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) || 0 })}
               className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-            >
-              <option value="active">活跃</option>
-              <option value="inactive">停用</option>
-            </select>
+              placeholder="8000"
+              min={1}
+              max={65535}
+              required
+            />
           </div>
           <div className="flex justify-end gap-3 pt-4">
             <button
@@ -455,7 +372,7 @@ function AgentModal({ title, agent, onClose, onSubmit, isLoading }: AgentModalPr
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
             >
               {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {agent ? '保存' : '创建'}
+              连接
             </button>
           </div>
         </form>

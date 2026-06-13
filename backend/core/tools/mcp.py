@@ -312,7 +312,7 @@ class MCPManager:
 
         try:
             if server_name not in self._http_clients:
-                self._http_clients[server_name] = httpx.AsyncClient(timeout=30.0)
+                self._http_clients[server_name] = httpx.AsyncClient(timeout=30.0, trust_env=False)
 
             client = self._http_clients[server_name]
 
@@ -398,7 +398,7 @@ class MCPManager:
 
         try:
             if server_name not in self._http_clients:
-                self._http_clients[server_name] = httpx.AsyncClient(timeout=30.0)
+                self._http_clients[server_name] = httpx.AsyncClient(timeout=30.0, trust_env=False)
 
             # 使用 endpoint_url 而非 command
             url = f"{server.endpoint_url}/call"

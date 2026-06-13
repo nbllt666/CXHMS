@@ -20,7 +20,7 @@ class TestHealthEndpoints:
     def test_health_check_content_type(self, client: TestClient):
         """Test health check returns correct content type."""
         response = client.get("/health")
-        assert response.headers["content-type"] == "application/json"
+        assert "application/json" in response.headers.get("content-type", "")
 
     def test_health_check_method_not_allowed(self, client: TestClient):
         """Test health check only accepts GET."""

@@ -641,7 +641,7 @@ export function ChatPage() {
 
     try {
       const sessionId = `agent-${currentAgentId}`;
-      await api.deleteSession(sessionId);
+      await api.clearSessionMessages(sessionId);
       // 清空后重新加载历史（会创建新的空会话）
       await loadAgentHistory(currentAgentId || 'default');
       alert('上下文已清空');

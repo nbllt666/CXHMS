@@ -8,7 +8,7 @@ logger = get_contextual_logger(__name__)
 
 @router.get("/stats")
 async def get_system_stats():
-    from backend.dependencies import get_memory_manager
+    from backend.api.app import get_context_manager, get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -17,12 +17,6 @@ async def get_system_stats():
 
         cursor.execute("SELECT COUNT(*) FROM memories WHERE is_deleted = FALSE")
         total_memories = cursor.fetchone()[0]
-
-        try:
-            cursor.execute("SELECT COUNT(*) FROM sessions")
-            total_sessions = cursor.fetchone()[0]
-        except Exception:
-            total_sessions = 0
 
         try:
             cursor.execute("SELECT COUNT(*) FROM agent_memory_tables")
@@ -36,7 +30,18 @@ async def get_system_stats():
         except Exception:
             archived_memories = 0
 
-        conn.close()
+        memory_mgr._release_connection(conn)
+
+        total_sessions = 0
+        try:
+            context_mgr = get_context_manager()
+            ctx_conn = context_mgr._get_connection()
+            ctx_cursor = ctx_conn.cursor()
+            ctx_cursor.execute("SELECT COUNT(*) FROM sessions")
+            total_sessions = ctx_cursor.fetchone()[0]
+            context_mgr.close_connection()
+        except Exception:
+            total_sessions = 0
 
         return {
             "status": "success",

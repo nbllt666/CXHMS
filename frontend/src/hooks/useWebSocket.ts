@@ -1,8 +1,11 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 
-const WS_BASE_URL =
-  import.meta.env.VITE_WS_URL ||
-  (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace('http', 'ws');
+// 动态获取 WebSocket 基础 URL
+const getWsBaseUrl = () => {
+  const savedApiUrl = localStorage.getItem('cxhms-api-url');
+  const baseUrl = savedApiUrl || import.meta.env.VITE_API_URL || 'http://localhost:8001';
+  return baseUrl.replace('http', 'ws');
+};
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 const BASE_RECONNECT_DELAY = 1000;
@@ -93,11 +96,13 @@ export function useWebSocket(options: WebSocketOptions): UseWebSocketReturn {
   }, [clearPingInterval]);
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    // 已有连接或正在连接中，跳过
+    if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
       return;
     }
 
-    const wsUrl = `${WS_BASE_URL}/ws/${agentId}?timeout=${timeout}`;
+    const wsBaseUrl = import.meta.env.VITE_WS_URL || getWsBaseUrl();
+    const wsUrl = `${wsBaseUrl}/ws/${agentId}?timeout=${timeout}`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
@@ -178,7 +183,10 @@ export function useWebSocket(options: WebSocketOptions): UseWebSocketReturn {
     reconnectCountRef.current = MAX_RECONNECT_ATTEMPTS;
     clearPingInterval();
     if (wsRef.current) {
-      wsRef.current.close();
+      // 只关闭已连接或正在关闭的 WebSocket，避免中断正在连接的
+      if (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CLOSING) {
+        wsRef.current.close();
+      }
       wsRef.current = null;
     }
   }, [clearPingInterval]);

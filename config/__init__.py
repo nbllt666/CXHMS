@@ -3,6 +3,7 @@ CXHMS 配置管理包
 """
 
 from .env import EnvConfig, get_env_config
+from .repair import ConfigRepair, repair_config
 from .settings import (
     ACPConfig,
     AgentStatus,
@@ -47,4 +48,6 @@ __all__ = [
     "validate_config",
     "ValidationResult",
     "ValidationError",
+    "ConfigRepair",
+    "repair_config",
 ]

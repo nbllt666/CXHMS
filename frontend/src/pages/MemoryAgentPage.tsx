@@ -303,8 +303,16 @@ export function MemoryAgentPage() {
     }
   };
 
-  const clearChat = () => {
+  const clearChat = async () => {
     setMessages([]);
+    try {
+      // Clear session messages
+      await api.clearSessionMessages('memory-agent-default');
+      // Clear agent context
+      await fetch(`${api.getApiUrl()}/api/agents/memory-agent/context`, { method: 'DELETE' });
+    } catch (error) {
+      console.error('清空后端对话数据失败:', error);
+    }
   };
 
   return (

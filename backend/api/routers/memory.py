@@ -187,6 +187,19 @@ async def create_memory(request: MemoryCreateRequest):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
+@router.get("/memories/stats")
+async def get_memory_stats(workspace_id: str = "default"):
+    from backend.api.app import get_memory_manager
+
+    try:
+        memory_mgr = get_memory_manager()
+        stats = memory_mgr.get_statistics(workspace_id)
+
+        return {"status": "success", "statistics": stats}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/memories/{memory_id}")
 async def get_memory(memory_id: int):
     from backend.api.app import get_memory_manager
@@ -230,8 +243,8 @@ async def update_memory(memory_id: int, request: MemoryUpdateRequest):
 
 
 @router.delete("/memories/{memory_id}")
-async def delete_memory(memory_id: int, soft_delete: bool = False):
-    """删除记忆（默认硬删除）"""
+async def delete_memory(memory_id: int, soft_delete: bool = True):
+    """删除记忆（默认软删除）"""
     from backend.api.app import get_memory_manager
 
     try:
@@ -296,19 +309,6 @@ async def rag_search(query: str, workspace_id: str = "default", limit: int = 5):
     except Exception as e:
         logger.error(f"RAG搜索失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="内部服务器错误")
-
-
-@router.get("/memories/stats")
-async def get_memory_stats(workspace_id: str = "default"):
-    from backend.api.app import get_memory_manager
-
-    try:
-        memory_mgr = get_memory_manager()
-        stats = memory_mgr.get_statistics(workspace_id)
-
-        return {"status": "success", "statistics": stats}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/memories/permanent")

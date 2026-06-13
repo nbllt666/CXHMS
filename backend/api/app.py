@@ -67,7 +67,6 @@ context_manager = None
 acp_manager = None
 llm_client = None
 secondary_router = None
-decay_batch_processor = None
 mcp_manager = None
 model_router = None
 async_memory_manager = None
@@ -78,12 +77,11 @@ cxfc_manager = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global memory_manager, context_manager, acp_manager, llm_client, secondary_router, decay_batch_processor, mcp_manager, model_router, async_memory_manager, graph_database, graph_store, cxfc_manager
+    global memory_manager, context_manager, acp_manager, llm_client, secondary_router, mcp_manager, model_router, async_memory_manager, graph_database, graph_store, cxfc_manager
 
     from backend.core.acp.manager import ACPManager
     from backend.core.context.manager import ContextManager
     from backend.core.llm.client import LLMFactory
-    from backend.core.memory.decay_batch import DecayBatchProcessor
     from backend.core.memory.manager import MemoryManager
     from backend.core.memory.secondary_router import SecondaryModelRouter
     from backend.core.model_router import model_router as mr  # 导入模型路由器
@@ -374,15 +372,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"提醒管理器启动失败: {e}")
 
-    try:
-        if memory_manager:
-            decay_batch_processor = DecayBatchProcessor(memory_manager, interval_hours=24)
-            await decay_batch_processor.start()
-            logger.info("批量衰减处理器已启动")
-    except Exception as e:
-        logger.warning(f"批量衰减处理器启动失败: {e}")
-        decay_batch_processor = None
-
     # Initialize AsyncMemoryManager
     async_memory_manager = None
     try:
@@ -435,7 +424,6 @@ async def lifespan(app: FastAPI):
     service_state.acp_manager = acp_manager
     service_state.llm_client = llm_client
     service_state.secondary_router = secondary_router
-    service_state.decay_batch_processor = decay_batch_processor
     service_state.mcp_manager = mcp_manager
     service_state.model_router = model_router
     service_state.graph_database = graph_database
@@ -476,9 +464,6 @@ async def lifespan(app: FastAPI):
         await ws_mgr.stop_cleanup_task()
     except Exception:
         pass
-
-    if decay_batch_processor:
-        await decay_batch_processor.stop()
 
     if acp_manager:
         await acp_manager.stop()
@@ -611,12 +596,6 @@ def get_secondary_router():
     if secondary_router is None:
         raise HTTPException(status_code=503, detail="副模型路由器不可用")
     return secondary_router
-
-
-def get_decay_batch_processor():
-    if decay_batch_processor is None:
-        raise HTTPException(status_code=503, detail="批量衰减处理器不可用")
-    return decay_batch_processor
 
 
 def get_mcp_manager():

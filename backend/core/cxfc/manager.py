@@ -44,7 +44,7 @@ class CXFCManager:
     async def start(self):
         await self._storage.init_db()
         plugins = await self._storage.load_plugins()
-        self._http_client = httpx.AsyncClient(timeout=10.0)
+        self._http_client = httpx.AsyncClient(timeout=10.0, trust_env=False)
         for plugin in plugins:
             self._plugins[plugin.plugin_id] = plugin
             asyncio.create_task(self._connect_to_plugin_if_alive(plugin))
@@ -89,6 +89,16 @@ class CXFCManager:
             pass
         return []
 
+    async def _execute_tool(self, tool_name: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """根据工具名查找所属插件并执行工具调用"""
+        for plugin_id, plugin in self._plugins.items():
+            if plugin.status != PluginStatus.CONNECTED:
+                continue
+            for tool in plugin.tools:
+                if tool.get("name") == tool_name:
+                    return await self.call_tool(plugin_id, tool_name, kwargs)
+        return {"success": False, "error": f"未找到工具 {tool_name} 对应的可用插件"}
+
     async def _register_plugin_tools_and_skills(self, plugin: CXFCPluginInfo):
         tools = await self._fetch_tools(plugin.host, plugin.port)
         skills = await self._fetch_skills(plugin.host, plugin.port)
@@ -98,10 +108,18 @@ class CXFCManager:
         if self._tool_registry:
             for tool in tools:
                 try:
+                    tool_name = tool.get("name", "")
+
+                    def make_handler(t_name):
+                        async def handler(**kwargs):
+                            return await self._execute_tool(t_name, kwargs)
+                        return handler
+
                     self._tool_registry.register(
-                        name=tool.get("name", ""),
+                        name=tool_name,
                         description=tool.get("description", ""),
                         parameters=tool.get("parameters", {}),
+                        function=make_handler(tool_name),
                         category="cxfc",
                         tags=[plugin.plugin_id],
                         enabled=True,
@@ -176,10 +194,18 @@ class CXFCManager:
         if self._tool_registry:
             for tool in request.tools:
                 try:
+                    tool_name = tool.get("name", "")
+
+                    def make_handler(t_name):
+                        async def handler(**kwargs):
+                            return await self._execute_tool(t_name, kwargs)
+                        return handler
+
                     self._tool_registry.register(
-                        name=tool.get("name", ""),
+                        name=tool_name,
                         description=tool.get("description", ""),
                         parameters=tool.get("parameters", {}),
+                        function=make_handler(tool_name),
                         category="cxfc",
                         tags=[plugin_id],
                         enabled=True,

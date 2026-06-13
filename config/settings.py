@@ -5,6 +5,7 @@
 
 import logging
 import os
+import shutil
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
@@ -73,9 +74,15 @@ class ModelConfig:
     max_tokens: int = 0
     timeout: int = 60
     api_key: Optional[str] = None
+    supports_tools: bool = True
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ModelConfig":
+        # 处理 supports_tools 的字符串转布尔
+        supports_tools_val = data.get("supports_tools", True)
+        if isinstance(supports_tools_val, str):
+            supports_tools_val = supports_tools_val.lower() in ("true", "1", "yes")
+
         return cls(
             provider=data.get("provider", "ollama"),
             host=data.get("host", "http://localhost:11434"),
@@ -85,14 +92,16 @@ class ModelConfig:
             max_tokens=data.get("max_tokens", 0),
             timeout=data.get("timeout", 60),
             api_key=data.get("api_key") or data.get("apiKey"),
+            supports_tools=supports_tools_val,
         )
 
 
 @dataclass
 class ModelsConfig:
     main: ModelConfig = field(default_factory=ModelConfig)
-    summary: ModelConfig = field(default_factory=lambda: ModelConfig(max_tokens=131072))
-    memory: ModelConfig = field(default_factory=lambda: ModelConfig(max_tokens=131072))
+    summary: ModelConfig = field(default_factory=lambda: ModelConfig(max_tokens=4096))
+    memory: ModelConfig = field(default_factory=lambda: ModelConfig(max_tokens=4096))
+    embedding: ModelConfig = field(default_factory=lambda: ModelConfig(max_tokens=512))
     defaults: Dict[str, str] = field(default_factory=lambda: {"summary": "main", "memory": "main"})
 
     @classmethod
@@ -102,16 +111,21 @@ class ModelsConfig:
 
         summary_config = ModelConfig.from_dict(models_data.get("summary", {}))
         if summary_config.max_tokens == 0:
-            summary_config.max_tokens = 131072
+            summary_config.max_tokens = 4096
 
         memory_config = ModelConfig.from_dict(models_data.get("memory", {}))
         if memory_config.max_tokens == 0:
-            memory_config.max_tokens = 131072
+            memory_config.max_tokens = 4096
+
+        embedding_config = ModelConfig.from_dict(models_data.get("embedding", {}))
+        if embedding_config.max_tokens == 0:
+            embedding_config.max_tokens = 512
 
         return cls(
             main=ModelConfig.from_dict(models_data.get("main", {})),
             summary=summary_config,
             memory=memory_config,
+            embedding=embedding_config,
             defaults=defaults_data,
         )
 
@@ -126,6 +140,8 @@ class ModelsConfig:
                 return self.summary
             elif target == "memory":
                 return self.memory
+            elif target == "embedding":
+                return self.embedding
 
         if model_type == "main":
             return self.main
@@ -133,6 +149,8 @@ class ModelsConfig:
             return self.summary
         elif model_type == "memory":
             return self.memory
+        elif model_type == "embedding":
+            return self.embedding
         else:
             return self.main
 
@@ -566,6 +584,20 @@ class Settings:
             for error in self._validation_result.errors:
                 logger.error(f"配置验证失败: {error}")
 
+            # 自动修复
+            from .repair import ConfigRepair
+
+            merged_config, repairs = ConfigRepair.repair(merged_config, self._validation_result)
+            for repair_msg in repairs:
+                logger.warning(f"配置自动修复: {repair_msg}")
+
+            # 修复后重新验证
+            self._validation_result = validate_config(merged_config)
+
+            # 修复后写回文件（带备份）
+            if config_file.exists():
+                self._backup_and_save(config_file, merged_config)
+
         for field, message in self._validation_result.warnings:
             logger.warning(f"配置警告 [{field}]: {message}")
 
@@ -574,6 +606,21 @@ class Settings:
     def reload_config(self, config_path: Optional[str] = None):
         self._config = self.load_config(config_path)
         logger.info("配置已重新加载")
+
+    def _backup_and_save(self, config_file: Path, repaired_config: Dict[str, Any]):
+        """备份原配置文件并保存修复后的配置"""
+        try:
+            # 创建备份
+            backup_path = config_file.with_suffix(config_file.suffix + ".bak")
+            shutil.copy2(config_file, backup_path)
+            logger.info(f"原配置文件已备份到: {backup_path}")
+
+            # 保存修复后的配置
+            with open(config_file, "w", encoding="utf-8") as f:
+                yaml.dump(repaired_config, f, allow_unicode=True, indent=2, sort_keys=False)
+            logger.info(f"修复后的配置已保存到: {config_file}")
+        except Exception as e:
+            logger.error(f"保存修复配置失败: {e}")
 
     def get(self, key: str, default: Any = None) -> Any:
         keys = key.split(".")

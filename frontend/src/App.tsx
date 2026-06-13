@@ -10,23 +10,26 @@ import { ToolsPage } from './pages/ToolsPage';
 import { AgentsPage } from './pages/AgentsPage';
 import { MemoryAgentPage } from './pages/MemoryAgentPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { ConnectionCheck } from './components/ConnectionCheck';
 
 function App() {
   return (
     <ErrorBoundary>
-      <Routes>
-        <Route path="/" element={<AppLayout />}>
-          <Route index element={<DashboardPage />} />
-          <Route path="chat" element={<ChatPage />} />
-          <Route path="memories" element={<MemoriesPage />} />
-          <Route path="archive" element={<ArchivePage />} />
-          <Route path="agents" element={<AgentsPage />} />
-          <Route path="acp" element={<AcpPage />} />
-          <Route path="tools" element={<ToolsPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="memory-agent" element={<MemoryAgentPage />} />
-        </Route>
-      </Routes>
+      <ConnectionCheck>
+        <Routes>
+          <Route path="/" element={<AppLayout />}>
+            <Route index element={<DashboardPage />} />
+            <Route path="chat" element={<ChatPage />} />
+            <Route path="memories" element={<MemoriesPage />} />
+            <Route path="archive" element={<ArchivePage />} />
+            <Route path="agents" element={<AgentsPage />} />
+            <Route path="acp" element={<AcpPage />} />
+            <Route path="tools" element={<ToolsPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="memory-agent" element={<MemoryAgentPage />} />
+          </Route>
+        </Routes>
+      </ConnectionCheck>
     </ErrorBoundary>
   );
 }

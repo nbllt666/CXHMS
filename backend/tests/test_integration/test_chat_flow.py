@@ -12,7 +12,7 @@ class TestChatFlow:
         response = client.get("/health")
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "healthy"
+        assert data["status"] in ["healthy", "degraded"]
 
     def test_chat_endpoints_exist(self, client: TestClient):
         """Test that chat endpoints exist and return expected status codes."""

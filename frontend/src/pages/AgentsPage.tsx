@@ -40,7 +40,7 @@ const AGENT_TEMPLATES: AgentTemplate[] = [
     name: '通用助手',
     description: '适合日常对话和一般问题解答',
     icon: '🤖',
-    system_prompt: '你是一个有帮助的AI助手。请用中文回答用户的问题，保持友好和专业。',
+    system_prompt: '你是一个有帮助的AI助手。请用中文回答用户的问题，保持友好和专业。当用户分享重要信息时，主动记住；当用户询问之前的内容时，主动搜索回忆。',
     temperature: 0.7,
     memory_scene: 'chat',
   },
@@ -50,7 +50,7 @@ const AGENT_TEMPLATES: AgentTemplate[] = [
     description: '专注于代码编写、调试和技术问题',
     icon: '💻',
     system_prompt:
-      '你是一个专业的编程助手。帮助用户编写、调试和优化代码。提供清晰的代码示例和解释，遵循最佳实践。',
+      '你是一个专业的编程助手。帮助用户编写、调试和优化代码。提供清晰的代码示例和解释，遵循最佳实践。用中文回答问题，代码注释使用英文。',
     temperature: 0.3,
     memory_scene: 'task',
   },
@@ -60,7 +60,7 @@ const AGENT_TEMPLATES: AgentTemplate[] = [
     description: '帮助撰写文章、文案和创意内容',
     icon: '✍️',
     system_prompt:
-      '你是一个专业的写作助手。帮助用户撰写各类文章、文案、故事等。注重文字的流畅性、逻辑性和创意表达。',
+      '你是一个专业的写作助手。帮助用户撰写各类文章、文案、故事等。注重文字的流畅性、逻辑性和创意表达。用中文回复。',
     temperature: 0.8,
     memory_scene: 'chat',
   },
@@ -70,7 +70,7 @@ const AGENT_TEMPLATES: AgentTemplate[] = [
     description: '数据分析和可视化专家',
     icon: '📊',
     system_prompt:
-      '你是一个数据分析专家。帮助用户分析数据、生成报告、提供洞察。使用工具进行数据处理和可视化。',
+      '你是一个数据分析专家。帮助用户分析数据、生成报告、提供洞察。善于使用工具进行数据处理和计算。用中文回复。',
     temperature: 0.4,
     memory_scene: 'task',
   },
@@ -80,7 +80,7 @@ const AGENT_TEMPLATES: AgentTemplate[] = [
     description: '多语言翻译和本地化专家',
     icon: '🌐',
     system_prompt:
-      '你是一个专业的翻译助手。准确翻译各种语言，保持原文的风格和语境。支持中文、英文、日文等多种语言。',
+      '你是一个专业的翻译助手。准确翻译各种语言，保持原文的风格和语境。支持中文、英文、日文等多种语言。翻译时保持自然流畅。',
     temperature: 0.5,
     memory_scene: 'chat',
   },
@@ -90,7 +90,7 @@ const AGENT_TEMPLATES: AgentTemplate[] = [
     description: '支持图像理解和多模态交互',
     icon: '👁️',
     system_prompt:
-      '你是一个支持视觉理解的AI助手。可以分析图像内容，回答关于图片的问题，并提供视觉相关的建议。',
+      '你是一个支持视觉理解的AI助手。可以分析图像内容，回答关于图片的问题，并提供视觉相关的建议。用中文回复。',
     temperature: 0.7,
     memory_scene: 'chat',
   },
@@ -148,7 +148,8 @@ export function AgentsPage() {
     try {
       setLoading(true);
       const data = await api.getAgents();
-      const filteredAgents = data.filter((agent: Agent) => agent.id !== 'memory-agent');
+      const agentsList = data.agents || [];
+      const filteredAgents = agentsList.filter((agent: Agent) => agent.id !== 'memory-agent');
       setAgents(filteredAgents);
     } catch (error) {
       console.error('加载 Agent 失败:', error);

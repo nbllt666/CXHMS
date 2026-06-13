@@ -375,7 +375,7 @@ def update_memory_node(memory_id: str, new_content: str) -> Dict[str, Any]:
         return {"error": "记忆管理器不可用"}
 
     try:
-        success = mm.update_memory(memory_id=memory_id, new_content=new_content)
+        success = mm.update_memory(memory_id=int(memory_id), new_content=new_content)
         return {
             "status": "updated" if success else "failed",
             "memory_id": memory_id,
@@ -417,7 +417,7 @@ def delete_memory(memory_id: str, reason: str) -> Dict[str, Any]:
         return {"error": "记忆管理器不可用"}
 
     try:
-        success = mm.soft_delete(memory_id=memory_id, reason=reason)
+        success = mm.delete_memory(memory_id=int(memory_id), soft_delete=True)
         return {
             "status": "deleted" if success else "failed",
             "memory_id": memory_id,
@@ -435,11 +435,35 @@ def merge_memories(memory_ids: List[str], merged_content: str) -> Dict[str, Any]
         return {"error": "记忆管理器不可用"}
 
     try:
-        merged_id = mm.merge_memories(memory_ids=memory_ids, merged_content=merged_content)
+        # 获取原始记忆信息
+        original_memories = []
+        for mid in memory_ids:
+            mem = mm.get_memory(memory_id=int(mid))
+            if mem:
+                original_memories.append(mem)
+
+        if not original_memories:
+            return {"error": "未找到任何指定的记忆", "memory_ids": memory_ids}
+
+        # 创建合并后的新记忆
+        merged_id = mm.write_memory(
+            content=merged_content,
+            memory_type=original_memories[0].get("type", "long_term"),
+            importance=max(m.get("importance", 3) for m in original_memories),
+            tags=list(set(tag for m in original_memories for tag in m.get("tags", []))),
+        )
+
+        # 删除原始记忆
+        deleted_ids = []
+        for mid in memory_ids:
+            if mm.delete_memory(memory_id=int(mid), soft_delete=True):
+                deleted_ids.append(mid)
+
         return {
             "status": "success",
             "merged_memory_id": merged_id,
             "original_count": len(memory_ids),
+            "deleted_original_ids": deleted_ids,
             "merged_content_preview": merged_content[:100],
         }
     except Exception as e:
@@ -453,8 +477,12 @@ def clean_expired() -> Dict[str, Any]:
         return {"error": "记忆管理器不可用"}
 
     try:
-        cleaned = mm.clean_expired(days=7)
-        return {"status": "completed", "cleaned_count": cleaned}
+        result = mm.cleanup_old_sessions(days=7)
+        return {
+            "status": result.get("status", "completed"),
+            "cleaned_count": result.get("cleaned_count", 0),
+            "message": result.get("message", "清理完成"),
+        }
     except Exception as e:
         return {"error": f"清理过期记忆失败: {str(e)}"}
 
@@ -466,8 +494,31 @@ def export_memories(format: str, memory_type: str = "all") -> Dict[str, Any]:
         return {"error": "记忆管理器不可用"}
 
     try:
-        data = mm.export_memories(format=format, memory_type=memory_type)
-        return {"status": "success", "format": format, "memory_type": memory_type, "data": data}
+        # 使用 search_memories 获取所有记忆
+        search_type = None if memory_type == "all" else memory_type
+        memories = mm.search_memories(query=None, memory_type=search_type, limit=10000)
+
+        if format == "json":
+            data = json.dumps(memories, ensure_ascii=False, default=str)
+        elif format == "csv":
+            lines = ["id,type,content,importance,created_at,tags"]
+            for m in memories:
+                content = m.get("content", "").replace('"', '""')
+                tags = ",".join(m.get("tags", []))
+                lines.append(
+                    f'{m.get("id")},{m.get("type")},"{content}",{m.get("importance")},{m.get("created_at")},{tags}'
+                )
+            data = "\n".join(lines)
+        else:
+            data = json.dumps(memories, ensure_ascii=False, default=str)
+
+        return {
+            "status": "success",
+            "format": format,
+            "memory_type": memory_type,
+            "count": len(memories),
+            "data": data,
+        }
     except Exception as e:
         return {"error": f"导出记忆失败: {str(e)}"}
 
@@ -492,18 +543,33 @@ def search_by_time(start_time: str, end_time: str) -> Dict[str, Any]:
         return {"error": "记忆管理器不可用"}
 
     try:
-        memories = mm.search_by_time(start=start_time, end=end_time)
+        # 使用 search_memories 获取记忆，然后按时间过滤
+        memories = mm.search_memories(query=None, limit=1000)
+        start_dt = datetime.fromisoformat(start_time)
+        end_dt = datetime.fromisoformat(end_time)
+
+        filtered = []
+        for m in memories:
+            created_at = m.get("created_at")
+            if created_at:
+                try:
+                    mem_dt = datetime.fromisoformat(created_at)
+                    if start_dt <= mem_dt <= end_dt:
+                        filtered.append(m)
+                except (ValueError, TypeError):
+                    continue
+
         return {
             "start_time": start_time,
             "end_time": end_time,
-            "count": len(memories),
+            "count": len(filtered),
             "memories": [
                 {
                     "id": m.get("id"),
                     "content": m.get("content", "")[:200],
                     "created_at": m.get("created_at"),
                 }
-                for m in memories
+                for m in filtered
             ],
         }
     except Exception as e:
@@ -517,7 +583,16 @@ def search_by_tag(tags: List[str]) -> Dict[str, Any]:
         return {"error": "记忆管理器不可用"}
 
     try:
-        memories = mm.search_by_tags(tags=tags)
+        # search_by_tag 只接受单个标签，对每个标签分别搜索后合并去重
+        all_memories = {}
+        for tag in tags:
+            results = mm.search_by_tag(tag=tag)
+            for m in results:
+                mid = m.get("id")
+                if mid and mid not in all_memories:
+                    all_memories[mid] = m
+
+        memories = list(all_memories.values())
         return {
             "tags": tags,
             "count": len(memories),
@@ -541,7 +616,9 @@ def bulk_delete(memory_ids: List[str], reason: str) -> Dict[str, Any]:
         return {"error": "记忆管理器不可用"}
 
     try:
-        result = mm.bulk_soft_delete(ids=memory_ids, reason=reason)
+        result = mm.batch_delete_memories(
+            memory_ids=[int(mid) for mid in memory_ids], soft_delete=True
+        )
         return {
             "status": "completed",
             "deleted_count": result.get("success", 0),
@@ -560,7 +637,7 @@ def restore_memory(memory_id: str) -> Dict[str, Any]:
         return {"error": "记忆管理器不可用"}
 
     try:
-        success = mm.restore(memory_id=memory_id)
+        success = mm.restore_memory(memory_id=int(memory_id))
         return {"status": "restored" if success else "failed", "memory_id": memory_id}
     except Exception as e:
         return {"error": f"恢复记忆失败: {str(e)}"}
@@ -575,12 +652,30 @@ def search_similar_memories(
         return {"error": "记忆管理器不可用"}
 
     try:
-        similar = mm.find_similar(memory_id=memory_id, threshold=threshold, limit=limit)
+        # 获取参考记忆内容，用其内容进行关键词搜索作为近似
+        ref_memory = mm.get_memory(memory_id=int(memory_id))
+        if not ref_memory:
+            return {"error": f"未找到参考记忆: {memory_id}"}
+
+        query = ref_memory.get("content", "")[:200]
+        memories = mm.search_memories(query=query, limit=limit)
+
+        # 过滤掉参考记忆本身
+        similar = [m for m in memories if m.get("id") != int(memory_id)]
+
         return {
             "reference_memory_id": memory_id,
             "threshold": threshold,
             "count": len(similar),
-            "similar_memories": similar,
+            "similar_memories": [
+                {
+                    "id": m.get("id"),
+                    "content": m.get("content", "")[:200],
+                    "importance": m.get("importance"),
+                    "created_at": m.get("created_at"),
+                }
+                for m in similar
+            ],
         }
     except Exception as e:
         return {"error": f"搜索相似记忆失败: {str(e)}"}
@@ -606,11 +701,20 @@ def get_similar_memories(content: str, limit: int = 10) -> Dict[str, Any]:
         return {"error": "记忆管理器不可用"}
 
     try:
-        memories = mm.find_similar_by_content(content=content, limit=limit)
+        # 使用 search_memories 作为近似相似搜索
+        memories = mm.search_memories(query=content, limit=limit)
         return {
             "content_preview": content[:100],
             "count": len(memories),
-            "similar_memories": memories,
+            "similar_memories": [
+                {
+                    "id": m.get("id"),
+                    "content": m.get("content", "")[:200],
+                    "importance": m.get("importance"),
+                    "created_at": m.get("created_at"),
+                }
+                for m in memories
+            ],
         }
     except Exception as e:
         return {"error": f"搜索相似记忆失败: {str(e)}"}
@@ -623,8 +727,30 @@ def get_memory_logs(memory_id: str = None, limit: int = 100) -> Dict[str, Any]:
         return {"error": "记忆管理器不可用"}
 
     try:
-        logs = mm.get_operation_logs(memory_id=memory_id, limit=limit)
-        return {"memory_id": memory_id, "count": len(logs), "logs": logs[-limit:]}
+        # 操作日志功能不可用，返回记忆基本信息作为替代
+        if memory_id:
+            memory = mm.get_memory(memory_id=int(memory_id), include_deleted=True)
+            if memory:
+                return {
+                    "memory_id": memory_id,
+                    "count": 1,
+                    "logs": [
+                        {
+                            "memory_id": memory.get("id"),
+                            "type": memory.get("type"),
+                            "is_deleted": memory.get("is_deleted"),
+                            "created_at": memory.get("created_at"),
+                            "updated_at": memory.get("updated_at"),
+                        }
+                    ],
+                }
+            return {"memory_id": memory_id, "count": 0, "logs": []}
+        return {
+            "memory_id": None,
+            "count": 0,
+            "logs": [],
+            "message": "操作日志功能暂不可用，可通过指定memory_id查看记忆基本信息",
+        }
     except Exception as e:
         return {"error": f"获取日志失败: {str(e)}"}
 

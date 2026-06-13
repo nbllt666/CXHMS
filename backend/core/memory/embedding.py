@@ -39,7 +39,7 @@ class OllamaEmbedding(EmbeddingModel):
     def _get_client(self):
         import httpx
 
-        return httpx.AsyncClient(timeout=60.0)
+        return httpx.AsyncClient(timeout=60.0, trust_env=False)
 
     async def get_embedding(self, text: str) -> List[float]:
         try:

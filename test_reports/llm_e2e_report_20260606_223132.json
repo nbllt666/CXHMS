@@ -1,0 +1,119 @@
+{
+  "report_info": {
+    "timestamp": "2026-06-06T22:31:32.950424",
+    "total_scenarios": 1,
+    "passed": 0,
+    "failed": 1
+  },
+  "overall_score": 4.0,
+  "pass_rate": 0.0,
+  "scenarios": [
+    {
+      "name": "scenario_basic_chat",
+      "description": "基础聊天 - 发送简单问题，验证回复质量",
+      "passed": false,
+      "score": 4.0,
+      "metrics": {
+        "total_metrics": 3,
+        "passed_metrics": 2,
+        "failed_metrics": 1,
+        "pass_rate": 0.6667,
+        "categories": {
+          "response_time": {
+            "records": [
+              {
+                "name": "response_time.chat_stream",
+                "value": 0.18570000247564167,
+                "unit": "ms",
+                "timestamp": 1780756292.9368768,
+                "threshold": 120,
+                "passed": true
+              }
+            ],
+            "avg": 0.19,
+            "min": 0.19,
+            "max": 0.19
+          },
+          "ttft": {
+            "records": [
+              {
+                "name": "ttft",
+                "value": 0.0,
+                "unit": "ms",
+                "timestamp": 1780756292.9368634,
+                "threshold": 5000,
+                "passed": true
+              }
+            ],
+            "avg": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "tps": {
+            "records": [
+              {
+                "name": "tps",
+                "value": 0.0,
+                "unit": "tokens/s",
+                "timestamp": 1780756292.9368718,
+                "threshold": 5.0,
+                "passed": false
+              }
+            ],
+            "avg": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "concurrent": {
+            "success_rate": 0.0,
+            "avg_time_ms": 0.0,
+            "p50": 0.0,
+            "p90": 0.0,
+            "p99": 0.0
+          }
+        }
+      },
+      "steps": [
+        {
+          "name": "回复非空检查",
+          "passed": true,
+          "score": 5.0,
+          "response_time_ms": 0.18570000247564167,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "content_length": 225
+          },
+          "error": null
+        },
+        {
+          "name": "回复质量评判",
+          "passed": false,
+          "score": 3,
+          "response_time_ms": 0.18570000247564167,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "reason": "评判请求失败: HTTP 400"
+          },
+          "error": "评判请求失败: HTTP 400"
+        }
+      ],
+      "error": null
+    }
+  ],
+  "summary": {
+    "total_scenarios": 1,
+    "passed": 0,
+    "failed": 1,
+    "pass_rate": 0.0,
+    "avg_score": 4.0,
+    "scenario_details": [
+      {
+        "name": "scenario_basic_chat",
+        "passed": false,
+        "score": 4.0
+      }
+    ]
+  }
+}

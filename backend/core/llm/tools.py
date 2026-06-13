@@ -74,8 +74,7 @@ class LLMTools:
 
         while iterations < max_iterations:
             response = await self.client.chat(
-                messages=current_messages
-                + [{"role": "system", "content": "请在适当时使用工具调用。"}],
+                messages=current_messages,
                 tools=self.format_tools_for_llm(tools) if tools else None,
             )
 

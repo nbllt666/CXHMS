@@ -10,7 +10,7 @@ class TestAgentEndpoints:
     def test_get_all_agents(self, client: TestClient):
         """Test getting all agents."""
         response = client.get("/api/agents")
-        assert response.status_code in [200, 503]
+        assert response.status_code == 200
 
     def test_get_all_agents_response_structure(self, client: TestClient):
         """Test response structure for get all agents."""
@@ -24,7 +24,7 @@ class TestAgentEndpoints:
     def test_get_agent_by_id(self, client: TestClient):
         """Test getting a specific agent."""
         response = client.get("/api/agents/default")
-        assert response.status_code in [200, 404, 503]
+        assert response.status_code in [200, 404]
 
     def test_get_agent_by_id_response_structure(self, client: TestClient):
         """Test response structure for get agent by id."""
@@ -39,7 +39,7 @@ class TestAgentEndpoints:
     def test_get_agent_not_found(self, client: TestClient):
         """Test getting a non-existent agent."""
         response = client.get("/api/agents/non-existent-agent-12345")
-        assert response.status_code in [404, 503]
+        assert response.status_code == 404
 
     def test_create_agent_validation(self, client: TestClient):
         """Test creating an agent without required fields."""
@@ -49,7 +49,7 @@ class TestAgentEndpoints:
     def test_create_agent_with_name(self, client: TestClient):
         """Test creating an agent with only name."""
         response = client.post("/api/agents", json={"name": "Test Agent"})
-        assert response.status_code in [200, 201, 400, 503]
+        assert response.status_code in [200, 201, 400]
 
     def test_create_agent_with_all_fields(self, client: TestClient):
         """Test creating an agent with all fields."""
@@ -67,51 +67,51 @@ class TestAgentEndpoints:
                 "memory_scene": "default",
             },
         )
-        assert response.status_code in [200, 201, 400, 503]
+        assert response.status_code in [200, 201, 400]
 
     def test_update_agent_not_found(self, client: TestClient):
         """Test updating a non-existent agent."""
         response = client.put("/api/agents/non-existent-agent-12345", json={"name": "Updated"})
-        assert response.status_code in [404, 503]
+        assert response.status_code == 404
 
     def test_update_agent_partial(self, client: TestClient):
         """Test partial update of an agent."""
         response = client.put("/api/agents/default", json={"temperature": 0.5})
-        assert response.status_code in [200, 404, 503]
+        assert response.status_code in [200, 404]
 
     def test_delete_agent_not_found(self, client: TestClient):
         """Test deleting a non-existent agent."""
         response = client.delete("/api/agents/non-existent-agent-12345")
-        assert response.status_code in [404, 503]
+        assert response.status_code == 404
 
     def test_delete_default_agent(self, client: TestClient):
         """Test deleting the default agent."""
         response = client.delete("/api/agents/default")
-        assert response.status_code in [400, 403, 404, 503]
+        assert response.status_code in [400, 403, 404]
 
     def test_set_default_agent_not_found(self, client: TestClient):
         """Test setting a non-existent agent as default."""
         response = client.post("/api/agents/non-existent-agent-12345/set-default")
-        assert response.status_code in [404, 503]
+        assert response.status_code == 404
 
     def test_clone_agent_not_found(self, client: TestClient):
         """Test cloning a non-existent agent."""
         response = client.post("/api/agents/non-existent-agent-12345/clone")
-        assert response.status_code in [404, 503]
+        assert response.status_code == 404
 
     def test_agent_invalid_temperature(self, client: TestClient):
         """Test creating agent with invalid temperature."""
         response = client.post(
             "/api/agents", json={"name": "Invalid Temp Agent", "temperature": 3.0}
         )
-        assert response.status_code in [400, 422, 200, 503]
+        assert response.status_code in [400, 422]
 
     def test_agent_invalid_max_tokens(self, client: TestClient):
         """Test creating agent with invalid max_tokens."""
         response = client.post(
             "/api/agents", json={"name": "Invalid Tokens Agent", "max_tokens": -100}
         )
-        assert response.status_code in [400, 422, 200, 503]
+        assert response.status_code in [400, 422]
 
 
 class TestAgentEndpointsContentType:

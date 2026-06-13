@@ -5,6 +5,7 @@ import { formatDate, truncate, getImportanceColor, getImportanceLabel } from '..
 import { PageHeader } from '../components/layout';
 import { Button, Card, CardBody, Input, Badge, Modal, Textarea, Drawer } from '../components/ui';
 import { useHotkey } from '../hooks';
+import { GraphManager } from '../components/GraphManager';
 
 interface Memory {
   id: number;
@@ -21,6 +22,7 @@ type ViewMode = 'card' | 'list';
 
 export function MemoriesPage() {
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<'memories' | 'graph'>('memories');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'long_term' | 'short_term' | 'permanent'>(
     'all'
@@ -239,24 +241,54 @@ export function MemoriesPage() {
 
   return (
     <div className="max-w-6xl mx-auto">
-      <PageHeader
-        title="记忆管理"
-        description="管理和浏览系统存储的记忆"
-        actions={
-          <Button onClick={() => setShowAddModal(true)}>
-            <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            新建记忆
-          </Button>
-        }
-      />
+      <div className="flex items-center justify-between mb-6">
+        <PageHeader
+          title="记忆管理"
+          description="管理和浏览系统存储的记忆与图数据库"
+        />
+        <div className="flex items-center gap-3">
+          <div className="flex bg-[var(--color-bg-tertiary)] rounded-[var(--radius-md)] p-1">
+            <button
+              onClick={() => setActiveTab('memories')}
+              className={`px-4 py-1.5 text-sm rounded-[var(--radius-sm)] transition-colors ${
+                activeTab === 'memories'
+                  ? 'bg-[var(--color-accent)] text-white'
+                  : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
+              }`}
+            >
+              记忆
+            </button>
+            <button
+              onClick={() => setActiveTab('graph')}
+              className={`px-4 py-1.5 text-sm rounded-[var(--radius-sm)] transition-colors ${
+                activeTab === 'graph'
+                  ? 'bg-[var(--color-accent)] text-white'
+                  : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
+              }`}
+            >
+              图数据库
+            </button>
+          </div>
+          {activeTab === 'memories' && (
+            <Button onClick={() => setShowAddModal(true)}>
+              <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              新建记忆
+            </Button>
+          )}
+        </div>
+      </div>
 
+      {activeTab === 'graph' ? (
+        <GraphManager />
+      ) : (
+      <>
       <div className="flex items-center gap-4 mb-6">
         <div className="flex-1">
           <Input
@@ -898,6 +930,8 @@ export function MemoriesPage() {
           </div>
         </div>
       </Modal>
+      </>
+      )}
     </div>
   );
 }

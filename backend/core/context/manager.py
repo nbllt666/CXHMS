@@ -364,16 +364,19 @@ class ContextManager:
         }
 
     def _row_to_message(self, row) -> Dict:
+        metadata = json.loads(row[5] or "{}")
         return {
             "id": row[0],
             "session_id": row[1],
             "role": row[2],
             "content": row[3],
             "content_type": row[4],
-            "metadata": json.loads(row[5] or "{}"),
+            "metadata": metadata,
             "tokens": row[6],
             "created_at": row[7],
             "is_deleted": bool(row[8]),
+            "thinking": metadata.get("thinking"),
+            "images": metadata.get("images"),
         }
 
     def get_statistics(self, workspace_id: str = "default") -> Dict:

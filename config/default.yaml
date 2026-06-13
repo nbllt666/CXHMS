@@ -1,6 +1,6 @@
 server:
   host: 0.0.0.0
-  port: 8000
+  port: 8001
   debug: true
 cors:
   enabled: true
@@ -26,14 +26,29 @@ database:
   echo: false
 models:
   main:
-    provider: ollama
-    host: http://localhost:11434
-    model: qwen3-vl:8b
+    provider: vllm
+    # 宿主机直连 Docker vLLM: http://localhost:8000 (当前使用)
+    # Docker 网络访问 vLLM: http://vllm:8000
+    host: http://localhost:8000
+    model: gemma4-e4b
     apiKey: ''
     enabled: true
     port: 8000
     temperature: 0.7
     max_tokens: 0
+    timeout: 60
+    api_key: ''
+  embedding:
+    provider: vllm
+    # 宿主机直连 Docker vLLM Embedding: http://localhost:8101
+    # Docker 网络访问 vLLM Embedding: http://vllm-embedding:8000
+    host: http://localhost:8101
+    model: /models/Qwen3-VL-Embedding-2B
+    apiKey: ''
+    enabled: true
+    port: 8101
+    temperature: 0.0
+    max_tokens: 512
     timeout: 60
     api_key: ''
   summary:
@@ -89,20 +104,22 @@ memory:
   chroma:
     db_path: data/chroma_db
     collection_name: memory_vectors
-    vector_size: 768
+    vector_size: 2048
   milvus_lite:
     db_path: data/milvus_lite.db
-    vector_size: 768
+    vector_size: 2048
   qdrant:
     host: localhost
     port: 6333
-    vector_size: 768
+    vector_size: 2048
   weaviate:
+    # 宿主机直连: localhost + 8090
+    # Docker 网络访问: weaviate + 8080
     host: localhost
     port: 8090
     grpc_port: 50061
     embedded: false
-    vector_size: 768
+    vector_size: 2048
     schema_class: CXHMSMemory
     api_key: null
   hybrid_search_enabled: false

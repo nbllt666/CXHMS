@@ -1,0 +1,119 @@
+{
+  "report_info": {
+    "timestamp": "2026-06-06T22:34:55.205461",
+    "total_scenarios": 1,
+    "passed": 1,
+    "failed": 0
+  },
+  "overall_score": 5.0,
+  "pass_rate": 1.0,
+  "scenarios": [
+    {
+      "name": "scenario_basic_chat",
+      "description": "基础聊天 - 发送简单问题，验证回复质量",
+      "passed": true,
+      "score": 5.0,
+      "metrics": {
+        "total_metrics": 3,
+        "passed_metrics": 2,
+        "failed_metrics": 1,
+        "pass_rate": 0.6667,
+        "categories": {
+          "response_time": {
+            "records": [
+              {
+                "name": "response_time.chat_stream",
+                "value": 0.1773999974830076,
+                "unit": "ms",
+                "timestamp": 1780756492.246051,
+                "threshold": 120,
+                "passed": true
+              }
+            ],
+            "avg": 0.18,
+            "min": 0.18,
+            "max": 0.18
+          },
+          "ttft": {
+            "records": [
+              {
+                "name": "ttft",
+                "value": 0.0,
+                "unit": "ms",
+                "timestamp": 1780756492.246037,
+                "threshold": 5000,
+                "passed": true
+              }
+            ],
+            "avg": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "tps": {
+            "records": [
+              {
+                "name": "tps",
+                "value": 0.0,
+                "unit": "tokens/s",
+                "timestamp": 1780756492.2460456,
+                "threshold": 5.0,
+                "passed": false
+              }
+            ],
+            "avg": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "concurrent": {
+            "success_rate": 0.0,
+            "avg_time_ms": 0.0,
+            "p50": 0.0,
+            "p90": 0.0,
+            "p99": 0.0
+          }
+        }
+      },
+      "steps": [
+        {
+          "name": "回复非空检查",
+          "passed": true,
+          "score": 5.0,
+          "response_time_ms": 0.1773999974830076,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "content_length": 311
+          },
+          "error": null
+        },
+        {
+          "name": "回复质量评判",
+          "passed": true,
+          "score": 5,
+          "response_time_ms": 0.1773999974830076,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "reason": "该回复完美地回应了用户“请介绍一下你自己”的请求。它不仅进行了自我介绍（我是AI助手，大型语言模型），还清晰、结构化地阐述了自己的核心能力（理解生成、信息处理、任务执行、记忆保持）。语言自然流畅，并且以一个开放性的问题结尾，引导用户进入下一步互动，极大地提升了用户体验和回复的有用性。所有维度都达到了最高标准。"
+          },
+          "error": null
+        }
+      ],
+      "error": null
+    }
+  ],
+  "summary": {
+    "total_scenarios": 1,
+    "passed": 1,
+    "failed": 0,
+    "pass_rate": 1.0,
+    "avg_score": 5.0,
+    "scenario_details": [
+      {
+        "name": "scenario_basic_chat",
+        "passed": true,
+        "score": 5.0
+      }
+    ]
+  }
+}

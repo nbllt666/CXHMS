@@ -46,7 +46,7 @@ class ModelRouter:
         logger.info("初始化模型路由器...")
 
         # 初始化所有模型客户端
-        model_types = ["main", "summary", "memory"]
+        model_types = ["main", "summary", "memory", "embedding"]
 
         for model_type in model_types:
             try:
@@ -56,6 +56,14 @@ class ModelRouter:
                     logger.info(f"模型客户端已创建: {model_type}")
             except Exception as e:
                 logger.error(f"创建模型客户端失败 {model_type}: {e}")
+
+        # 如果有 embedding 客户端，将 embedding 端点信息注入主模型客户端
+        embedding_client = self._clients.get("embedding")
+        main_client = self._clients.get("main")
+        if embedding_client and main_client and isinstance(main_client, VLLMClient):
+            main_client.embedding_host = embedding_client.host
+            main_client.embedding_model = embedding_client.model
+            logger.info(f"主模型客户端已注入 embedding 端点: {main_client.embedding_host} / {main_client.embedding_model}")
 
         # 检查所有模型状态
         await self.check_all_status()
@@ -87,6 +95,8 @@ class ModelRouter:
                 model=config.model,
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
+                api_key=getattr(config, "api_key", None),
+                supports_tools=getattr(config, "supports_tools", True),
             )
         else:
             logger.warning(f"不支持的模型提供商: {provider}")
@@ -153,14 +163,14 @@ class ModelRouter:
             provider = config.provider.lower()
 
             if provider == "ollama":
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
                     response = await client.get(f"{config.host}/api/tags")
                     available = response.status_code == 200
                     if not available:
                         error_msg = f"HTTP {response.status_code}"
 
             elif provider == "vllm":
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
                     response = await client.get(f"{config.host}/health")
                     available = response.status_code == 200
                     if not available:
@@ -202,7 +212,7 @@ class ModelRouter:
         Returns:
             所有模型状态字典
         """
-        model_types = ["main", "summary", "memory"]
+        model_types = ["main", "summary", "memory", "embedding"]
 
         for model_type in model_types:
             await self.check_status(model_type)

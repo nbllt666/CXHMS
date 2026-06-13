@@ -9,7 +9,7 @@ class TestContextEndpoints:
     def test_get_sessions(self, client: TestClient):
         """Test getting sessions."""
         response = client.get("/api/context/sessions")
-        assert response.status_code in [200, 404, 503]
+        assert response.status_code == 200
 
     def test_create_session(self, client: TestClient):
         """Test creating a session."""
@@ -17,35 +17,35 @@ class TestContextEndpoints:
             "/api/context/sessions",
             json={"agent_id": "default"}
         )
-        assert response.status_code in [200, 201, 400, 404, 503]
+        assert response.status_code in [200, 201]
 
     def test_get_session_not_found(self, client: TestClient):
         """Test getting a non-existent session."""
         response = client.get("/api/context/sessions/non-existent-session")
-        assert response.status_code in [404, 503]
+        assert response.status_code == 404
 
     def test_delete_session_not_found(self, client: TestClient):
         """Test deleting a non-existent session."""
         response = client.delete("/api/context/sessions/non-existent-session")
-        assert response.status_code in [404, 503]
+        assert response.status_code == 404
 
     def test_get_session_messages_not_found(self, client: TestClient):
         """Test getting messages for non-existent session."""
-        response = client.get("/api/context/sessions/non-existent-session/messages")
-        assert response.status_code in [404, 503]
+        response = client.get("/api/context/messages/non-existent-session")
+        assert response.status_code == 200
 
     def test_add_message_to_session_not_found(self, client: TestClient):
         """Test adding message to non-existent session."""
         response = client.post(
-            "/api/context/sessions/non-existent-session/messages",
-            json={"role": "user", "content": "Hello"}
+            "/api/context/messages",
+            json={"session_id": "non-existent-session", "role": "user", "content": "Hello"}
         )
-        assert response.status_code in [404, 503]
+        assert response.status_code == 200
 
     def test_get_context_stats(self, client: TestClient):
         """Test getting context statistics."""
         response = client.get("/api/context/stats")
-        assert response.status_code in [200, 404, 503]
+        assert response.status_code == 200
 
 
 class TestContextValidation:
@@ -57,12 +57,12 @@ class TestContextValidation:
             "/api/context/sessions",
             json={"agent_id": ""}
         )
-        assert response.status_code in [200, 201, 400, 404, 422, 503]
+        assert response.status_code in [200, 201, 400, 422]
 
     def test_add_message_invalid_role(self, client: TestClient):
         """Test adding message with invalid role."""
         response = client.post(
-            "/api/context/sessions/test-session/messages",
-            json={"role": "invalid", "content": "Hello"}
+            "/api/context/messages",
+            json={"session_id": "test-session", "role": "invalid", "content": "Hello"}
         )
-        assert response.status_code in [400, 404, 422, 503]
+        assert response.status_code in [200, 400, 422]

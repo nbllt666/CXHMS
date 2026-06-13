@@ -155,7 +155,7 @@ class WeaviateVectorStore:
                 "memory_type": metadata.get("type", "long_term") if metadata else "long_term",
                 "importance": metadata.get("importance_score", 0.6) if metadata else 0.6,
                 "tags": metadata.get("tags", []) if metadata else [],
-                "created_at": datetime.now().isoformat(),
+                "created_at": datetime.now().astimezone().isoformat(),
                 "workspace_id": metadata.get("workspace_id", "default") if metadata else "default",
                 "is_archived": metadata.get("is_archived", False) if metadata else False,
                 "emotion_score": metadata.get("emotion_score", 0.0) if metadata else 0.0,
@@ -332,7 +332,8 @@ class WeaviateVectorStore:
         return result is not None
 
     async def sync_with_sqlite(self, sqlite_manager, last_sync_time: str = None) -> "SyncResult":
-        """与 SQLite 同步数据"""
+        """与 SQLite 同步数据（并行处理）"""
+        import asyncio
         from .vector_store import SyncResult
 
         if not self._client:
@@ -360,41 +361,59 @@ class WeaviateVectorStore:
 
             result.total_checked = len(memories)
 
-            for memory in memories:
+            # 并行处理同步任务，每批 10 个
+            semaphore = asyncio.Semaphore(10)
+
+            async def _sync_one(memory):
                 memory_id = memory["id"]
                 content = memory["content"]
 
-                try:
-                    existing = await self.get_vector_by_id(memory_id)
+                async with semaphore:
+                    try:
+                        existing = await self.get_vector_by_id(memory_id)
 
-                    if existing is None:
-                        logger.info(f"Weaviate 向量不存在，创建: memory_id={memory_id}")
-                        if self.embedding_model:
-                            embedding = await self.embedding_model.get_embedding(content)
-                            await self.add_memory_vector(
-                                memory_id=memory_id,
-                                content=content,
-                                embedding=embedding,
-                                metadata=memory,
-                            )
-                            result.synced += 1
-                            result.details.append(f"创建: {memory_id}")
-                    elif existing.get("content") != content:
-                        logger.info(f"Weaviate 内容不一致，更新: memory_id={memory_id}")
-                        if self.embedding_model:
-                            embedding = await self.embedding_model.get_embedding(content)
-                            await self.update_memory_vector(
-                                memory_id=memory_id,
-                                content=content,
-                                embedding=embedding,
-                                metadata=memory,
-                            )
-                            result.synced += 1
-                            result.details.append(f"更新: {memory_id}")
+                        if existing is None:
+                            if self.embedding_model:
+                                embedding = await self.embedding_model.get_embedding(content)
+                                await self.add_memory_vector(
+                                    memory_id=memory_id,
+                                    content=content,
+                                    embedding=embedding,
+                                    metadata=memory,
+                                )
+                                return "created", memory_id
+                        elif existing.get("content") != content:
+                            if self.embedding_model:
+                                embedding = await self.embedding_model.get_embedding(content)
+                                await self.update_memory_vector(
+                                    memory_id=memory_id,
+                                    content=content,
+                                    embedding=embedding,
+                                    metadata=memory,
+                                )
+                                return "updated", memory_id
 
-                except Exception as e:
+                        return None, memory_id
+
+                    except Exception as e:
+                        logger.error(f"同步记忆失败: {memory_id}, {e}")
+                        return "error", memory_id
+
+            tasks = [_sync_one(m) for m in memories]
+            sync_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for sr in sync_results:
+                if isinstance(sr, Exception):
                     result.errors += 1
-                    logger.error(f"同步记忆失败: {memory_id}, {e}")
+                    result.details.append(f"同步异常: {sr}")
+                elif sr[0] == "created":
+                    result.synced += 1
+                    result.details.append(f"创建: {sr[1]}")
+                elif sr[0] == "updated":
+                    result.synced += 1
+                    result.details.append(f"更新: {sr[1]}")
+                elif sr[0] == "error":
+                    result.errors += 1
 
             logger.info(
                 f"Weaviate 同步完成: checked={result.total_checked}, synced={result.synced}, errors={result.errors}"

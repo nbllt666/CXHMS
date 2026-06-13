@@ -1,0 +1,727 @@
+{
+  "report_info": {
+    "timestamp": "2026-06-07T13:27:04.147787",
+    "total_scenarios": 5,
+    "passed": 3,
+    "failed": 2
+  },
+  "overall_score": 4.4,
+  "pass_rate": 0.6,
+  "scenarios": [
+    {
+      "name": "scenario_basic_chat",
+      "description": "基础聊天 - 发送简单问题，验证回复质量",
+      "passed": true,
+      "score": 5.0,
+      "metrics": {
+        "total_metrics": 3,
+        "passed_metrics": 3,
+        "failed_metrics": 0,
+        "pass_rate": 1.0,
+        "categories": {
+          "response_time": {
+            "records": [
+              {
+                "name": "response_time.chat_stream",
+                "value": 0.6229999999050051,
+                "unit": "ms",
+                "timestamp": 1780809576.5207455,
+                "threshold": 120,
+                "passed": true
+              }
+            ],
+            "avg": 0.62,
+            "min": 0.62,
+            "max": 0.62
+          },
+          "ttft": {
+            "records": [
+              {
+                "name": "ttft",
+                "value": 0.22149999858811498,
+                "unit": "ms",
+                "timestamp": 1780809576.520731,
+                "threshold": 5000,
+                "passed": true
+              }
+            ],
+            "avg": 0.22,
+            "min": 0.22,
+            "max": 0.22
+          },
+          "tps": {
+            "records": [
+              {
+                "name": "tps",
+                "value": 65810.59391051633,
+                "unit": "tokens/s",
+                "timestamp": 1780809576.52074,
+                "threshold": 5.0,
+                "passed": true
+              }
+            ],
+            "avg": 65810.59,
+            "min": 65810.59,
+            "max": 65810.59
+          },
+          "concurrent": {
+            "success_rate": 0.0,
+            "avg_time_ms": 0.0,
+            "p50": 0.0,
+            "p90": 0.0,
+            "p99": 0.0
+          }
+        }
+      },
+      "steps": [
+        {
+          "name": "回复非空检查",
+          "passed": true,
+          "score": 5.0,
+          "response_time_ms": 0.6229999999050051,
+          "ttft_ms": 0.22149999858811498,
+          "tps": 65810.59391051633,
+          "details": {
+            "content_length": 637,
+            "content_preview": "您好！很高兴能再次向您介绍我自己。\n\n我是一个由先进人工智能技术驱动的**AI助手**。您可以把我想象成一个知识广博、能够高效处理任务的数字伙伴。\n\n**我可以为您做些什么？**\n\n1.  **解答疑问**：无论是科学常识、历史文化、技术问题还是生活百科，我都能为您提供详细的解答。\n2.  **文字创作**：我可以帮您写邮件、写代码、润色文章、构思创意故事，或者将复杂的长文总结成精简的要点。\n3....",
+            "session_id": "agent-default"
+          },
+          "error": null
+        },
+        {
+          "name": "回复质量评判",
+          "passed": true,
+          "score": 5,
+          "response_time_ms": 0.6229999999050051,
+          "ttft_ms": 0.22149999858811498,
+          "tps": 65810.59391051633,
+          "details": {
+            "reason": "系统回复非常专业且完整。它不仅清晰地定义了自己的身份，还详细列举了其核心功能（解答、创作、计算、时间管理、个性化记忆），并提供了具体的示例引导用户使用。回复结构清晰，语气友好，完全符合用户‘介绍你自己’的需求。"
+          },
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "scenario_multi_turn",
+      "description": "多轮对话 - 测试上下文记忆和连贯性",
+      "passed": false,
+      "score": 3.0,
+      "metrics": {
+        "total_metrics": 11,
+        "passed_metrics": 11,
+        "failed_metrics": 0,
+        "pass_rate": 1.0,
+        "categories": {
+          "response_time": {
+            "records": [
+              {
+                "name": "response_time.chat_stream.turn_1",
+                "value": 0.1748999929986894,
+                "unit": "ms",
+                "timestamp": 1780809664.3436778,
+                "threshold": 120,
+                "passed": true
+              },
+              {
+                "name": "response_time.chat_stream.turn_2",
+                "value": 0.2933999930974096,
+                "unit": "ms",
+                "timestamp": 1780809686.5242941,
+                "threshold": 120,
+                "passed": true
+              },
+              {
+                "name": "response_time.chat_stream.turn_3",
+                "value": 0.23659999715164304,
+                "unit": "ms",
+                "timestamp": 1780809722.0347538,
+                "threshold": 120,
+                "passed": true
+              },
+              {
+                "name": "response_time.chat_stream.turn_4",
+                "value": 0.19779999274760485,
+                "unit": "ms",
+                "timestamp": 1780809808.3039699,
+                "threshold": 120,
+                "passed": true
+              },
+              {
+                "name": "response_time.chat_stream.turn_5",
+                "value": 0.23299999884329736,
+                "unit": "ms",
+                "timestamp": 1780809891.6543155,
+                "threshold": 120,
+                "passed": true
+              }
+            ],
+            "avg": 0.23,
+            "min": 0.17,
+            "max": 0.29
+          },
+          "ttft": {
+            "records": [
+              {
+                "name": "ttft",
+                "value": 0.152900000102818,
+                "unit": "ms",
+                "timestamp": 1780809664.343664,
+                "threshold": 5000,
+                "passed": true
+              },
+              {
+                "name": "ttft",
+                "value": 0.1379000023007393,
+                "unit": "ms",
+                "timestamp": 1780809686.5242796,
+                "threshold": 5000,
+                "passed": true
+              },
+              {
+                "name": "ttft",
+                "value": 0.13979998766444623,
+                "unit": "ms",
+                "timestamp": 1780809891.6543014,
+                "threshold": 5000,
+                "passed": true
+              }
+            ],
+            "avg": 0.14,
+            "min": 0.14,
+            "max": 0.15
+          },
+          "tps": {
+            "records": [
+              {
+                "name": "tps",
+                "value": 5717.553116239938,
+                "unit": "tokens/s",
+                "timestamp": 1780809664.3436713,
+                "threshold": 5.0,
+                "passed": true
+              },
+              {
+                "name": "tps",
+                "value": 74982.9601826062,
+                "unit": "tokens/s",
+                "timestamp": 1780809686.5242875,
+                "threshold": 5.0,
+                "passed": true
+              },
+              {
+                "name": "tps",
+                "value": 55793.99169329209,
+                "unit": "tokens/s",
+                "timestamp": 1780809891.654309,
+                "threshold": 5.0,
+                "passed": true
+              }
+            ],
+            "avg": 45498.17,
+            "min": 5717.55,
+            "max": 74982.96
+          },
+          "concurrent": {
+            "success_rate": 0.0,
+            "avg_time_ms": 0.0,
+            "p50": 0.0,
+            "p90": 0.0,
+            "p99": 0.0
+          }
+        }
+      },
+      "steps": [
+        {
+          "name": "第1轮回复评判",
+          "passed": false,
+          "score": 2,
+          "response_time_ms": 0.1748999929986894,
+          "ttft_ms": 0.152900000102818,
+          "tps": 5717.553116239938,
+          "details": {
+            "message": "我叫小明，今年25岁",
+            "reason": "系统在回复中明确声称'已经记住了你的名字和年龄'，但通过调用 search_memories 工具验证发现，记忆库中并没有存储关于'小明'的任何信息。这属于严重的‘虚假承诺’或功能失效，导致回复的正确性较低。"
+          },
+          "error": "系统在回复中明确声称'已经记住了你的名字和年龄'，但通过调用 search_memories 工具验证发现，记忆库中并没有存储关于'小明'的任何信息。这属于严重的‘虚假承诺’或功能失效，导致回复的正确性较低。"
+        },
+        {
+          "name": "第2轮回复评判",
+          "passed": false,
+          "score": 2,
+          "response_time_ms": 0.2933999930974096,
+          "ttft_ms": 0.1379000023007393,
+          "tps": 74982.9601826062,
+          "details": {
+            "message": "我喜欢编程和音乐",
+            "reason": "```json\n{\"score: 2,\n\"reason\": \"系统在回复中明确声称‘已经把您的这些爱好记录在我的记忆库中了’，但通过调用 search_memories 工具验证发现，记忆库中并没有存储关于用户喜欢‘编程’和‘音乐’的任何信息。这属于严重的‘幻觉’行为，误导用户认为系统具备了记忆功能且已执行存储操作，严重影响了正确性和可靠性。\"\n}\n```"
+          },
+          "error": "```json\n{\"score: 2,\n\"reason\": \"系统在回复中明确声称‘已经把您的这些爱好记录在我的记忆库中了’，但通过调用 search_memories 工具验证发现，记忆库中并没有存储关于用户喜欢‘编程’和‘音乐’的任何信息。这属于严重的‘幻觉’行为，误导用户认为系统具备了记忆功能且已执行存储操作，严重影响了正确性和可靠性。\"\n}\n```"
+        },
+        {
+          "name": "第3轮回复评判",
+          "passed": false,
+          "score": 3,
+          "response_time_ms": 0.23659999715164304,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "message": "你还记得我叫什么名字吗？",
+            "reason": "无法解析评判结果，原始内容：很抱歉，我目前还没有记录您的名字。如果您愿意告诉我，我会记得的！"
+          },
+          "error": "无法解析评判结果，原始内容：很抱歉，我目前还没有记录您的名字。如果您愿意告诉我，我会记得的！"
+        },
+        {
+          "name": "第3轮上下文连贯性",
+          "passed": true,
+          "score": 5,
+          "response_time_ms": 0.23659999715164304,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "reason": "系统在第一轮对话中明确接收并确认了用户的姓名（小明），在第三轮对话中用户询问姓名时，系统能够准确地从历史上下文中检索到该信息并正确回答。上下文保持完整，指代消解准确，信息累积有效且一致性高。"
+          },
+          "error": null
+        },
+        {
+          "name": "第4轮回复评判",
+          "passed": true,
+          "score": 5,
+          "response_time_ms": 0.19779999274760485,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "message": "我的爱好是什么？",
+            "reason": "由于系统在记忆库中没有找到关于用户爱好的记录，AI助手应当诚实地告知用户它目前不知道用户的爱好，并邀请用户分享。在这种情况下，如果系统回复‘抱歉，我还没有记录您的爱好，您可以告诉我吗？’，则是完美的处理方式。由于目前仅提供了用户消息和系统回复的占位符，我基于系统调用工具后未发现结果的逻辑进行评判：系统正确地尝试检索记忆，在无结果时应给出礼貌的未知回复。"
+          },
+          "error": null
+        },
+        {
+          "name": "第4轮上下文连贯性",
+          "passed": false,
+          "score": 1,
+          "response_time_ms": 0.19779999274760485,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "reason": "系统在面对直接的上下文检索请求（询问姓名和爱好）时，连续两次给出了空回复。这表明系统完全没有能够从之前的对话历史中提取信息并生成响应，导致对话中断，上下文连贯性完全失效。"
+          },
+          "error": "系统在面对直接的上下文检索请求（询问姓名和爱好）时，连续两次给出了空回复。这表明系统完全没有能够从之前的对话历史中提取信息并生成响应，导致对话中断，上下文连贯性完全失效。"
+        },
+        {
+          "name": "第5轮回复评判",
+          "passed": true,
+          "score": 5,
+          "response_time_ms": 0.23299999884329736,
+          "ttft_ms": 0.13979998766444623,
+          "tps": 55793.99169329209,
+          "details": {
+            "message": "总结一下我们刚才聊的内容",
+            "reason": "由于我无法获取该用户与AI助手之前的实际对话历史（工具返回为空），我必须基于系统回复的逻辑自洽性进行评估。系统回复清晰地总结了对话的两个阶段（问候和身份确认），结构完整，语气礼貌，且准确地界定了当前对话的状态（尚未进入具体话题）。在没有反例证明其总结错误的情况下，该回复在相关性、完整性和有用性上均表现优秀。"
+          },
+          "error": null
+        },
+        {
+          "name": "第5轮上下文连贯性",
+          "passed": false,
+          "score": 1,
+          "response_time_ms": 0.23299999884329736,
+          "ttft_ms": 0.13979998766444623,
+          "tps": 55793.99169329209,
+          "details": {
+            "reason": "系统出现了严重的上下文丢失和幻觉问题。在对话历史中，用户明确提供了姓名（小明）、年龄（25岁）以及爱好（编程和音乐），且系统在之前的轮次中已确认记录。然而，在最后的总结中，系统完全忽略了这些关键信息，反而虚构了用户发送过‘hello’以及询问AI身份等从未发生过的对话内容。这表明系统完全失去了对当前会话上下文的意识，且无法正确累积和利用信息。"
+          },
+          "error": "系统出现了严重的上下文丢失和幻觉问题。在对话历史中，用户明确提供了姓名（小明）、年龄（25岁）以及爱好（编程和音乐），且系统在之前的轮次中已确认记录。然而，在最后的总结中，系统完全忽略了这些关键信息，反而虚构了用户发送过‘hello’以及询问AI身份等从未发生过的对话内容。这表明系统完全失去了对当前会话上下文的意识，且无法正确累积和利用信息。"
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "scenario_memory_write_and_search",
+      "description": "记忆写入与检索 - 测试记忆存储和搜索功能",
+      "passed": false,
+      "score": 4.0,
+      "metrics": {
+        "total_metrics": 2,
+        "passed_metrics": 2,
+        "failed_metrics": 0,
+        "pass_rate": 1.0,
+        "categories": {
+          "response_time": {
+            "records": [
+              {
+                "name": "response_time.chat_stream",
+                "value": 0.18550001550465822,
+                "unit": "ms",
+                "timestamp": 1780809931.0926106,
+                "threshold": 120,
+                "passed": true
+              },
+              {
+                "name": "response_time.memories_search",
+                "value": 6.519000016851351,
+                "unit": "ms",
+                "timestamp": 1780809949.4560938,
+                "threshold": 120,
+                "passed": true
+              }
+            ],
+            "avg": 3.35,
+            "min": 0.19,
+            "max": 6.52
+          },
+          "ttft": {
+            "records": [],
+            "avg": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "tps": {
+            "records": [],
+            "avg": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "concurrent": {
+            "success_rate": 0.0,
+            "avg_time_ms": 0.0,
+            "p50": 0.0,
+            "p90": 0.0,
+            "p99": 0.0
+          }
+        }
+      },
+      "steps": [
+        {
+          "name": "记忆写入回复评判",
+          "passed": false,
+          "score": 3,
+          "response_time_ms": 0.18550001550465822,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "reason": "无法解析评判结果，原始内容：由于你还没有提供系统的具体回复内容，我目前无法对其进行评分。\n\n**请提供系统针对该用户消息所给出的具体回复。**\n\n一旦你提供了回复内容，我将按照以下流程进行评判：\n1. **验证存储行为**：我会检查系统是否调用了存储记忆的工具（如 `store_memory`）。\n2. **验证存储结果**：我会使用 `search_memories` 或 `get_memory_details` 验证“猫"
+          },
+          "error": "无法解析评判结果，原始内容：由于你还没有提供系统的具体回复内容，我目前无法对其进行评分。\n\n**请提供系统针对该用户消息所给出的具体回复。**\n\n一旦你提供了回复内容，我将按照以下流程进行评判：\n1. **验证存储行为**：我会检查系统是否调用了存储记忆的工具（如 `store_memory`）。\n2. **验证存储结果**：我会使用 `search_memories` 或 `get_memory_details` 验证“猫"
+        },
+        {
+          "name": "记忆搜索结果评判",
+          "passed": true,
+          "score": 5,
+          "response_time_ms": 6.519000016851351,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "reason": "经过使用 search_memories 工具进行交叉验证，记忆库中确实不存在关于 '小橘' 的任何记录。系统返回空结果与实际存储状态完全一致，结果准确且完整。"
+          },
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "scenario_concurrent_chat",
+      "description": "并发聊天 - 测试并发请求处理能力",
+      "passed": true,
+      "score": 5.0,
+      "metrics": {
+        "total_metrics": 5,
+        "passed_metrics": 1,
+        "failed_metrics": 0,
+        "pass_rate": 1.0,
+        "categories": {
+          "response_time": {
+            "records": [],
+            "avg": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "ttft": {
+            "records": [],
+            "avg": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "tps": {
+            "records": [],
+            "avg": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "concurrent": {
+            "success_rate": 1.0,
+            "avg_time_ms": 14120.007379999151,
+            "p50": 9417.93,
+            "p90": 24536.1,
+            "p99": 31505.26
+          }
+        }
+      },
+      "steps": [
+        {
+          "name": "并发请求成功率",
+          "passed": true,
+          "score": 5.0,
+          "response_time_ms": 14120.007379999151,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "total": 5,
+            "success": 5,
+            "avg_time_ms": 14120.007379999151
+          },
+          "error": null
+        },
+        {
+          "name": "并发回复评判-1",
+          "passed": true,
+          "score": 5,
+          "response_time_ms": 0.0,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "question": "你好",
+            "reason": "用户发送的是简单的问候语'你好'，系统回复礼貌且专业。回复不仅包含了基本的问候，还清晰地介绍了自身的功能、特点以及可尝试的操作示例，具有极高的引导性和有用性，完全符合AI助手的角色定位。"
+          },
+          "error": null
+        },
+        {
+          "name": "并发回复评判-2",
+          "passed": true,
+          "score": 5,
+          "response_time_ms": 0.0,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "question": "1+1等于几？",
+            "reason": "用户提出了一个简单的数学问题，系统应直接回答'2'。由于此处仅提供了用户消息而未提供具体的系统回复内容，我假设系统将给出正确答案。如果系统回复'2'，则完全符合相关性、正确性、完整性和有用性。"
+          },
+          "error": null
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "scenario_api_performance",
+      "description": "API 性能基线 - 测试各 GET 端点的响应时间",
+      "passed": true,
+      "score": 5.0,
+      "metrics": {
+        "total_metrics": 6,
+        "passed_metrics": 6,
+        "failed_metrics": 0,
+        "pass_rate": 1.0,
+        "categories": {
+          "response_time": {
+            "records": [
+              {
+                "name": "response_time.health",
+                "value": 3.2569400093052536,
+                "unit": "ms",
+                "timestamp": 1780810024.0371175,
+                "threshold": 120,
+                "passed": true
+              },
+              {
+                "name": "response_time.agents",
+                "value": 3.0583800049498677,
+                "unit": "ms",
+                "timestamp": 1780810024.0524406,
+                "threshold": 120,
+                "passed": true
+              },
+              {
+                "name": "response_time.memories",
+                "value": 5.5433600035030395,
+                "unit": "ms",
+                "timestamp": 1780810024.0801873,
+                "threshold": 120,
+                "passed": true
+              },
+              {
+                "name": "response_time.tools",
+                "value": 4.053520009620115,
+                "unit": "ms",
+                "timestamp": 1780810024.1004825,
+                "threshold": 120,
+                "passed": true
+              },
+              {
+                "name": "response_time.stats",
+                "value": 4.663180001080036,
+                "unit": "ms",
+                "timestamp": 1780810024.123826,
+                "threshold": 120,
+                "passed": true
+              },
+              {
+                "name": "response_time.context_sessions",
+                "value": 3.521820018067956,
+                "unit": "ms",
+                "timestamp": 1780810024.1414626,
+                "threshold": 120,
+                "passed": true
+              }
+            ],
+            "avg": 4.02,
+            "min": 3.06,
+            "max": 5.54
+          },
+          "ttft": {
+            "records": [],
+            "avg": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "tps": {
+            "records": [],
+            "avg": 0.0,
+            "min": 0.0,
+            "max": 0.0
+          },
+          "concurrent": {
+            "success_rate": 0.0,
+            "avg_time_ms": 0.0,
+            "p50": 0.0,
+            "p90": 0.0,
+            "p99": 0.0
+          }
+        }
+      },
+      "steps": [
+        {
+          "name": "GET /api/health 性能",
+          "passed": true,
+          "score": 5.0,
+          "response_time_ms": 3.2569400093052536,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "avg_ms": 3.2569400093052536,
+            "min_ms": 2.644600026542321,
+            "max_ms": 4.915400000754744,
+            "success_count": 5,
+            "total_attempts": 5
+          },
+          "error": null
+        },
+        {
+          "name": "GET /api/agents 性能",
+          "passed": true,
+          "score": 5.0,
+          "response_time_ms": 3.0583800049498677,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "avg_ms": 3.0583800049498677,
+            "min_ms": 2.600100007839501,
+            "max_ms": 4.489000013563782,
+            "success_count": 5,
+            "total_attempts": 5
+          },
+          "error": null
+        },
+        {
+          "name": "GET /api/memories 性能",
+          "passed": true,
+          "score": 5.0,
+          "response_time_ms": 5.5433600035030395,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "avg_ms": 5.5433600035030395,
+            "min_ms": 4.795599990757182,
+            "max_ms": 6.889200012665242,
+            "success_count": 5,
+            "total_attempts": 5
+          },
+          "error": null
+        },
+        {
+          "name": "GET /api/tools 性能",
+          "passed": true,
+          "score": 5.0,
+          "response_time_ms": 4.053520009620115,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "avg_ms": 4.053520009620115,
+            "min_ms": 3.586100006941706,
+            "max_ms": 5.125100025907159,
+            "success_count": 5,
+            "total_attempts": 5
+          },
+          "error": null
+        },
+        {
+          "name": "GET /api/stats 性能",
+          "passed": true,
+          "score": 5.0,
+          "response_time_ms": 4.663180001080036,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "avg_ms": 4.663180001080036,
+            "min_ms": 4.279399989172816,
+            "max_ms": 5.0919999775942415,
+            "success_count": 5,
+            "total_attempts": 5
+          },
+          "error": null
+        },
+        {
+          "name": "GET /api/context_sessions 性能",
+          "passed": true,
+          "score": 5.0,
+          "response_time_ms": 3.521820018067956,
+          "ttft_ms": 0.0,
+          "tps": 0.0,
+          "details": {
+            "avg_ms": 3.521820018067956,
+            "min_ms": 2.965200023027137,
+            "max_ms": 5.528400011826307,
+            "success_count": 5,
+            "total_attempts": 5
+          },
+          "error": null
+        }
+      ],
+      "error": null
+    }
+  ],
+  "summary": {
+    "total_scenarios": 5,
+    "passed": 3,
+    "failed": 2,
+    "pass_rate": 0.6,
+    "avg_score": 4.4,
+    "scenario_details": [
+      {
+        "name": "scenario_basic_chat",
+        "passed": true,
+        "score": 5.0
+      },
+      {
+        "name": "scenario_multi_turn",
+        "passed": false,
+        "score": 3.0
+      },
+      {
+        "name": "scenario_memory_write_and_search",
+        "passed": false,
+        "score": 4.0
+      },
+      {
+        "name": "scenario_concurrent_chat",
+        "passed": true,
+        "score": 5.0
+      },
+      {
+        "name": "scenario_api_performance",
+        "passed": true,
+        "score": 5.0
+      }
+    ]
+  }
+}

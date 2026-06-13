@@ -383,10 +383,14 @@ def create_vector_store(backend: str = "milvus_lite", **kwargs) -> VectorStoreBa
     elif backend == "weaviate":
         from .weaviate_store import WeaviateVectorStore
 
+        # 移除可能存在的 embedded 参数，避免重复
+        kwargs.pop("embedded", None)
         return WeaviateVectorStore(embedded=False, **kwargs)
     elif backend == "weaviate_embedded":
         from .weaviate_store import WeaviateVectorStore
 
+        # 移除可能存在的 embedded 参数，避免重复
+        kwargs.pop("embedded", None)
         return WeaviateVectorStore(embedded=True, **kwargs)
     else:
         logger.warning(f"未知的向量存储后端: {backend}, 使用Chroma")

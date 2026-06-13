@@ -657,7 +657,7 @@ async def get_available_models():
 
     # 尝试从 Ollama 获取可用模型列表
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=5.0, trust_env=False) as client:
             main_host = models_config.main.host
             response = await client.get(f"{main_host}/api/tags")
             if response.status_code == 200:

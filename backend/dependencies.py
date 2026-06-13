@@ -12,7 +12,6 @@ class ServiceState:
         self.acp_manager = None
         self.llm_client = None
         self.secondary_router = None
-        self.decay_batch_processor = None
         self.mcp_manager = None
         self.model_router = None
         self.graph_database = None
@@ -80,13 +79,6 @@ def get_secondary_router(state: ServiceState = Depends(get_service_state)):
     if state.secondary_router is None:
         raise HTTPException(status_code=503, detail="副模型路由器不可用")
     return state.secondary_router
-
-
-def get_decay_batch_processor(state: ServiceState = Depends(get_service_state)):
-    state = _resolve_state(state)
-    if state.decay_batch_processor is None:
-        raise HTTPException(status_code=503, detail="批量衰减处理器不可用")
-    return state.decay_batch_processor
 
 
 def get_mcp_manager(state: ServiceState = Depends(get_service_state)):
