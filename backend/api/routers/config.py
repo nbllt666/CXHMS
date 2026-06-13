@@ -33,14 +33,26 @@ async def get_unified_config():
 
     services_config = _get_services_config()
 
-    vector_config = {
-        "backend": settings.config.memory.vector_backend,
-        "vector_size": settings.config.memory.weaviate.vector_size,
-        "weaviate_host": settings.config.memory.weaviate.host,
-        "weaviate_port": settings.config.memory.weaviate.port,
-        "db_path": "data/chroma_db",
-        "collection_name": "memory_vectors",
+    memory_config = settings.config.memory
+    backend = memory_config.vector_backend
+
+    backend_configs = {
+        "chroma": memory_config.chroma,
+        "milvus_lite": memory_config.milvus_lite,
+        "qdrant": memory_config.qdrant,
+        "weaviate": memory_config.weaviate,
     }
+
+    vector_config = {
+        "vector_enabled": memory_config.vector_enabled,
+        "vector_backend": backend,
+    }
+
+    # 添加当前后端的配置
+    active_backend_config = backend_configs.get(backend)
+    if active_backend_config:
+        from dataclasses import asdict
+        vector_config["backend_config"] = asdict(active_backend_config)
 
     return {
         "status": "success",
@@ -201,11 +213,11 @@ async def get_graph_config_endpoint():
 
 @router.get("/config/cxfc")
 async def get_cxfc_config_endpoint():
+    from config.settings import settings
+    from dataclasses import asdict
+
+    cxfc = settings.config.cxfc
     return {
         "status": "success",
-        "config": {
-            "enabled": True,
-            "heartbeat_timeout": 30,
-            "heartbeat_check_interval": 10,
-        }
+        "config": asdict(cxfc),
     }

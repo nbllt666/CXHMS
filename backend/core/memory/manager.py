@@ -1757,7 +1757,18 @@ class MemoryManager:
             time_scores = []
             for memory in memories:
                 if not memory.get("permanent"):
-                    time_scores.append(memory.get("time_score", 0.0))
+                    time_score = memory.get("time_score")
+                    if time_score is None:
+                        time_score = decay_calculator.calculate_time_score_realtime(
+                            importance=memory.get("importance_score", memory.get("importance", 3) / 5.0),
+                            created_at=memory.get("created_at", datetime.now().isoformat()),
+                            decay_type=memory.get("decay_type", "exponential"),
+                            decay_params=memory.get("decay_params"),
+                            permanent=False,
+                            reactivation_count=memory.get("reactivation_count", 0),
+                            emotion_score=memory.get("emotion_score", 0.0),
+                        )
+                    time_scores.append(time_score)
 
             avg_time_score = sum(time_scores) / len(time_scores) if time_scores else 0.0
 

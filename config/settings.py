@@ -654,10 +654,8 @@ class Settings:
             config_path = self._config_path or "config/default.yaml"
         config_dict = self._config_to_dict(self._config)
 
-        masked_config = EnvConfig.mask_secrets(config_dict)
-
         with open(config_path, "w", encoding="utf-8") as f:
-            yaml.dump(masked_config, f, allow_unicode=True, indent=2)
+            yaml.dump(config_dict, f, allow_unicode=True, indent=2)
 
     def _config_to_dict(self, config: Any) -> Dict[str, Any]:
         if isinstance(config, dict):

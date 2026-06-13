@@ -161,35 +161,35 @@ export function SettingsPage() {
   });
 
   const [vectorConfig, setVectorConfig] = useState({
-    backend: 'chroma',
-    vectorSize: 768,
+    backend: 'weaviate',
+    vectorSize: 2048,
     dbPath: 'data/chroma_db',
     collectionName: 'memory_vectors',
     weaviateHost: 'localhost',
-    weaviatePort: 8080,
+    weaviatePort: 8090,
     qdrantHost: 'localhost',
     qdrantPort: 6333,
   });
 
   const [modelsConfig, setModelsConfig] = useState({
     main: {
-      provider: 'ollama',
-      host: 'http://localhost:11434',
-      model: 'llama3.2:3b',
+      provider: 'vllm',
+      host: 'http://localhost:8000',
+      model: 'gemma4-e4b',
       apiKey: '',
       enabled: true,
     },
     summary: {
       provider: 'ollama',
       host: 'http://localhost:11434',
-      model: 'llama3.2:3b',
+      model: 'qwen3-vl:8b',
       apiKey: '',
       enabled: false,
     },
     memory: {
       provider: 'ollama',
       host: 'http://localhost:11434',
-      model: 'llama3.2:3b',
+      model: 'qwen3-vl:8b',
       apiKey: '',
       enabled: false,
     },
@@ -197,7 +197,7 @@ export function SettingsPage() {
 
   const [modelDefaults, setModelDefaults] = useState({ summary: 'main', memory: 'main' });
   const [llmParams, setLlmParams] = useState({
-    temperature: 0.7,
+    temperature: 1.3,
     maxTokens: 0,
     topP: 0.9,
     timeout: 30,
@@ -208,12 +208,12 @@ export function SettingsPage() {
       if (serviceConfig.config.vector) {
         const vec = serviceConfig.config.vector;
         setVectorConfig({
-          backend: vec.backend ?? 'chroma',
-          vectorSize: vec.vector_size ?? 768,
+          backend: vec.backend ?? 'weaviate',
+          vectorSize: vec.vector_size ?? 2048,
           dbPath: vec.db_path ?? 'data/chroma_db',
           collectionName: vec.collection_name ?? 'memory_vectors',
           weaviateHost: vec.weaviate_host ?? 'localhost',
-          weaviatePort: vec.weaviate_port ?? 8080,
+          weaviatePort: vec.weaviate_port ?? 8090,
           qdrantHost: vec.qdrant_host ?? 'localhost',
           qdrantPort: vec.qdrant_port ?? 6333,
         });
@@ -236,8 +236,8 @@ export function SettingsPage() {
       }
       if (serviceConfig.config.llm_params) {
         setLlmParams({
-          temperature: serviceConfig.config.llm_params.temperature ?? 0.7,
-          maxTokens: serviceConfig.config.llm_params.maxTokens ?? 2048,
+          temperature: serviceConfig.config.llm_params.temperature ?? 1.3,
+          maxTokens: serviceConfig.config.llm_params.maxTokens ?? 0,
           topP: serviceConfig.config.llm_params.topP ?? 0.9,
           timeout: serviceConfig.config.llm_params.timeout ?? 30,
         });

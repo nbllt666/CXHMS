@@ -392,13 +392,28 @@ async def get_service_config():
     if hasattr(settings.config, "models"):
         config["models"] = settings.config.models
 
-    # 添加模型默认配置
-    if hasattr(settings.config, "model_defaults"):
-        config["model_defaults"] = settings.config.model_defaults
+    # 添加模型默认配置 - 从 models.defaults 和 llm 配置中提取
+    model_defaults = {}
+    if hasattr(settings.config.models, "defaults"):
+        model_defaults.update(settings.config.models.defaults)
+    llm_cfg = settings.config.llm
+    model_defaults["default_model"] = llm_cfg.model
+    model_defaults["default_provider"] = llm_cfg.provider
+    model_defaults["temperature"] = llm_cfg.temperature
+    model_defaults["max_tokens"] = llm_cfg.max_tokens
+    model_defaults["stream"] = llm_cfg.stream
+    config["model_defaults"] = model_defaults
 
-    # 添加LLM参数
-    if hasattr(settings.config, "llm_params"):
-        config["llm_params"] = settings.config.llm_params
+    # 添加LLM参数 - 从 llm 配置中提取
+    llm_params = {
+        "provider": llm_cfg.provider,
+        "host": llm_cfg.host,
+        "model": llm_cfg.model,
+        "temperature": llm_cfg.temperature,
+        "max_tokens": llm_cfg.max_tokens,
+        "stream": llm_cfg.stream,
+    }
+    config["llm_params"] = llm_params
 
     # 添加向量配置
     if hasattr(settings.config, "memory"):
