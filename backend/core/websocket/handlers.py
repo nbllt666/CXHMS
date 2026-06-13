@@ -286,12 +286,13 @@ class ChatWebSocketHandler:
                         }
                     )
 
-                # 再次调用 LLM 获取最终响应（流式）
+                # 再次调用 LLM 获取最终响应（流式，带 tools 支持链式调用）
                 full_response = ""
                 async for chunk in llm.stream_chat(
                     messages=messages,
                     temperature=agent_config.get("temperature", 0.7),
                     max_tokens=agent_config.get("max_tokens") or 4096,
+                    tools=tools if tools else None,
                 ):
                     # 检查取消
                     if self._cancel_flags.get(client_id, False):

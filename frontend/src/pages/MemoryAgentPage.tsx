@@ -147,6 +147,29 @@ export function MemoryAgentPage() {
     scrollToBottom();
   }, [messages]);
 
+  // 页面加载时获取历史消息
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const data = await api.getAgentContext('memory-agent');
+        if (data.recent_messages && data.recent_messages.length > 0) {
+          const formattedMessages = data.recent_messages
+            .filter((msg: any) => msg.role === 'user' || msg.role === 'assistant')
+            .map((msg: any, idx: number) => ({
+              id: `history-${idx}`,
+              role: msg.role,
+              content: msg.content,
+              timestamp: msg.created_at || new Date().toISOString(),
+            }));
+          setMessages(formattedMessages);
+        }
+      } catch (error) {
+        console.error('加载历史消息失败:', error);
+      }
+    };
+    loadHistory();
+  }, []);
+
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 

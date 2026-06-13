@@ -442,10 +442,12 @@ async def chat(request: ChatRequest):
         # 8. 调用 LLM
         response = await llm.chat(messages=messages, stream=False, tools=tools if tools else None)
 
-        # 9. 处理工具调用
-        final_response = response.content
-        if hasattr(response, "tool_calls") and response.tool_calls:
-            # 处理工具调用
+        # 9. 循环处理工具调用（最多5轮）
+        max_tool_rounds = 5
+        for _ in range(max_tool_rounds):
+            if not (hasattr(response, "tool_calls") and response.tool_calls):
+                break
+
             from backend.core.tools import tool_registry
             from backend.core.tools.builtin import call_builtin_tool
 
@@ -488,9 +490,10 @@ async def chat(request: ChatRequest):
                     }
                 )
 
-            # 再次调用 LLM 获取最终响应
-            response = await llm.chat(messages=messages, stream=False)
-            final_response = response.content
+            # 再次调用 LLM（带 tools，支持链式调用）
+            response = await llm.chat(messages=messages, stream=False, tools=tools if tools else None)
+
+        final_response = response.content
 
         # 10. 保存助手响应到上下文
         context_mgr.add_message(session_id=session_id, role="assistant", content=final_response)
@@ -668,8 +671,12 @@ async def chat_stream(request: ChatRequest):
                             stream=False,
                             temperature=agent_config.get("temperature", 0.7),
                             max_tokens=agent_config.get("max_tokens") or 4096,
+                            tools=tools if tools else None,
                         )
-                        if response.content:
+                        # 处理非流式回退中的工具调用
+                        if hasattr(response, "tool_calls") and response.tool_calls:
+                            tool_calls_buffer = response.tool_calls
+                        elif response.content:
                             full_response = response.content
                             yield f"data: {json.dumps({'type': 'content', 'content': full_response})}\n\n"
                     except Exception as fallback_err:
@@ -737,12 +744,13 @@ async def chat_stream(request: ChatRequest):
                             }
                         )
 
-                    # 再次调用LLM获取最终响应（流式）
+                    # 再次调用LLM获取最终响应（流式，带 tools 支持链式调用）
                     full_response = ""
                     async for chunk in llm.stream_chat(
                         messages=messages,
                         temperature=agent_config.get("temperature", 0.7),
                         max_tokens=agent_config.get("max_tokens") or 4096,
+                        tools=tools if tools else None,
                     ):
                         if chunk:
                             # 检查是否是字典类型（新的返回格式）
@@ -974,8 +982,12 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
                             stream=False,
                             temperature=agent_config.get("temperature", 0.3),
                             max_tokens=agent_config.get("max_tokens") or 4096,
+                            tools=tools if tools else None,
                         )
-                        if response.content:
+                        # 处理非流式回退中的工具调用
+                        if hasattr(response, "tool_calls") and response.tool_calls:
+                            tool_calls_buffer = response.tool_calls
+                        elif response.content:
                             full_response = response.content
                             yield f"data: {json.dumps({'type': 'content', 'content': full_response})}\n\n"
                     except Exception as fallback_err:
@@ -1036,12 +1048,13 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
                             }
                         )
 
-                    # 再次调用LLM获取最终响应（流式）
+                    # 再次调用LLM获取最终响应（流式，带 tools 支持链式调用）
                     full_response = ""
                     async for chunk in llm.stream_chat(
                         messages=messages,
                         temperature=agent_config.get("temperature", 0.3),
                         max_tokens=agent_config.get("max_tokens") or 4096,
+                        tools=tools if tools else None,
                     ):
                         if chunk:
                             # 检查是否是字典类型（新的返回格式）

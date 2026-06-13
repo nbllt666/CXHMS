@@ -470,6 +470,11 @@ class ApiClient {
     return response.data;
   }
 
+  async getAgentContext(agentId: string, limit: number = 50) {
+    const response = await this.client.get(`/api/agents/${agentId}/context`, { params: { limit } });
+    return response.data;
+  }
+
   // ========== ACP APIs ==========
 
   async getAcpStats() {

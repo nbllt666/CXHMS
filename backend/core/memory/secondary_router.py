@@ -4,7 +4,11 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from backend.api.routers.agents import _load_agents
+from backend.api.routers.chat import MEMORY_AGENT_HIDDEN_SYSTEM_PROMPT
 from backend.core.logging_config import get_contextual_logger
+from backend.core.tools import tool_registry
+from backend.core.tools.builtin import call_builtin_tool
 from backend.core.utils import format_messages_for_summary
 
 logger = get_contextual_logger(__name__)
@@ -968,10 +972,6 @@ class SecondaryModelRouter:
 
         try:
             # 从 Agent 配置读取系统提示词，避免硬编码重复
-            from backend.api.routers.agents import _load_agents
-            from backend.api.routers.chat import MEMORY_AGENT_HIDDEN_SYSTEM_PROMPT
-            from backend.core.tools import tool_registry
-
             agents = _load_agents()
             memory_agent_config = next(
                 (a for a in agents if a["id"] == "memory-agent"), None
@@ -1020,7 +1020,6 @@ class SecondaryModelRouter:
                     break
 
                 # 执行工具调用
-                from backend.core.tools.builtin import call_builtin_tool
                 BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
 
                 messages.append({
@@ -1056,10 +1055,14 @@ class SecondaryModelRouter:
                                 tool_args = {}
 
                     # 执行工具
-                    if tool_name in BUILTIN_TOOL_NAMES:
-                        tool_result = call_builtin_tool(tool_name, tool_args or {})
-                    else:
-                        tool_result = tool_registry.call_tool(tool_name, tool_args)
+                    try:
+                        if tool_name in BUILTIN_TOOL_NAMES:
+                            tool_result = call_builtin_tool(tool_name, tool_args or {})
+                        else:
+                            tool_result = tool_registry.call_tool(tool_name, tool_args)
+                    except Exception as e:
+                        logger.warning(f"工具 {tool_name} 执行失败: {e}")
+                        tool_result = {"success": False, "error": str(e)}
 
                     # 添加工具结果到消息
                     messages.append({
