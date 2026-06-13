@@ -576,7 +576,7 @@ class VLLMClient(LLMClient):
                                                     tool_calls_accumulator[idx]["function"]["arguments"] += func_delta["arguments"]
                                                 if tc.get("id"):
                                                     tool_calls_accumulator[idx]["id"] = tc["id"]
-                                except (json.JSONDecodeError, KeyError, IndexError):
+                                except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                                     continue
 
                     # 流结束后，yield 拼接完成的 tool_calls
