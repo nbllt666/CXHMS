@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from backend.core.logging_config import get_contextual_logger
+from config.env import EnvConfig
 
 router = APIRouter()
 logger = get_contextual_logger(__name__)
@@ -52,7 +53,6 @@ async def get_unified_config():
     # 添加当前后端的配置
     active_backend_config = backend_configs.get(backend)
     if active_backend_config:
-        from config.env import EnvConfig
         vector_config["backend_config"] = EnvConfig.mask_secrets(asdict(active_backend_config))
 
     return {
@@ -216,7 +216,6 @@ async def get_graph_config_endpoint():
 async def get_cxfc_config_endpoint():
     from config.settings import settings
     cxfc = settings.config.cxfc
-    from config.env import EnvConfig
     return {
         "status": "success",
         "config": EnvConfig.mask_secrets(asdict(cxfc)),
