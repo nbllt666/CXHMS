@@ -942,7 +942,7 @@ class SecondaryModelRouter:
         return self._execution_history[-limit:]
 
     async def _custom_command(self, params: Dict) -> SecondaryResult:
-        """处理自定义命令，将用户消息转发给记忆管理模型"""
+        """处理自定义命令，将用户消息转发给记忆管理模型（支持工具调用）"""
         user_message = params.get("user_message", "")
 
         if not user_message:
@@ -969,6 +969,8 @@ class SecondaryModelRouter:
         try:
             # 从 Agent 配置读取系统提示词，避免硬编码重复
             from backend.api.routers.agents import _load_agents
+            from backend.api.routers.chat import MEMORY_AGENT_HIDDEN_SYSTEM_PROMPT
+            from backend.core.tools import tool_registry
 
             agents = _load_agents()
             memory_agent_config = next(
@@ -980,14 +982,101 @@ class SecondaryModelRouter:
                 else "你是记忆管理助手。请用中文回答用户的问题。"
             )
 
+            # 构建消息列表
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": MEMORY_AGENT_HIDDEN_SYSTEM_PROMPT},
+                {"role": "user", "content": user_message},
+            ]
+
+            # 获取记忆管理工具
+            tools = tool_registry.list_openai_functions(include_builtin=False, category="assistant")
+
+            # 第一次调用 LLM（带 tools）
             response = await memory_client.chat(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
+                messages=messages,
                 stream=False,
+                tools=tools if tools else None,
             )
 
+            # 处理工具调用循环（最多 5 轮）
+            max_rounds = 5
+            for _ in range(max_rounds):
+                # 提取工具调用
+                tool_calls = None
+                response_text = ""
+
+                if hasattr(response, "tool_calls") and response.tool_calls:
+                    tool_calls = response.tool_calls
+                elif isinstance(response, dict):
+                    tool_calls = response.get("tool_calls")
+                    response_text = response.get("content", "")
+
+                if hasattr(response, "content") and response.content:
+                    response_text = response.content
+
+                if not tool_calls:
+                    # 没有工具调用，返回文本响应
+                    break
+
+                # 执行工具调用
+                from backend.core.tools.builtin import call_builtin_tool
+                BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
+
+                messages.append({
+                    "role": "assistant",
+                    "content": response_text or None,
+                    "tool_calls": [
+                        {
+                            "id": tc.get("id", ""),
+                            "type": "function",
+                            "function": {
+                                "name": tc.get("name") or tc.get("function", {}).get("name", ""),
+                                "arguments": tc.get("arguments") or tc.get("function", {}).get("arguments", "{}"),
+                            },
+                        }
+                        for tc in tool_calls
+                    ],
+                })
+
+                for tc in tool_calls:
+                    tool_name = tc.get("name") or tc.get("function", {}).get("name", "")
+                    tool_args = tc.get("arguments") or tc.get("function", {}).get("arguments", "{}")
+
+                    if isinstance(tool_args, str):
+                        try:
+                            tool_args = json.loads(tool_args)
+                        except json.JSONDecodeError:
+                            try:
+                                import ast
+                                tool_args = ast.literal_eval(tool_args)
+                                if not isinstance(tool_args, dict):
+                                    tool_args = {}
+                            except Exception:
+                                tool_args = {}
+
+                    # 执行工具
+                    if tool_name in BUILTIN_TOOL_NAMES:
+                        tool_result = call_builtin_tool(tool_name, tool_args or {})
+                    else:
+                        tool_result = tool_registry.call_tool(tool_name, tool_args)
+
+                    # 添加工具结果到消息
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", ""),
+                        "name": tool_name,
+                        "content": json.dumps(tool_result, ensure_ascii=False),
+                    })
+
+                # 再次调用 LLM 获取最终响应
+                response = await memory_client.chat(
+                    messages=messages,
+                    stream=False,
+                    tools=tools if tools else None,
+                )
+
+            # 提取最终文本
             if hasattr(response, "content"):
                 response_text = response.content
             elif isinstance(response, dict):
@@ -998,7 +1087,7 @@ class SecondaryModelRouter:
             return SecondaryResult(
                 status="success",
                 command="custom",
-                output={"response": response_text},
+                output={"response": response_text or ""},
                 execution_time_ms=0.0,
             )
         except Exception as e:
