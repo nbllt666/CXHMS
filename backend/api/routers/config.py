@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from fastapi import APIRouter, HTTPException, Request
 from typing import Dict, Any
 import json
@@ -51,8 +52,8 @@ async def get_unified_config():
     # 添加当前后端的配置
     active_backend_config = backend_configs.get(backend)
     if active_backend_config:
-        from dataclasses import asdict
-        vector_config["backend_config"] = asdict(active_backend_config)
+        from config.env import EnvConfig
+        vector_config["backend_config"] = EnvConfig.mask_secrets(asdict(active_backend_config))
 
     return {
         "status": "success",
@@ -214,10 +215,9 @@ async def get_graph_config_endpoint():
 @router.get("/config/cxfc")
 async def get_cxfc_config_endpoint():
     from config.settings import settings
-    from dataclasses import asdict
-
     cxfc = settings.config.cxfc
+    from config.env import EnvConfig
     return {
         "status": "success",
-        "config": asdict(cxfc),
+        "config": EnvConfig.mask_secrets(asdict(cxfc)),
     }
