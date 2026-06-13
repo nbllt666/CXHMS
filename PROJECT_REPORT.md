@@ -22,7 +22,7 @@ CXHMS (晨曦人格化记忆系统) 是一个基于 FastAPI 的智能记忆管�
 - 测试: Vitest + jsdom
 
 **AI 与向量**
-- LLM 集成: Ollama、OpenAI、Anthropic 兼容接口
+- LLM 集成: Ollama、OpenAI、Anthropic、DeepSeek、vLLM 兼容接口
 - 向量数据库: Weaviate (默认)、Chroma、Milvus Lite、Qdrant
 - 工具协议: MCP (Model Context Protocol)、CXFC (插件协议)
 - 图数据库: SQLite 知识图谱
@@ -51,12 +51,14 @@ main.py → 初始化日志 → 加载配置 → 启动 Uvicorn → FastAPI 应�
 10. **摘要模型工具注册** - register_summary_tools()
 11. **记忆管理模型工具注册** - register_assistant_tools()
 12. **向量搜索启用** - 根据 vector_backend 配置初始化 (chroma/milvus_lite/qdrant/weaviate/weaviate_embedded)
-13. **提醒管理器 + WebSocket 离线保存** - AlarmManager + WebSocketManager
-14. **DecayBatchProcessor** - 批量衰减处理器
-15. **AsyncMemoryManager** - 异步记忆管理器
-16. **GraphDatabase** - 图数据库 (条件启用: settings.config.graph.enabled)
+13. **AlarmManager + WebSocket 离线保存** - AlarmManager + WebSocketManager
+14. **AsyncMemoryManager** - 异步记忆管理器
+15. **GraphDatabase** - 图数据库 (条件启用: settings.config.graph.enabled)
+16. **SQLiteGraphStore** - SQLite 图存储
 17. **CXFCManager** - CXFC 管理器 (条件启用: settings.config.cxfc.enabled)
 18. **图数据库工具注册** - register_graph_tools() (条件注册: graph_database && graph_store)
+19. **ServiceState** - 注入所有组件
+20. **关闭顺序** - CXFCManager → GraphDatabase → AlarmManager → WebSocketManager → ACPManager → MemoryManager → BackupManager → PluginManager → ModelRouter
 
 ### 1.2 全局依赖注入
 
@@ -69,7 +71,6 @@ get_context_manager()         # 上下文管理器
 get_acp_manager()             # ACP 管理器
 get_llm_client()              # LLM 客户端
 get_secondary_router()        # 副模型路由器
-get_decay_batch_processor()   # 批量衰减处理器
 get_mcp_manager()             # MCP 管理器
 get_model_router()            # 模型路由器
 get_graph_database()          # 图数据库
@@ -87,7 +88,6 @@ class ServiceState:
     acp_manager              # ACPManager 实例
     llm_client               # LLM 客户端实例
     secondary_router         # SecondaryModelRouter 实例
-    decay_batch_processor    # DecayBatchProcessor 实例
     mcp_manager              # MCPManager 实例
     model_router             # ModelRouter 实例
     graph_database           # GraphDatabase 实例 (可选)
@@ -101,25 +101,25 @@ class ServiceState:
 
 ### 2.1 路由文件总览
 
-| 文件 | 路径 | 主要功能 | 核心方法 |
+| 文件 | 路径 | 主要功能 | 核心端点 |
 |------|------|---------|---------|
-| [chat.py](file:///d:/CXHMS/backend/api/routers/chat.py) | `/api/chat` | 聊天对话、流式响应 | send_message, stream_chat |
-| [memory.py](file:///d:/CXHMS/backend/api/routers/memory.py) | `/api/memories` | 记忆 CRUD、搜索、RAG | get_memories, search, semantic_search |
-| [context.py](file:///d:/CXHMS/backend/api/routers/context.py) | `/api/context` | 会话管理、消息历史 | create_session, add_message |
-| [tools.py](file:///d:/CXHMS/backend/api/routers/tools.py) | `/api/tools` | 工具注册、MCP 管理 | list_tools, call_tool |
-| [acp.py](file:///d:/CXHMS/backend/api/routers/acp.py) | `/api/acp` | ACP 协议、Agent 发现 | discover_agents, send_message |
-| [agents.py](file:///d:/CXHMS/backend/api/routers/agents.py) | `/api/agents` | Agent 配置管理 | get_agents, create_agent |
-| [archive.py](file:///d:/CXHMS/backend/api/routers/archive.py) | `/api/archive` | 归档管理、去重合并 | archive, merge, detect_duplicates |
-| [memory_chat.py](file:///d:/CXHMS/backend/api/routers/memory_chat.py) | `/api/memory-chat` | 记忆管理对话引擎 | chat, search_memories |
-| [admin.py](file:///d:/CXHMS/backend/api/routers/admin.py) | `/api/admin` | 管理员功能 | system_info, clear_cache |
-| [service.py](file:///d:/CXHMS/backend/api/routers/service.py) | `/api/service` | 服务状态管理 | start_service, stop_service |
-| [config.py](file:///d:/CXHMS/backend/api/routers/config.py) | `/api/config` | 配置管理 | get_config, set_config, get_config_section |
-| [cxfc.py](file:///d:/CXHMS/backend/api/routers/cxfc.py) | `/api/cxfc` | CXFC 插件协议 | register, heartbeat, discover, skills, connect |
-| [graph.py](file:///d:/CXHMS/backend/api/routers/graph.py) | `/api/nodes`, `/api/edges`, `/api/traverse`, `/api/semantic`, `/api/paths`, `/api/algorithm`, `/api/export` | 图数据库 | create_node, traverse_bfs, semantic_search, shortest_path, pagerank |
-| [stats.py](file:///d:/CXHMS/backend/api/routers/stats.py) | `/api/stats` | 统计 | get_stats |
-| [vector.py](file:///d:/CXHMS/backend/api/routers/vector.py) | `/api/vector` | 向量搜索 | config, status, health, sync, rebuild, search, stats |
-| [backup.py](file:///d:/CXHMS/backend/api/routers/backup.py) | `/api/backup` | 备份恢复 | create_backup, restore_backup |
-| [websocket.py](file:///d:/CXHMS/backend/api/routers/websocket.py) | `/ws` | WebSocket 实时通信 | connect, disconnect, send_message |
+| [chat.py](file:///d:/CXHMS/backend/api/routers/chat.py) | `/api/chat` | 聊天对话、流式响应 | POST /api/chat, POST /api/chat/stream, GET /api/chat/history/{session_id}, POST /api/memory-agent/chat/stream |
+| [memory.py](file:///d:/CXHMS/backend/api/routers/memory.py) | `/api/memories` | 记忆 CRUD、搜索、RAG | 30+端点（含batch操作、secondary操作、semantic-search等） |
+| [context.py](file:///d:/CXHMS/backend/api/routers/context.py) | `/api/context` | 会话管理、消息历史 | 10端点（sessions, messages, summary, stats） |
+| [tools.py](file:///d:/CXHMS/backend/api/routers/tools.py) | `/api/tools` | 工具注册、MCP 管理 | 20+端点（含MCP管理、插件工具） |
+| [acp.py](file:///d:/CXHMS/backend/api/routers/acp.py) | `/api/acp` | ACP 协议、Agent 发现 | 13端点（discover, agents, connect, groups, send, messages, stats） |
+| [admin.py](file:///d:/CXHMS/backend/api/routers/admin.py) | `/api/admin` | 管理员功能 | 7端点（dashboard, stats, health, config, logs, backup） |
+| [archive.py](file:///d:/CXHMS/backend/api/routers/archive.py) | `/api/archive` | 归档管理、去重合并 | 11端点（list, memory, merge, deduplicate, duplicates, of-archives, stats, levels, threshold, auto-process） |
+| [service.py](file:///d:/CXHMS/backend/api/routers/service.py) | `/api/service` | 服务状态管理 | 10端点（status, start, stop, restart, logs, config, environment, startup-command, models） |
+| [agents.py](file:///d:/CXHMS/backend/api/routers/agents.py) | `/api/agents` | Agent 配置管理 | 9端点（CRUD + clone + stats + context） |
+| [backup.py](file:///d:/CXHMS/backend/api/routers/backup.py) | `/api/backup` | 备份恢复 | 8端点（CRUD + stats + import + export） |
+| [websocket.py](file:///d:/CXHMS/backend/api/routers/websocket.py) | `/ws` | WebSocket 实时通信 | WS /ws/{agent_id}, /ws, /ws/chat |
+| [memory_chat.py](file:///d:/CXHMS/backend/api/routers/memory_chat.py) | `/api/memory-chat` | 记忆管理对话引擎 | 4端点（chat, sessions, commands） |
+| [stats.py](file:///d:/CXHMS/backend/api/routers/stats.py) | `/api/stats` | 统计 | GET /api/stats |
+| [config.py](file:///d:/CXHMS/backend/api/routers/config.py) | `/api/config` | 配置管理 | 7端点（GET/PUT/POST + vector/llm/graph/cxfc分区） |
+| [vector.py](file:///d:/CXHMS/backend/api/routers/vector.py) | `/api/vector` | 向量搜索 | 10端点（config, status, health, vectors, sync, rebuild, search, stats） |
+| [graph.py](file:///d:/CXHMS/backend/api/routers/graph.py) | `/api/nodes`, `/api/edges`, `/api/traverse`, `/api/semantic`, `/api/paths`, `/api/algorithm`, `/api/export` | 图数据库 | 30+端点（nodes, edges, traverse, semantic, paths, algorithm, export, config） |
+| [cxfc.py](file:///d:/CXHMS/backend/api/routers/cxfc.py) | `/api/cxfc` | CXFC 插件协议 | 9端点（register, heartbeat, event/push, discover, skills, connect, plugins） |
 
 ### 2.2 聊天路由详细实现 ([chat.py](file:///d:/CXHMS/backend/api/routers/chat.py))
 
@@ -334,10 +334,10 @@ CREATE TABLE permanent_memories (
 **衰减模型设计**：
 
 ```python
-# 双阶段指数衰减函数
+# 双阶段指数衰减函数（默认模型）
 T(t) = α·e^(-λ₁·Δt) + (1-α)·e^(-λ₂·Δt)
 
-# 艾宾浩斯遗忘曲线优化版
+# 艾宾浩斯遗忘曲线优化版（实验性）
 T(t) = 1 / (1 + (Δt/T₅₀)^k)
 
 # 180天保留率计算
@@ -484,7 +484,25 @@ class MemoryRouter:
         return memories
 ```
 
-### 3.4 归档管理系统 (Archive System)
+### 3.4 辅助记忆组件
+
+**情感分析器 (EmotionAnalyzer)**：
+
+基于关键词模式的情感分析，为记忆内容标记情感分数。
+
+**去重检测器 (DeduplicationManager)**：
+
+检测并处理重复记忆，支持自动合并和标记。
+
+**副模型路由器 (SecondaryModelRouter)**：
+
+管理10种指令的副模型路由，用于摘要、翻译等辅助任务。
+
+**向量化队列 (VectorizationQueue)**：
+
+优先级队列，管理记忆内容的异步向量化任务。
+
+### 3.5 归档管理系统 (Archive System)
 
 **文件位置**: [backend/core/memory/archiver.py](file:///d:/CXHMS/backend/core/memory/archiver.py)
 
@@ -591,7 +609,7 @@ class Archiver:
         )
 ```
 
-### 3.5 向量存储系统 (Vector Store)
+### 3.6 向量存储系统 (Vector Store)
 
 **文件位置**: [backend/core/memory/vector_store.py](file:///d:/CXHMS/backend/core/memory/vector_store.py)
 
@@ -605,7 +623,7 @@ class Archiver:
 | **milvus_lite** | [milvus_lite_store.py](file:///d:/CXHMS/backend/core/memory/milvus_lite_store.py) | | Milvus Lite 本地存储 |
 | **qdrant** | [vector_store.py](file:///d:/CXHMS/backend/core/memory/vector_store.py) | | Qdrant 远程连接 |
 
-> **注意**: 默认向量后端已从 `milvus_lite` 更新为 `weaviate`。
+> **注意**: 默认向量后端为 `weaviate`。支持 Chroma/Milvus Lite/Qdrant/Weaviate/Weaviate Embedded 五种后端。
 
 ```python
 class VectorStore(ABC):
@@ -720,7 +738,7 @@ class ChromaStore(VectorStore):
         return [SearchResult(**r) for r in results]
 ```
 
-### 3.6 混合搜索实现 (Hybrid Search)
+### 3.7 混合搜索实现 (Hybrid Search)
 
 **文件位置**: [backend/core/memory/hybrid_search.py](file:///d:/CXHMS/backend/core/memory/hybrid_search.py)
 
@@ -739,8 +757,9 @@ class HybridSearch:
     async def search(
         self,
         query: str,
-        vector_weight: float = 0.7,
-        text_weight: float = 0.3,
+        vector_weight: float = 0.6,
+        text_weight: float = 0.4,
+        min_score: float = 0.3,
         limit: int = 10
     ) -> List[HybridResult]:
         # 1. 生成查询向量
@@ -2198,7 +2217,7 @@ class ModelRouter:
                 model=config.model,
                 timeout=config.timeout or 60
             )
-        elif config.provider == "openai":
+        elif config.provider in ("openai", "vllm"):
             return VLLMClient(
                 base_url=config.host,
                 model=config.model,
@@ -2209,6 +2228,13 @@ class ModelRouter:
             return AnthropicClient(
                 api_key=config.apiKey,
                 model=config.model,
+                timeout=config.timeout or 60
+            )
+        elif config.provider == "deepseek":
+            return VLLMClient(
+                base_url=config.host,
+                model=config.model,
+                api_key=config.apiKey,
                 timeout=config.timeout or 60
             )
         else:
@@ -2505,43 +2531,107 @@ def get_datetime(format: str = "%Y-%m-%d %H:%M:%S") -> str:
 
 
 @registry.register(
-    name="search_memory",
-    description="搜索用户记忆库中的相关信息",
-    category="memory"
+    name="random",
+    description="生成随机数",
+    category="utility"
 )
-async def search_memory(
-    query: str,
-    memory_type: str = None,
-    limit: int = 5
-) -> str:
-    """搜索记忆
-    
-    Args:
-        query: 搜索查询
-        memory_type: 记忆类型 (long_term/short_term/permanent)
-        limit: 返回结果数量
-    
-    Returns:
-        搜索结果
-    """
-    memories = await memory_manager.hybrid_search(
-        query=query,
-        memory_type=memory_type,
-        limit=limit
-    )
-    
-    if not memories:
-        return "未找到相关记忆"
-    
-    results = [
-        f"[重要度:{m.importance}] {m.content[:200]}"
-        for m in memories
-    ]
-    
-    return "\n---\n".join(results)
+def random_number(min_val: int = 0, max_val: int = 100) -> str:
+    """生成随机数"""
+    import random
+    return str(random.randint(min_val, max_val))
+
+
+@registry.register(
+    name="json_format",
+    description="格式化JSON字符串",
+    category="utility"
+)
+def json_format(json_str: str) -> str:
+    """格式化JSON字符串"""
+    import json
+    return json.dumps(json.loads(json_str), indent=2, ensure_ascii=False)
 ```
 
-### 8.3 MCP 管理器
+### 8.3 主模型工具
+
+```python
+# 主模型工具注册 - register_master_tools()
+# 这些工具在主模型对话中可用
+
+MASTER_TOOLS = [
+    "write_long_term_memory",      # 写入长期记忆
+    "search_all_memories",         # 搜索所有记忆
+    "call_assistant",              # 调用记忆管理助手
+    "set_alarm",                   # 设置提醒
+    "mono",                        # Mono 上下文管理
+    "write_permanent_memory",      # 写入永久记忆
+    "acp_list_agents",             # ACP: 列出Agent
+    "acp_connect",                 # ACP: 连接Agent
+    "acp_disconnect",              # ACP: 断开Agent
+    "acp_send_message",            # ACP: 发送消息
+    "acp_create_group",            # ACP: 创建群组
+    "acp_join_group",              # ACP: 加入群组
+    "acp_leave_group",             # ACP: 离开群组
+]
+```
+
+### 8.4 记忆管理工具
+
+```python
+# 记忆管理工具注册 - register_assistant_tools()
+# 16个工具，供记忆管理助手使用
+
+ASSISTANT_TOOLS = [
+    "update_memory_node",          # 更新记忆节点
+    "search_memories",             # 搜索记忆
+    "delete_memory",               # 删除记忆
+    "merge_memories",              # 合并记忆
+    "clean_expired",               # 清理过期记忆
+    "export_memories",             # 导出记忆
+    "get_memory_stats",            # 获取记忆统计
+    "search_by_time",              # 按时间搜索
+    "search_by_tag",               # 按标签搜索
+    "bulk_delete",                 # 批量删除
+    "restore_memory",              # 恢复记忆
+    "search_similar_memories",     # 搜索相似记忆
+    "get_chat_history",            # 获取聊天历史
+    "get_similar_memories",        # 获取相似记忆
+    "get_memory_logs",             # 获取记忆日志
+    "get_available_commands",      # 获取可用命令
+]
+```
+
+### 8.5 摘要工具
+
+```python
+# 摘要工具注册 - register_summary_tools()
+
+SUMMARY_TOOLS = [
+    "summarize_content",           # 摘要内容
+    "save_summary_memory",         # 保存摘要记忆
+]
+```
+
+### 8.6 图工具
+
+```python
+# 图数据库工具注册 - register_graph_tools() (条件注册)
+# 仅在 graph_database && graph_store 存在时注册
+
+GRAPH_TOOLS = [
+    # 图数据库操作工具
+    # 节点/边 CRUD、遍历、语义搜索等
+]
+```
+
+### 8.7 MCP 工具
+
+```python
+# MCP 工具 - 远程工具调用
+# 通过 MCPManager 动态注册远程 MCP 服务器提供的工具
+```
+
+### 8.8 MCP 管理器
 
 **文件位置**: [backend/core/tools/mcp.py](file:///d:/CXHMS/backend/core/tools/mcp.py)
 
@@ -2977,31 +3067,44 @@ class ToolError(CXHMSException):
 
 ### 状态管理
 
-- **Zustand**: 聊天状态 ([chatStore.ts](file:///d:/CXHMS/frontend/src/store/chatStore.ts))、主题状态 ([themeStore.ts](file:///d:/CXHMS/frontend/src/store/themeStore.ts))
+- **chatStore** ([chatStore.ts](file:///d:/CXHMS/frontend/src/store/chatStore.ts)): 管理 agents, sessions, currentAgentId, currentSessionId, currentMessages, isChatExpanded, isTyping 等
+- **themeStore** ([themeStore.ts](file:///d:/CXHMS/frontend/src/store/themeStore.ts)): 主题管理，支持 light/dark/system 三种模式
 - **i18next 国际化**: 支持简体中文 (zh-CN) 和英文 (en-US)，配置位于 [i18n/index.ts](file:///d:/CXHMS/frontend/src/i18n/index.ts)
 
 ### UI 组件库 ([components/ui/](file:///d:/CXHMS/frontend/src/components/ui/))
 
-Badge, Button, Card, Drawer, Dropdown, EmptyState, Input, Modal, Skeleton, Toast, Tooltip
+Badge, Button, Card, Drawer, Dropdown, EmptyState, Input, Modal, Skeleton, Toast, Tooltip (11个UI组件)
 
 ### 布局组件 ([components/layout/](file:///d:/CXHMS/frontend/src/components/layout/))
 
-Header, Layout, PageHeader, Sidebar
+Header, Layout, PageHeader, Sidebar (4个布局组件)
+
+### 功能组件
+
+- **GraphManager**: 图数据库可视化管理
+- **ConnectionCheck**: 连接状态检测
+- **VirtualList**: 虚拟滚动列表
+- **SummaryModal**: 摘要弹窗
+- **ErrorBoundary**: 错误边界
+- **LanguageSwitcher**: 语言切换
+
+### Hooks
+
+- **useWebSocket**: WebSocket 连接管理，支持5次重连，30秒心跳
+- **useHotkey**: 快捷键管理（Ctrl+K/N/S等）
 
 ### 17.1 API 客户端
 
 **文件位置**: [frontend/src/api/client.ts](file:///d:/CXHMS/frontend/src/api/client.ts)
 
-**API 客户端分类**：
+**双客户端架构**：
 
 | API 类别 | 基础 URL | 主要功能 |
 |---------|---------|---------|
-| 主后端 API | `http://localhost:8000/api` | 记忆、聊天、Agent、工具、归档、ACP 等 |
+| 主后端 API | `http://localhost:8001/api` | 记忆、聊天、Agent、工具、归档、ACP 等 |
 | 控制服务 API | `http://localhost:8765` | 服务启停、状态监控 |
-| 图数据库 API | `/api/nodes`, `/api/edges`, `/api/traverse` 等 | 节点/边 CRUD、图遍历、语义搜索、路径分析 |
-| 向量数据库 API | `/api/vector` | 向量配置、状态、同步、搜索 |
-| CXFC API | `/api/cxfc` | 插件注册、心跳、发现、技能 |
-| 配置 API | `/api/config` | 统一配置管理 |
+
+**特性**：内置缓存 + 重试机制 + SSE 流式支持
 
 > **注意**: 以下代码示例可能已过时，实际实现请参考源码。
 
@@ -3423,9 +3526,44 @@ export const useChatStore = create<ChatState>()(
 
 ## 十八、测试配置
 
-### 18.1 前端测试 (Vitest)
+### 18.1 后端测试 (pytest)
 
-**文件位置**: [frontend/vitest.config.ts](file:///d:/CXHMS/frontend/vitest.config.ts)
+**文件位置**: [backend/tests/](file:///d:/CXHMS/backend/tests/)
+
+**测试文件分布** (18个文件)：
+
+| 分类 | 文件数 | 说明 |
+|------|-------|------|
+| API 测试 | 8 | test_api/ 目录 |
+| Core 测试 | 6 | test_core/ 目录 |
+| Integration 测试 | 1 | test_integration/ 目录 |
+| Root 测试 | 3 | tests/ 根目录 |
+
+**pytest 配置**：
+
+```ini
+[pytest]
+testpaths = backend/tests
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+asyncio_mode = auto
+addopts = -v --tb=short --strict-markers
+markers =
+    unit: Unit tests
+    integration: Integration tests
+    api: API tests
+    slow: Slow running tests
+filterwarnings =
+    ignore::DeprecationWarning
+    ignore::PendingDeprecationWarning
+```
+
+### 18.2 前端测试 (Vitest)
+
+**文件位置**: [frontend/src/](file:///d:/CXHMS/frontend/src/)
+
+**测试文件分布** (6个文件)：
 
 ```typescript
 import { defineConfig } from 'vitest/config';
@@ -3454,28 +3592,18 @@ export default defineConfig({
 });
 ```
 
-### 18.2 后端测试 (pytest)
+### 18.3 LLM E2E 测试
 
-**文件位置**: [pytest.ini](file:///d:/CXHMS/pytest.ini)
+**文件位置**: [tests_llm/](file:///d:/CXHMS/tests_llm/)
 
-```ini
-[pytest]
-testpaths = backend/tests
-python_files = test_*.py
-python_classes = Test*
-python_functions = test_*
-addopts = -v --tb=short --strict-markers
-markers =
-    unit: Unit tests
-    integration: Integration tests
-    api: API tests
-    slow: Slow running tests
-filterwarnings =
-    ignore::DeprecationWarning
-    ignore::PendingDeprecationWarning
-```
+**独立测试框架** (8个文件)：
 
-### 18.3 测试用例示例
+- 评判代理 (Judge Agent)
+- 测试场景 (Scenarios)
+- 评估指标 (Metrics)
+- 测试报告 (Reports)
+
+### 18.4 测试用例示例
 
 ```python
 # backend/tests/test_api/test_chat.py
@@ -3762,7 +3890,7 @@ describe('ChatStore', () => {
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │  2. 分数融合 (RRF)                                              │
-│     score = w1 * vector_rank + w2 * text_rank                   │
+│     score = 0.6 * vector_rank + 0.4 * text_rank                   │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -3834,16 +3962,67 @@ describe('ChatStore', () => {
 
 ---
 
-## 二十、功能总结
+## 二十、配置系统
 
-### 20.1 核心功能列表
+### 20.1 三层配置体系
+
+```yaml
+# 第一层：YAML 配置文件 (config.yaml)
+server:
+  host: "0.0.0.0"
+  port: 8001
+
+memory:
+  vector_backend: weaviate
+  decay_model: exponential
+
+llm:
+  provider: OLLAMA
+  model: qwen3-vl:8b
+```
+
+```bash
+# 第二层：环境变量覆盖（CXHMS_ 前缀）
+CXHMS_SERVER_PORT=8001
+CXHMS_MEMORY_VECTOR_BACKEND=weaviate
+CXHMS_LLM_PROVIDER=OLLAMA
+```
+
+```python
+# 第三层：自动修复（ConfigRepair）
+# 检测并修复配置中的错误、缺失值
+```
+
+### 20.2 配置验证
+
+```python
+# ConfigValidation - 配置验证
+# 验证配置项的合法性、类型、范围等
+```
+
+### 20.3 LLM 提供商
+
+| 提供商 | 标识 | 说明 |
+|-------|------|------|
+| Ollama | `OLLAMA` | 本地 LLM 服务 |
+| vLLM | `VLLM` | vLLM 推理服务 |
+| OpenAI | `OPENAI` | OpenAI API |
+| Anthropic | `ANTHROPIC` | Claude API |
+| DeepSeek | `DEEPSEEK` | DeepSeek API |
+| Local | `LOCAL` | 本地模型 |
+
+---
+
+## 二十一、功能总结
+
+### 21.1 核心功能列表
 
 | 功能模块 | 功能项 | 状态 | 说明 |
 |---------|-------|------|------|
 | **记忆管理** | 记忆 CRUD | ✅ | 支持创建、读取、更新、删除 |
 | | 语义搜索 | ✅ | 基于向量的相似度搜索 |
 | | 混合搜索 | ✅ | 向量 + 关键词融合搜索 |
-| | 记忆衰减 | ✅ | 艾宾浩斯遗忘曲线模型 |
+| | 记忆衰减 | ✅ | 双阶段指数衰减 + 艾宾浩斯遗忘曲线 |
 | | 归档管理 | ✅ | 智能去重、层级压缩 |
 | | 情感分析 | ✅ | 记忆情感标记 |
 | **对话系统** | 聊天对话 | ✅ | 支持流式/非流式 |
@@ -3854,12 +4033,17 @@ describe('ChatStore', () => {
 | | 点对点通信 | ✅ | 直接消息传递 |
 | | 群组通信 | ✅ | 多 Agent 协同 |
 | | 记忆共享 | ✅ | 跨 Agent 记忆访问 |
-| **工具系统** | 内置工具 | ✅ | 计算器、搜索等 |
+| **工具系统** | 内置工具 | ✅ | calculator, datetime, random, json_format |
+| | 主模型工具 | ✅ | 记忆写入/搜索、ACP、提醒、Mono等13个 |
+| | 记忆管理工具 | ✅ | 16个助手工具 |
+| | 摘要工具 | ✅ | summarize_content, save_summary_memory |
 | | MCP 集成 | ✅ | Model Context Protocol |
-| | 工具注册 | ✅ | 动态注册自定义工具 |
+| | 图工具 | ✅ | 图数据库操作工具（条件注册） |
 | **LLM 集成** | Ollama | ✅ | 本地 LLM 支持 |
 | | OpenAI | ✅ | OpenAI 兼容 API |
 | | Anthropic | ✅ | Claude 兼容 |
+| | DeepSeek | ✅ | DeepSeek API |
+| | vLLM | ✅ | vLLM 推理服务 |
 | | 向量生成 | ✅ | 文本嵌入 |
 | **图数据库** | 知识图谱 | ✅ | 节点/边 CRUD、可视化 |
 | | 语义搜索 | ✅ | 图节点语义搜索 |
@@ -3871,6 +4055,9 @@ describe('ChatStore', () => {
 | | 数据恢复 | ✅ | 从备份恢复 |
 | **WebSocket** | 实时通信 | ✅ | 推送提醒、状态更新 |
 | | 离线保存 | ✅ | Agent 离线时保存上下文 |
+| **配置系统** | 三层配置 | ✅ | YAML + 环境变量 + 自动修复 |
+| | 配置验证 | ✅ | ConfigValidation |
+| | LLM 提供商 | ✅ | OLLAMA/VLLM/OPENAI/ANTHROPIC/DEEPSEEK/LOCAL |
 | **国际化** | 多语言支持 | ✅ | 简体中文、英文 |
 | **前端界面** | 聊天界面 | ✅ | React 实现 |
 | | 记忆管理 | ✅ | CRUD 界面 |
@@ -3879,7 +4066,7 @@ describe('ChatStore', () => {
 | | 工具管理 | ✅ | 工具列表、测试 |
 | | 记忆代理 | ✅ | 记忆管理对话引擎 |
 
-### 20.2 技术亮点
+### 21.2 技术亮点
 
 1. **多层次记忆系统**
    - 短期/长期/永久记忆分类
@@ -3887,7 +4074,8 @@ describe('ChatStore', () => {
    - 场景感知路由
 
 2. **智能衰减机制**
-   - 艾宾浩斯遗忘曲线
+   - 双阶段指数衰减（默认）
+   - 艾宾浩斯遗忘曲线（实验性）
    - 可配置的衰减参数
    - 自动重新激活
 
@@ -3898,7 +4086,8 @@ describe('ChatStore', () => {
 
 4. **强大的工具生态**
    - MCP 协议支持
-   - 内置工具库
+   - 内置工具库 (calculator, datetime, random, json_format)
+   - 主模型工具 (13个) + 记忆管理工具 (16个) + 摘要工具
    - 动态工具注册
 
 5. **知识图谱引擎**
@@ -3920,24 +4109,32 @@ describe('ChatStore', () => {
    - i18next 多语言框架
    - 简体中文/英文双语
 
-9. **完善的前端体验**
+9. **三层配置体系**
+   - YAML 配置文件
+   - 环境变量覆盖（CXHMS_ 前缀）
+   - 自动修复（ConfigRepair）
+   - 配置验证（ConfigValidation）
+
+10. **完善的前端体验**
    - React 18 + TypeScript
-   - Zustand 状态管理
+   - Zustand 状态管理 (chatStore + themeStore)
+   - 双客户端架构 (主后端8001 + 控制服务8765)
+   - 内置缓存 + 重试 + SSE 流式
    - 响应式设计
 
-### 20.3 项目结构优势
+### 21.3 项目结构优势
 
 - **模块化设计**: 各功能模块独立,便于扩展
 - **清晰的分层**: API → Core → Storage
-- **完善的测试**: 30+ 测试用例覆盖核心功能
+- **完善的测试**: 后端18文件 + 前端6文件 + LLM E2E 8文件
 - **类型安全**: TypeScript + Pydantic 双重保障
-- **配置灵活**: YAML 配置文件支持多环境
+- **配置灵活**: 三层配置体系（YAML + 环境变量 + 自动修复）
 
 ---
 
 ## 报告生成时间
 
-2026-05-30
+2026-06-13
 
 ## 版本
 

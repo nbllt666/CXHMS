@@ -1,5 +1,7 @@
 # CXHMS 部署指南
 
+> **文档版本**: v2.1.0 | **最后更新**: 2026-06-13
+
 ## 目录
 
 1. [环境要求](#环境要求)
@@ -31,7 +33,7 @@
   - Chroma: 嵌入式，无需额外服务
   - Milvus Lite: 嵌入式，无需额外服务
   - Qdrant: 需要独立部署
-  - Weaviate: 需要独立部署
+  - Weaviate: 需要独立部署（默认后端）
   - Weaviate Embedded: 嵌入式，无需额外服务
 
 ---
@@ -93,7 +95,7 @@ server:
 
 ```yaml
 llm:
-  provider: "ollama"   # LLM提供商: ollama, vllm, openai
+  provider: "ollama"   # LLM提供商: ollama, vllm, openai, anthropic, deepseek, local
   host: "http://localhost:11434"  # LLM服务地址
   model: "qwen3-vl:8b" # 模型名称
   temperature: 1.3     # 温度参数
@@ -107,8 +109,20 @@ llm:
 models:
   main:
     provider: ollama
+    host: "http://localhost:11434"
     model: qwen3-vl:8b
+    apiKey: ""
     enabled: true
+    port: 0
+    temperature: 0.0
+    max_tokens: 0
+    timeout: 0
+  embedding:
+    provider: ""
+    host: ""
+    model: ""
+    apiKey: ""
+    enabled: false
   summary:
     provider: ollama
     model: qwen3-vl:8b
@@ -128,8 +142,17 @@ model_defaults:
 ```yaml
 memory:
   enabled: true                    # 启用记忆功能
+  max_memories: 0                  # 最大记忆数（0不限制）
+  default_importance: 3            # 默认重要性
+  decay_enabled: true              # 启用衰减
+  decay_rate: 0.01                 # 衰减率
+  decay_interval_days: 1           # 衰减间隔（天）
+  reactivation_boost: 0.3          # 重激活加分
+  emotion_enabled: true            # 启用情感分析
   vector_enabled: true             # 启用向量搜索
   vector_backend: "weaviate"       # 向量后端: chroma / milvus_lite / qdrant / weaviate / weaviate_embedded
+  decay_model: "exponential"       # 衰减模型: exponential / ebbinghaus
+  ebbinghaus_params: {}            # 艾宾浩斯参数
   chroma:
     collection_name: "cxhms_memories"  # Chroma集合名称
   milvus_lite:
@@ -141,8 +164,13 @@ memory:
     vector_size: 768
   weaviate:
     host: "localhost"              # Weaviate主机
-    port: 8080                     # Weaviate端口
+    port: 8090                     # Weaviate端口（HTTP）
+    grpc_port: 50051               # Weaviate gRPC端口
     embedded: false                # 是否使用嵌入式模式
+  hybrid_search_enabled: true      # 启用混合搜索
+  archive_enabled: true            # 启用归档
+  dedup_threshold: 0.95            # 去重阈值
+  archive_compression_enabled: false  # 启用归档压缩
 ```
 
 #### ACP配置
@@ -150,11 +178,13 @@ memory:
 ```yaml
 acp:
   enabled: true                    # 启用ACP功能
-  agent_id: "cxhms_agent_001"      # 本机Agent ID
-  agent_name: "CXHMS Agent"        # 本机Agent名称
+  local_agent_id: "cxhms_agent_001"  # 本机Agent ID
+  local_agent_name: "CXHMS Agent"  # 本机Agent名称
   discovery_enabled: true          # 启用局域网发现
   discovery_port: 9999             # 发现服务端口
   broadcast_port: 9998             # 广播端口
+  broadcast_address: ""            # 广播地址
+  discovery_interval: 30           # 发现间隔（秒）
 ```
 
 #### WebUI配置
@@ -192,12 +222,14 @@ cors:
 
 ```yaml
 tools:
+  enabled: true                    # 启用工具系统
   auto_discovery: true             # 自动发现工具
   mcp_enabled: false               # 启用MCP工具
-  builtin:                         # 内置工具列表
+  builtin_tools:                   # 内置工具列表
     - calculator
     - datetime
-    - weather
+    - random
+    - json_format
 ```
 
 #### 监控配置
@@ -205,9 +237,27 @@ tools:
 ```yaml
 monitoring:
   enabled: true                    # 启用监控
-  performance_tracking: true       # 性能追踪
-  error_tracking: true             # 错误追踪
+  metrics_enabled: false           # 启用指标收集
+  health_check_enabled: true       # 启用健康检查
+  performance_logging: false       # 启用性能日志
 ```
+
+### 环境变量
+
+系统支持通过环境变量覆盖配置，所有环境变量使用 `CXHMS_` 前缀。环境变量分为8大类：
+
+| 类别 | 环境变量示例 | 说明 |
+|------|-------------|------|
+| 服务器 | `CXHMS_SERVER_HOST`, `CXHMS_SERVER_PORT`, `CXHMS_SERVER_DEBUG` | 服务基础配置 |
+| 模型 | `CXHMS_MODELS_MAIN_PROVIDER`, `CXHMS_MODELS_MAIN_MODEL` | LLM模型配置 |
+| 记忆 | `CXHMS_MEMORY_ENABLED`, `CXHMS_MEMORY_VECTOR_BACKEND` | 记忆系统配置 |
+| 上下文 | `CXHMS_CONTEXT_ENABLED`, `CXHMS_CONTEXT_MAX_CONTEXT_LENGTH` | 上下文管理配置 |
+| ACP | `CXHMS_ACP_ENABLED`, `CXHMS_ACP_LOCAL_AGENT_ID` | ACP协议配置 |
+| 安全 | `CXHMS_SECURITY_API_KEY_ENABLED`, `CXHMS_SECURITY_API_KEY` | 安全配置 |
+| 监控 | `CXHMS_MONITORING_ENABLED`, `CXHMS_MONITORING_HEALTH_CHECK_ENABLED` | 监控配置 |
+| 工具 | `CXHMS_TOOLS_ENABLED`, `CXHMS_TOOLS_MCP_ENABLED` | 工具系统配置 |
+
+环境变量命名规则：`CXHMS_` + 配置节名（大写）+ `_` + 配置键名（大写），层级用下划线分隔。
 
 ---
 
@@ -285,7 +335,7 @@ COPY . .
 RUN mkdir -p data logs
 
 # 暴露端口
-EXPOSE 8000 8765
+EXPOSE 8000 7860
 
 # 启动命令
 CMD ["python", "main.py"]
@@ -301,7 +351,7 @@ services:
     build: .
     ports:
       - "8000:8000"
-      - "8765:8765"
+      - "7860:7860"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -321,9 +371,10 @@ services:
       - qdrant
 
   weaviate:
-    image: semitechnologies/weaviate:latest
+    image: semitechnologies/weaviate:1.35.3
     ports:
-      - "8080:8080"
+      - "8090:8090"
+      - "50051:50051"
     environment:
       - QUERY_DEFAULTS_LIMIT=20
       - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
@@ -336,6 +387,41 @@ services:
 
 volumes:
   qdrant_storage:
+  weaviate_storage:
+```
+
+### Weaviate Docker Compose（含向量化模块）
+
+项目提供 `docker-compose.weaviate.yml`，包含 Weaviate 服务和文本向量化模块：
+
+```yaml
+version: '3.8'
+
+services:
+  weaviate:
+    image: semitechnologies/weaviate:1.35.3
+    ports:
+      - "8090:8090"
+      - "50051:50051"
+    environment:
+      - QUERY_DEFAULTS_LIMIT=20
+      - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
+      - PERSISTENCE_DATA_PATH=/var/lib/weaviate
+      - ENABLE_MODULES=text2vec-transformers
+      - TRANSFORMERS_INFERENCE_API=http://t2v-transformers:8080
+    volumes:
+      - weaviate_storage:/var/lib/weaviate
+    depends_on:
+      - t2v-transformers
+    restart: unless-stopped
+
+  t2v-transformers:
+    image: semitechnologies/transformers-inference:paraphrase-multilingual-MiniLM-L12-v2
+    environment:
+      - ENABLE_CUDA=0
+    restart: unless-stopped
+
+volumes:
   weaviate_storage:
 ```
 
@@ -406,9 +492,18 @@ server {
     listen 80;
     server_name yourdomain.com;
     
-    # API服务
-    location / {
-        proxy_pass http://localhost:8000;
+    # API服务（主后端）
+    location /api {
+        proxy_pass http://localhost:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    
+    # 控制服务
+    location /control {
+        proxy_pass http://localhost:8765;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -423,6 +518,8 @@ server {
     }
 }
 ```
+
+> **前端代理配置**: 前端开发服务器默认将 `/api` 代理到 `localhost:8001`，`/control` 代理到 `localhost:8765`。
 
 ### 5. 系统服务配置
 
@@ -442,6 +539,8 @@ Group=cxhms
 WorkingDirectory=/opt/cxhms
 Environment="PATH=/opt/cxhms/venv/bin"
 Environment="CXHMS_CONFIG_PATH=/opt/cxhms/config/production.yaml"
+Environment="CXHMS_SERVER_PORT=8000"
+Environment="CXHMS_MEMORY_VECTOR_BACKEND=weaviate"
 ExecStart=/opt/cxhms/venv/bin/python main.py
 Restart=always
 RestartSec=10
@@ -544,6 +643,7 @@ chmod 755 data
    ```bash
    docker-compose --profile weaviate up -d
    ```
+   Weaviate 默认端口：8090（HTTP）、50051（gRPC）
 
 5. 如果使用Chroma或Milvus Lite，无需额外服务，检查数据目录权限
 
@@ -681,7 +781,7 @@ sudo systemctl start cxhms
 
 ### 版本兼容性
 
-- v1.0.0: 初始版本
+- v2.1.0: 当前版本
 - 升级前请查看CHANGELOG.md了解破坏性变更
 
 ---
@@ -715,3 +815,8 @@ logging:
 ## 许可证
 
 MIT License
+
+---
+
+*文档版本: v2.1.0*
+*最后更新: 2026-06-13*

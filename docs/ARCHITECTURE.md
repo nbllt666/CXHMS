@@ -1,5 +1,7 @@
 # CXHMS 架构文档
 
+> **文档版本**: v2.1.0 | **最后更新**: 2026-06-13
+
 ## 系统概述
 
 CXHMS (CX-O History & Memory Service) 是一个AI代理中间层服务，提供记忆管理、工具调用、ACP互联等核心功能。
@@ -27,6 +29,10 @@ CXHMS (CX-O History & Memory Service) 是一个AI代理中间层服务，提供�
 │  │  │  Graph  │ │  CXFC   │ │  Alarm  │ │ Backup  │ │ Plugins │  │    │
 │  │  │Database │ │ Manager │ │ Manager │ │ Manager │ │ Manager │  │    │
 │  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘  │    │
+│  │  ┌────┴────┐                                                     │    │
+│  │  │  Graph  │                                                     │    │
+│  │  │ Store   │                                                     │    │
+│  │  └────┬────┘                                                     │    │
 │  └───────┼───────────┼───────────┼───────────┼───────────┼────────┘    │
 │          │           │           │           │           │              │
 │  ┌───────▼───────────▼───────────▼───────────▼───────────▼────────┐    │
@@ -35,6 +41,10 @@ CXHMS (CX-O History & Memory Service) 是一个AI代理中间层服务，提供�
 │  │  │ SQLite  │ │ Milvus  │ │ Chroma  │ │ Qdrant  │ │Weaviate│  │    │
 │  │  │ (Local) │ │  (Lite) │ │(Win兼容)│ │(Server) │ │(Embed) │  │    │
 │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └────────┘  │    │
+│  │  ┌─────────┐                                                    │    │
+│  │  │SQLite   │                                                    │    │
+│  │  │GraphStore│                                                   │    │
+│  │  └─────────┘                                                    │    │
 │  └────────────────────────────────────────────────────────────────┘    │
 │                                                                        │
 │  ┌────────────────────────────────────────────────────────────────┐    │
@@ -75,7 +85,7 @@ class Memory:
 
 **存储架构**:
 - **SQLite**: 结构化数据存储
-- **向量存储**: Milvus Lite / Chroma / Qdrant / Weaviate（可选）
+- **向量存储**: Chroma / Milvus Lite / Qdrant / Weaviate / Weaviate Embedded（默认Weaviate）
 
 ### 2. 上下文管理系统 (Context Manager)
 
@@ -130,10 +140,12 @@ class Memory:
 **位置**: `backend/core/llm/client.py`
 
 **支持的提供商**:
-- Ollama（本地）
+- OLLAMA（本地）
 - VLLM（高性能）
-- OpenAI 兼容接口
-- Anthropic Claude
+- OPENAI 兼容接口
+- ANTHROPIC Claude
+- DEEPSEEK
+- LOCAL
 
 **特性**:
 - 同步/流式对话
@@ -168,6 +180,8 @@ class Memory:
 - 路径分析
 - 社区检测
 - PageRank算法
+- GraphML/DOT导出
+- Neo4j迁移
 
 **文件列表** (15个):
 - `config.py`: 图数据库配置
@@ -194,6 +208,7 @@ class Memory:
 - 技能注册
 - 心跳管理
 - 连接管理
+- 事件推送
 
 **文件列表** (6个):
 - `discovery.py`: 插件发现
@@ -307,7 +322,64 @@ class AgentConfig:
     is_default: bool
 ```
 
+### 16. 控制服务 (Control Service)
+
+**位置**: `backend/control/`
+
+**职责**:
+- 独立FastAPI服务，端口8765
+- 服务管理与监控
+- 配置动态调整
+- 性能指标收集
+
+**API响应格式**:
+- `APIResponse[T]`: 泛型统一响应封装
+- `PaginatedResponse[T]`: 分页数据封装
+
+**性能中间件**:
+- `PerformanceMiddleware`: 自动添加 `X-Process-Time-Ms` 响应头，记录请求处理耗时
+
 ## 数据流
+
+### 服务生命周期
+
+**ServiceState 属性**:
+- `memory_manager`: 记忆管理器
+- `async_memory_manager`: 异步记忆管理器
+- `context_manager`: 上下文管理器
+- `acp_manager`: ACP管理器
+- `llm_client`: LLM客户端
+- `secondary_router`: 副模型路由器
+- `mcp_manager`: MCP管理器
+- `model_router`: 模型路由器
+- `graph_database`: 图数据库
+- `graph_store`: SQLite图存储
+- `cxfc_manager`: CXFC管理器（Optional）
+
+**初始化顺序**（20步）:
+1. 模型路由器
+2. 记忆管理器
+3. 上下文管理器
+4. ACP管理器
+5. LLM客户端
+6. 副模型路由器
+7. MCP管理器
+8. 内置工具注册
+9. 主模型工具注册
+10. 摘要模型工具注册
+11. 记忆管理模型工具注册
+12. 向量搜索启用
+13. 提醒管理器 + WebSocket离线保存
+14. 批量衰减处理器
+15. 异步记忆管理器
+16. 图数据库（条件启用）
+17. CXFC管理器（条件启用）
+18. 图数据库工具注册（条件注册）
+19. SQLiteGraphStore初始化
+20. 控制服务启动（独立FastAPI，端口8765）
+
+**关闭顺序**:
+CXFCManager → GraphDatabase → AlarmManager → WebSocketManager → ACPManager → MemoryManager → BackupManager → PluginManager → ModelRouter
 
 ### 记忆写入流程
 
@@ -353,52 +425,170 @@ MCP工具调用:
 
 **配置结构**:
 ```yaml
-server:        # 服务器配置
+server:                    # 服务器配置
   host: "0.0.0.0"
   port: 8000
+  debug: false
 
-llm:           # LLM配置
-  provider: "ollama"
-  host: "http://localhost:11434"
-  model: "qwen3-vl:8b"
+cors:                      # CORS配置
+  enabled: true
+  origins:
+    - "*"
+  methods: []
+  headers: []
+  allow_credentials: true
 
-models:        # 模型槽位配置
-  main: "qwen3-vl:8b"
-  summary: "qwen3-vl:8b"
-  memory: "qwen3-vl:8b"
+logging:                   # 日志配置
+  level: "INFO"
+  format: ""
+  file: ""
+  max_bytes: 0
+  backup_count: 0
 
-llm_params:    # LLM参数配置
+database:                  # 数据库配置
+  type: "sqlite"
+  path: ""
+  memories_db: ""
+  sessions_db: ""
+  acp_db: ""
+  echo: false
+
+models:                    # 模型槽位配置
+  main:
+    provider: "ollama"
+    host: ""
+    model: "qwen3-vl:8b"
+    apiKey: ""
+    enabled: true
+    port: 0
+    temperature: 0.0
+    max_tokens: 0
+    timeout: 0
+  embedding:               # 嵌入模型配置
+    provider: ""
+    host: ""
+    model: ""
+    apiKey: ""
+    enabled: false
+    port: 0
+    temperature: 0.0
+    max_tokens: 0
+    timeout: 0
+  summary:
+    provider: ""
+    host: ""
+    model: ""
+    apiKey: ""
+    enabled: false
+    port: 0
+    temperature: 0.0
+    max_tokens: 0
+    timeout: 0
+  memory:
+    provider: ""
+    host: ""
+    model: ""
+    apiKey: ""
+    enabled: false
+    port: 0
+    temperature: 0.0
+    max_tokens: 0
+    timeout: 0
+
+model_defaults:            # 模型默认回退
+  summary_fallback: "main"
+  memory_fallback: "main"
+
+agent:                     # Agent配置
+  agent_id: ""
+  name: ""
+  version: ""
+  description: ""
+  capabilities: []
+
+memory:                    # 记忆配置
+  enabled: true
+  max_memories: 0
+  default_importance: 3
+  decay_enabled: true
+  decay_rate: 0.01
+  decay_interval_days: 1
+  reactivation_boost: 0.3
+  emotion_enabled: true
+  vector_enabled: true
+  vector_backend: "weaviate"
+  decay_model: "exponential"
+  ebbinghaus_params: {}
+  chroma: {}
+  milvus_lite: {}
+  qdrant: {}
+  weaviate: {}
+  hybrid_search_enabled: true
+  archive_enabled: true
+  dedup_threshold: 0.95
+  archive_compression_enabled: false
+
+context:                   # 上下文配置
+  enabled: true
+  max_context_length: 0
+  context_window: 0
+  include_memories: true
+  max_memories_in_context: 5
+
+tools:                     # 工具配置
+  enabled: true
+  auto_discovery: true
+  mcp_enabled: false
+  builtin_tools:
+    - calculator
+    - datetime
+    - random
+    - json_format
+
+acp:                       # ACP配置
+  enabled: true
+  local_agent_id: ""
+  local_agent_name: ""
+  discovery_enabled: true
+  discovery_port: 9999
+  broadcast_port: 9998
+  broadcast_address: ""
+  discovery_interval: 30
+
+security:                  # 安全配置
+  api_key_enabled: false
+  api_key: ""
+  rate_limit_enabled: false
+  rate_limit_requests: 100
+  rate_limit_period: 60
+
+monitoring:                # 监控配置
+  enabled: true
+  metrics_enabled: false
+  health_check_enabled: true
+  performance_logging: false
+
+llm_params:                # LLM参数配置
   temperature: 1.3
+  maxTokens: 0
   topP: 0.9
   timeout: 30
 
-memory:        # 记忆配置
-  enabled: true
-  vector_enabled: true
-  vector_backend: "weaviate"
+graph:                     # 图数据库配置
+  enabled: false
+  config: {}
 
-tools:         # 工具配置
-  auto_discovery: true
-  mcp_enabled: true
-  builtin_tools:
-    - memory_write
-    - memory_search
-    - memory_delete
-    - context_search
-
-monitoring:    # 监控配置
-  enabled: true
-
-acp:           # ACP配置
-  enabled: true
-  agent_id: "cxhms_agent_001"
-  discovery_enabled: true
+cxfc:                      # CXFC配置
+  enabled: false
+  config: {}
 ```
 
 **配置加载**: `config/settings.py`
 - 单例模式
 - YAML解析
-- 环境变量支持
+- 环境变量支持（CXHMS_前缀）
+- 验证（`config/validation.py`）
+- 自动修复（`config/repair.py`）
 - 热重载
 
 ## 错误处理
@@ -418,6 +608,8 @@ acp:           # ACP配置
 4. **ContextError**: 上下文操作错误
 
 ### 错误响应格式
+
+系统使用 `APIResponse[T]` 泛型封装统一响应，分页数据使用 `PaginatedResponse[T]` 封装。
 
 ```json
 {
@@ -447,6 +639,10 @@ acp:           # ACP配置
 - 批量操作并发执行
 - 后台任务（衰减计算）
 
+### 4. 性能中间件
+- PerformanceMiddleware：自动添加 `X-Process-Time-Ms` 响应头
+- 请求耗时追踪与记录
+
 ## 安全考虑
 
 ### 1. 输入验证
@@ -457,7 +653,7 @@ acp:           # ACP配置
 ### 2. 访问控制
 - CORS配置
 - API密钥（可选）
-- 速率限制（待实现）
+- 速率限制（已实现）
 
 ### 3. 数据安全
 - 敏感信息不记录日志
@@ -474,6 +670,7 @@ acp:           # ACP配置
 │  ┌───────────────────────────────┐  │
 │  │         CXHMS Service         │  │
 │  │  - FastAPI (port 8000)        │  │
+│  │  - WebUI (port 7860)          │  │
 │  │  - Control (port 8765)        │  │
 │  └───────────────────────────────┘  │
 │  ┌───────────────────────────────┐  │
@@ -555,12 +752,13 @@ acp:           # ACP配置
 ## 版本兼容性
 
 ### API版本
-- 当前版本: v1.0.0
+- 当前版本: v2.1.0
 - 版本控制: URL路径（预留）
 
 ### 数据迁移
 - SQLite迁移脚本
 - 配置自动升级
+- Neo4j迁移支持（图数据库）
 
 ## 开发规范
 
@@ -570,9 +768,11 @@ acp:           # ACP配置
 - 文档字符串
 
 ### 测试
-- 单元测试（待完善）
-- 集成测试（待完善）
-- 性能测试（待完善）
+- 后端单元测试（18个测试文件）
+- 前端组件测试（6个测试文件）
+- LLM E2E测试框架（8个文件）
+- pytest配置：asyncio_mode=auto
+- conftest.py：client(TestClient), async_client(AsyncClient), mock_settings
 
 ### 文档
 - API文档（OpenAPI/Swagger）
@@ -595,3 +795,8 @@ acp:           # ACP配置
 
 - [FastAPI文档](https://fastapi.tiangolo.com/)
 - [MCP协议规范](https://modelcontextprotocol.io/)
+
+---
+
+*文档版本: v2.1.0*
+*最后更新: 2026-06-13*

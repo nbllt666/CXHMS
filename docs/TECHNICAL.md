@@ -1,5 +1,7 @@
 # CXHMS (晨曦人格化记忆系统) 详细技术文档
 
+> **文档版本**: v2.1.0 | **最后更新**: 2026-06-13
+
 ## 项目概述
 
 CXHMS (CX-O History & Memory Service) 是一个基于 FastAPI 的智能记忆管理平台，提供完整的记忆存储、语义搜索、自动归档、多模型对话、ACP 协议通信和工具调用功能。该项目采用前后端分离架构，后端使用 Python + FastAPI，前端使用 React + TypeScript。
@@ -12,7 +14,7 @@ CXHMS (CX-O History & Memory Service) 是一个基于 FastAPI 的智能记忆管
 
 ### 技术栈详情
 
-**后端技术栈** 包含 Python 3.10+、FastAPI 0.104.1+ 作为 Web 框架、Pydantic 2.5.0+ 用于数据验证、SQLAlchemy 作为 ORM 层。向量存储支持 Weaviate（默认后端）、Chroma（Windows 兼容，0.4.x 版本）、Milvus Lite、Qdrant 等多种后端。LLM 集成方面支持 Ollama、OpenAI 和 Anthropic 兼容接口，工具协议采用 MCP (Model Context Protocol)。
+**后端技术栈** 包含 Python 3.10+、FastAPI 0.104.1+ 作为 Web 框架、Pydantic 2.5.0+ 用于数据验证、SQLAlchemy 作为 ORM 层。向量存储支持 Weaviate（默认后端）、Chroma（Windows 兼容，0.4.x 版本）、Milvus Lite、Qdrant 等多种后端。LLM 集成方面支持 Ollama、VLLM、OpenAI、Anthropic、DeepSeek 和 Local 兼容接口，工具协议采用 MCP (Model Context Protocol)。
 
 **前端技术栈** 使用 React 18.3.1 构建 UI 框架、TypeScript 5.7.2 确保类型安全、Vite 6.0.6 作为构建工具、Tailwind CSS 3.4.17 处理样式、Zustand 5.0.2 进行状态管理、React Query 5.62.11 负责数据获取、Framer Motion 11.15.0 实现动画效果、Recharts 2.15.0 绘制图表、Lucide React 0.469.0 提供图标、Vitest 2.1.8 作为测试框架。此外还依赖：React Router 6.28.0（路由管理）、i18next 25.8.4 + react-i18next 16.5.4 + i18next-browser-languagedetector 8.2.0（国际化）、Axios 1.7.9（HTTP 客户端）、React Markdown 9.0.1 + remark-gfm 4.0.0（Markdown 渲染）、date-fns 4.1.0（日期处理）、class-variance-authority 0.7.1 + clsx 2.1.1 + tailwind-merge 2.6.0（样式工具）。
 
@@ -26,7 +28,13 @@ CXHMS (CX-O History & Memory Service) 是一个基于 FastAPI 的智能记忆管
 
 **核心方法** 包括 write_memory() 用于创建新记忆、get_memory() 用于获取单条记忆、search_memories() 用于搜索记忆、update_memory() 用于更新记忆、delete_memory() 用于删除记忆（支持软删除）、hybrid_search() 用于混合搜索。混合搜索结合向量相似度和关键词匹配，使用 RRF (Reciprocal Rank Fusion) 算法融合两种搜索结果。
 
-**记忆衰减系统** 实现了两种衰减模型：双阶段指数衰减（默认）和艾宾浩斯遗忘曲线优化版。双阶段指数衰减公式为 T(t) = α·e^(-λ₁·Δt) + (1-α)·e^(-λ₂·Δt)，其中 α = 0.6、λ₁ = 0.25、λ₂ = 0.04。艾宾浩斯模型公式为 T(t) = 1 / (1 + (Δt/T₅₀)^k)，可通过配置启用。
+**记忆衰减系统** 实现了两种衰减模型：双阶段指数衰减（默认）和艾宾浩斯遗忘曲线优化版（实验性）。双阶段指数衰减公式为 T(t) = α·e^(-λ₁·Δt) + (1-α)·e^(-λ₂·Δt)，其中 α = 0.6、λ₁ = 0.25、λ₂ = 0.04。艾宾浩斯模型公式为 T(t) = 1 / (1 + (Δt/T₅₀)^k)，可通过配置启用。
+
+**情感分析** 系统支持情感评分，每条记忆包含 emotion_score 字段。情感强度会影响记忆重激活时的额外加分。
+
+**去重检测** 系统支持记忆去重，通过 dedup_threshold 配置阈值（默认0.95），在写入新记忆时自动检测相似度超过阈值的已有记忆。
+
+**副模型路由** 系统支持10种副模型指令，通过 secondary_router 管理记忆处理、摘要生成等辅助任务。
 
 **三维评分系统** 在 search_memories_3d() 方法中实现，综合考虑重要性分数、时间分数和相关度分数。重要性分数由 importance_score 字段决定，时间分数根据衰减模型计算，相关度分数来自搜索匹配度。默认权重分配为 importance × 0.35 + time × 0.25 + relevance × 0.4。
 
@@ -34,7 +42,7 @@ CXHMS (CX-O History & Memory Service) 是一个基于 FastAPI 的智能记忆管
 
 ### 2. 向量搜索系统
 
-系统支持六种向量存储后端：Chroma（Windows 兼容，0.4.x 版本）、Milvus Lite（默认选项之一，无需额外安装）、Qdrant（需要 Docker 部署）、Weaviate（支持嵌入式和客户端模式）、Weaviate Embedded（嵌入式模式）。默认后端为 Weaviate。向量搜索默认使用余弦相似度 (COSINE) 度量。
+系统支持五种向量存储后端：Chroma（Windows 兼容，0.4.x 版本）、Milvus Lite（无需额外安装）、Qdrant（需要 Docker 部署）、Weaviate（支持嵌入式和客户端模式）、Weaviate Embedded（嵌入式模式）。默认后端为 Weaviate。向量搜索默认使用余弦相似度 (COSINE) 度量。
 
 HybridSearch 类实现了混合搜索功能，将向量搜索和 SQLite 关键词搜索的结果进行融合排序。搜索流程包括：生成查询向量、执行向量搜索、执行关键词搜索、分数融合（RFF 算法）、可选的重排序。
 
@@ -52,15 +60,16 @@ ContextManager 负责管理会话和消息历史，采用 SQLite 存储会话和
 
 工具系统采用注册表模式设计，ToolRegistry 类负责工具的注册、发现和调用执行。
 
-**内置工具** 包括 calculator（数学计算）、datetime（日期时间获取）、weather（天气查询）等。工具使用装饰器模式注册，通过 @registry.register() 装饰器将函数注册为工具。
+**内置工具** 包括 calculator（数学计算）、datetime（日期时间获取）、random（随机数生成）、json_format（JSON格式化）等。工具使用装饰器模式注册，通过 @registry.register() 装饰器将函数注册为工具。
 
 **工具分类**:
-- `builtin`: 内置工具（calculator, datetime, weather）
-- `master`: 主模型专属工具（write_long_term_memory, search_all_memories, call_assistant, set_alarm, mono, write_permanent_memory, ACP相关工具）
-- `summary`: 摘要模型工具
+- `builtin`: 内置工具（calculator, datetime, random, json_format）
+- `master`: 主模型专属工具（13个工具，包括 write_long_term_memory, search_all_memories, call_assistant, set_alarm, mono, write_permanent_memory, ACP相关工具等）
+- `summary`: 摘要模型工具（2个）
 - `assistant`: 记忆管理模型工具（16个记忆管理工具）
 - `graph`: 图数据库工具
 - `mcp`: MCP协议工具
+- `memory`: 记忆工具
 
 **主模型专属工具**:
 - write_long_term_memory: 写入长期记忆
@@ -108,7 +117,7 @@ ACP 协议用于多 Agent 通信，支持局域网发现、点对点通信、群
 
 ### 6. 图数据库系统 (Graph Database)
 
-图数据库系统位于 `backend/core/graph/`（15个文件），负责知识图谱管理、节点/边 CRUD、语义搜索、路径分析、社区检测、PageRank 算法和可视化。
+图数据库系统位于 `backend/core/graph/`（15个文件），负责知识图谱管理、节点/边 CRUD、语义搜索、路径分析、社区检测、PageRank 算法、可视化、GraphML/DOT导出和Neo4j迁移。
 
 **核心文件**:
 - `database.py`: 数据库管理，负责图数据库的初始化和连接
@@ -126,7 +135,7 @@ ACP 协议用于多 Agent 通信，支持局域网发现、点对点通信、群
 
 ### 7. CXFC 插件协议 (CXFC Manager)
 
-CXFC 插件协议系统位于 `backend/core/cxfc/`（6个文件），负责插件发现、技能注册、心跳管理和连接管理。
+CXFC 插件协议系统位于 `backend/core/cxfc/`（6个文件），负责插件发现、技能注册、心跳管理、连接管理和事件推送。
 
 **核心文件**:
 - `manager.py`: 管理器，CXFC 协议的核心调度
@@ -161,7 +170,7 @@ WebSocket 管理系统位于 `backend/core/websocket/`，负责 WebSocket 连接
 
 **模型路由器** ModelRouter 类管理多个 LLM 模型客户端，支持按需切换不同模型。系统预配置三种模型用途：main（主对话模型，128k上下文）、summary（摘要生成）、memory（记忆处理）。
 
-**客户端实现** 支持 Ollama（本地）、VLLM/OpenAI 兼容接口、Anthropic Claude 三种客户端。所有客户端继承自 LLMClient 抽象基类，实现统一的 chat()、stream_chat()、get_embedding() 和 is_available() 接口。
+**客户端实现** 支持 Ollama（本地）、VLLM/OpenAI 兼容接口、Anthropic Claude、DeepSeek 和 Local 五种客户端。所有客户端继承自 LLMClient 抽象基类，实现统一的 chat()、stream_chat()、get_embedding() 和 is_available() 接口。
 
 **多模态支持** 支持图片输入，通过 base64 编码传递图片数据。Agent 配置中的 vision_enabled 字段控制是否启用多模态功能。
 
@@ -226,41 +235,57 @@ FastAPI 应用包含17个路由模块：
 
 ### 状态管理
 
-使用 Zustand 进行状态管理，主要 store 包括：chatStore 管理聊天相关的 Agent、会话、消息等状态，themeStore 管理主题（明暗主题）设置。状态持久化使用 localStorage。
+使用 Zustand 进行状态管理，主要 store 包括：
+
+**chatStore**: 管理聊天相关状态，包括 agents（过滤掉 memory-agent）、sessions、currentAgentId、messages 等。状态持久化使用 localStorage。
+
+**themeStore**: 管理主题设置，支持 light/dark/system 三种模式。状态持久化使用 localStorage。
 
 ### API 客户端
 
-APIClient 类封装了所有 API 调用，使用 Axios 发送 HTTP 请求，支持请求拦截器和响应拦截器。主要功能包括：记忆 CRUD、聊天发送（支持流式接收）、会话管理、ACP 操作、工具管理。此外还封装了：控制服务 API（端口 8765）、图数据库 API、向量数据库 API、CXFC API、配置 API。
+前端采用双客户端架构：
+
+**主后端客户端**（端口8001）：封装所有主后端 API 调用，包括记忆 CRUD、聊天发送（支持流式接收）、会话管理、ACP 操作、工具管理等。内置缓存和重试机制，支持 SSE 流式响应。
+
+**控制服务客户端**（端口8765）：封装控制服务 API 调用，包括图数据库 API、向量数据库 API、CXFC API、配置 API 等。
+
+两个客户端均使用 Axios 发送 HTTP 请求，支持请求拦截器和响应拦截器。
 
 ### 国际化
 
-前端使用 i18next + react-i18next 实现多语言支持，i18next-browser-languagedetector 自动检测用户语言偏好。语言资源文件按模块组织，支持动态切换语言。
+前端使用 i18next + react-i18next 实现多语言支持，i18next-browser-languagedetector 自动检测用户语言偏好。默认语言为 zh-CN，同时支持 en-US。语言资源文件按模块组织，支持动态切换语言。
 
 ### 组件设计
 
-**布局组件**：Layout（布局容器）、Header（顶部导航）、Sidebar（侧边栏）、PageHeader（页面标题栏）。
+**布局组件**（4个）：Layout（布局容器）、Header（顶部导航）、Sidebar（侧边栏）、PageHeader（页面标题栏）。
 
-**UI 组件库**：Badge（徽标）、Button（按钮）、Card（卡片）、Drawer（抽屉）、Dropdown（下拉菜单）、EmptyState（空状态）、Input（输入框）、Modal（弹窗）、Skeleton（骨架屏）、Toast（消息提示）、Tooltip（提示框）。
+**UI 组件库**（11个）：Badge（徽标）、Button（按钮）、Card（卡片）、Drawer（抽屉）、Dropdown（下拉菜单）、EmptyState（空状态）、Input（输入框）、Modal（弹窗）、Skeleton（骨架屏）、Toast（消息提示）、Tooltip（提示框）。
 
-**功能组件**：VirtualList（虚拟列表）、LanguageSwitcher（语言切换）、SummaryModal（摘要保存弹窗）、ErrorBoundary（错误边界）。
+**功能组件**：GraphManager（图数据库管理）、ConnectionCheck（连接检测）、VirtualList（虚拟列表）、SummaryModal（摘要保存弹窗）、ErrorBoundary（错误边界）、LanguageSwitcher（语言切换）。
 
 聊天页面实现了 Markdown 渲染（React Markdown + remark-gfm）、代码高亮、思考过程显示、工具调用状态展示等功能。
+
+### Hooks
+
+**useWebSocket**: WebSocket 连接管理 Hook，支持5次自动重连、30秒心跳检测、离线超时处理。
+
+**useHotkey**: 快捷键管理 Hook，预定义快捷键包括 Ctrl+K（搜索）、Ctrl+N（新建）、Ctrl+S（保存）等。
 
 ## 配置系统
 
 ### 配置文件
 
-系统使用 YAML 格式配置文件 (config/default.yaml)，配置结构包含：server（服务器配置）、models（多模型配置）、llm（旧版 LLM 配置，保留向后兼容）、memory（记忆配置，包括衰减、向量存储、归档等）、context（上下文配置）、acp（ACP 协议配置）、cors（CORS 配置）、system（系统配置）。
+系统使用 YAML 格式配置文件 (config/default.yaml)，配置结构包含：server（服务器配置）、cors（CORS配置）、logging（日志配置）、database（数据库配置）、models（多模型配置，含 main/embedding/summary/memory 各自的 provider/host/model/apiKey/enabled/port/temperature/max_tokens/timeout）、model_defaults（模型默认回退）、agent（Agent配置）、memory（记忆配置，包括衰减、向量存储、归档、去重等）、context（上下文配置）、tools（工具配置）、acp（ACP 协议配置）、security（安全配置）、monitoring（监控配置）、llm_params（LLM参数）、graph（图数据库配置）、cxfc（CXFC配置）。
 
 ### 配置加载
 
-Settings 类采用单例模式，使用 PyYAML 解析配置文件。配置类使用 Python dataclass 定义，支持类型检查和默认值设置。
+Settings 类采用单例模式，使用 PyYAML 解析配置文件。配置类使用 Python dataclass 定义，支持类型检查和默认值设置。配置系统支持环境变量覆盖（CXHMS_前缀），并通过 `config/validation.py` 进行配置验证，`config/repair.py` 提供自动修复功能。
 
 ## 部署与运维
 
 ### 启动流程
 
-主程序 main.py 加载配置、初始化日志、启动 Uvicorn 服务器。FastAPI 应用使用 lifespan 上下文管理器处理启动和关闭逻辑，启动时依次初始化18个组件：
+主程序 main.py 加载配置、初始化日志、启动 Uvicorn 服务器。FastAPI 应用使用 lifespan 上下文管理器处理启动和关闭逻辑，启动时依次初始化20个组件：
 1. 模型路由器
 2. 记忆管理器
 3. 上下文管理器
@@ -279,6 +304,12 @@ Settings 类采用单例模式，使用 PyYAML 解析配置文件。配置类使
 16. 图数据库（条件启用）
 17. CXFC 管理器（条件启用）
 18. 图数据库工具注册（条件注册）
+19. SQLiteGraphStore 初始化
+20. 控制服务启动（独立 FastAPI，端口 8765）
+
+**ServiceState 属性**: memory_manager, async_memory_manager, context_manager, acp_manager, llm_client, secondary_router, mcp_manager, model_router, graph_database, graph_store, cxfc_manager(Optional)
+
+**关闭顺序**: CXFCManager → GraphDatabase → AlarmManager → WebSocketManager → ACPManager → MemoryManager → BackupManager → PluginManager → ModelRouter
 
 ### Docker 部署
 
@@ -288,11 +319,19 @@ Settings 类采用单例模式，使用 PyYAML 解析配置文件。配置类使
 
 ### 后端测试
 
-使用 pytest 框架，测试文件位于 backend/tests 目录。测试分类包括：test_api（API 端点测试）、test_core（核心模块单元测试）、test_integration（集成测试）。测试覆盖了健康检查、聊天功能、记忆管理、Agent 管理等主要功能。
+使用 pytest 框架，测试文件位于 backend/tests 目录，共18个测试文件。测试分类包括：test_api（API 端点测试）、test_core（核心模块单元测试）、test_integration（集成测试）。测试覆盖了健康检查、聊天功能、记忆管理、Agent 管理等主要功能。
+
+pytest 配置：asyncio_mode=auto，支持异步测试自动检测。
+
+conftest.py 提供常用 fixture：client（TestClient）、async_client（AsyncClient）、mock_settings。
 
 ### 前端测试
 
-使用 Vitest + React Testing Library，测试文件位于 frontend/src 目录。测试覆盖 API 客户端、状态管理 (chatStore/themeStore)、工具函数等。
+使用 Vitest + React Testing Library，测试文件位于 frontend/src 目录，共6个测试文件。测试覆盖 API 客户端、状态管理 (chatStore/themeStore)、工具函数等。
+
+### LLM E2E 测试框架
+
+项目包含 LLM 端到端测试框架，共8个文件，用于验证 LLM 集成的完整性和正确性。
 
 ### 统一测试运行器
 
@@ -310,5 +349,5 @@ run_tests.py 提供统一的测试入口，支持选择性运行前后端测试�
 
 ---
 
-*文档版本: v2.0.0*  
-*最后更新: 2026-05-30*
+*文档版本: v2.1.0*
+*最后更新: 2026-06-13*
