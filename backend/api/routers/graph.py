@@ -125,12 +125,15 @@ async def delete_node(node_id: str, cascade: bool = True, agent_id: str = Query(
 
 @router.post("/nodes/batch")
 async def batch_create_nodes(requests: List[NodeCreateRequest], graph: GraphDatabase = Depends(_get_graph_database)):
-    nodes_data = [
-        NodeCreate(type=r.type, properties=r.properties, text_content=r.text_content)
-        for r in requests
-    ]
-    agent_id = requests[0].agent_id if requests else "default"
-    nodes = graph.nodes.batch_create(nodes_data, agent_id=agent_id)
+    nodes = []
+    for r in requests:
+        node_data = NodeCreate(
+            type=r.type,
+            properties=r.properties,
+            text_content=r.text_content,
+        )
+        node = graph.nodes.create(node_data, agent_id=r.agent_id)
+        nodes.append(node)
     return {"created": len(nodes), "nodes": nodes}
 
 
