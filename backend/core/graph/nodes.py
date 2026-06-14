@@ -131,11 +131,12 @@ class NodeManager:
         operations = []
 
         for node_data in nodes_data:
+            node_agent_id = getattr(node_data, 'agent_id', None) or agent_id
             node = GraphNode.create(
                 type=node_data.type,
                 properties=node_data.properties,
                 text_content=node_data.text_content,
-                agent_id=agent_id,
+                agent_id=node_agent_id,
             )
             nodes.append(node)
             operations.append(
