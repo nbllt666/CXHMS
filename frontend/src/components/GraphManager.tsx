@@ -171,6 +171,10 @@ const TypeBreakdownCard: React.FC<{
 // ========== 主组件 ==========
 
 export function GraphManager() {
+  // Agent 选择
+  const [agents, setAgents] = useState<Array<{id: string, name: string}>>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('default');
+
   // 统计数据
   const [stats, setStats] = useState<GraphStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -214,20 +218,20 @@ export function GraphManager() {
   const loadStats = useCallback(async () => {
     try {
       setStatsLoading(true);
-      const data = await api.getGraphStats();
+      const data = await api.getGraphStats(selectedAgentId);
       setStats(data as GraphStats);
     } catch (err) {
       console.error('加载图统计失败:', err);
     } finally {
       setStatsLoading(false);
     }
-  }, []);
+  }, [selectedAgentId]);
 
   const loadNodes = useCallback(async () => {
     try {
       setNodesLoading(true);
       const nodeType = getNodeTypeForTab(activeTab);
-      const data = await api.getNodes({ node_type: nodeType, limit, offset });
+      const data = await api.getNodes({ node_type: nodeType, limit, offset, agent_id: selectedAgentId });
       const result = data as NodeSearchResult;
       setNodes(result.items || []);
       setNodesTotal(result.total || 0);
@@ -236,19 +240,19 @@ export function GraphManager() {
     } finally {
       setNodesLoading(false);
     }
-  }, [activeTab, offset]);
+  }, [activeTab, offset, selectedAgentId]);
 
   const loadNeighbors = useCallback(async (nodeId: string) => {
     try {
       setNeighborsLoading(true);
-      const data = await api.getNodeNeighbors(nodeId);
+      const data = await api.getNodeNeighbors(nodeId, { agent_id: selectedAgentId });
       setNeighbors(data.neighbors || []);
     } catch (err) {
       console.error('加载邻居节点失败:', err);
     } finally {
       setNeighborsLoading(false);
     }
-  }, []);
+  }, [selectedAgentId]);
 
   useEffect(() => {
     loadStats();
@@ -262,6 +266,26 @@ export function GraphManager() {
   useEffect(() => {
     loadNodes();
   }, [offset]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 加载 Agent 列表
+  useEffect(() => {
+    const loadAgents = async () => {
+      try {
+        const data = await api.getAgents();
+        const agentList = data.agents || data;
+        setAgents(Array.isArray(agentList) ? agentList : []);
+      } catch (e) {
+        console.error('Failed to load agents:', e);
+      }
+    };
+    loadAgents();
+  }, []);
+
+  // 当 selectedAgentId 变化时，重新加载统计数据和节点列表
+  useEffect(() => {
+    loadStats();
+    loadNodes();
+  }, [selectedAgentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ========== 事件处理 ==========
 
@@ -280,7 +304,7 @@ export function GraphManager() {
   const handleDeleteNode = async (nodeId: string) => {
     if (!window.confirm('确定要删除此节点吗？相关的关系也会被删除。')) return;
     try {
-      await api.deleteNode(nodeId);
+      await api.deleteNode(nodeId, true, selectedAgentId);
       if (selectedNode?.id === nodeId) {
         setSelectedNode(null);
         setNeighbors([]);
@@ -303,6 +327,7 @@ export function GraphManager() {
         query: searchQuery,
         node_type: nodeType,
         limit: 20,
+        agent_id: selectedAgentId,
       });
       const result = data as SemanticSearchResult;
       setSearchResults(result.results || result.items || []);
@@ -325,7 +350,7 @@ export function GraphManager() {
         type: newNodeType,
         text_content: newNodeText || undefined,
         properties: props,
-      });
+      }, selectedAgentId);
       setCreateNodeOpen(false);
       setNewNodeText('');
       setNewNodeProps('');
@@ -347,7 +372,7 @@ export function GraphManager() {
         source_id: edgeSourceId,
         target_id: edgeTargetId,
         relation_type: edgeRelationType,
-      });
+      }, selectedAgentId);
       setCreateEdgeOpen(false);
       setEdgeSourceId('');
       setEdgeTargetId('');
@@ -422,6 +447,21 @@ export function GraphManager() {
               创建关系
             </Button>
           </div>
+        </div>
+
+        {/* Agent 选择器 */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ marginRight: 8, fontWeight: 500 }}>Agent:</label>
+          <select
+            value={selectedAgentId}
+            onChange={(e) => setSelectedAgentId(e.target.value)}
+            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #d9d9d9' }}
+          >
+            <option value="default">默认助手</option>
+            {agents.filter(a => a.id !== 'default').map(agent => (
+              <option key={agent.id} value={agent.id}>{agent.name}</option>
+            ))}
+          </select>
         </div>
 
         <div className="grid grid-cols-3 gap-3 mb-3">

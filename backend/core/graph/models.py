@@ -19,6 +19,7 @@ class GraphNode:
     vector_id: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
+    agent_id: str = "default"
 
     @classmethod
     def create(
@@ -26,6 +27,7 @@ class GraphNode:
         type: str,
         properties: Dict[str, Any] = None,
         text_content: Optional[str] = None,
+        agent_id: str = "default",
     ) -> "GraphNode":
         now = datetime.now()
         return cls(
@@ -36,6 +38,7 @@ class GraphNode:
             vector_id=None,
             created_at=now,
             updated_at=now,
+            agent_id=agent_id,
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -47,6 +50,7 @@ class GraphNode:
             "vector_id": self.vector_id,
             "created_at": self.created_at.isoformat() if isinstance(self.created_at, datetime) else self.created_at,
             "updated_at": self.updated_at.isoformat() if isinstance(self.updated_at, datetime) else self.updated_at,
+            "agent_id": self.agent_id,
         }
 
     @classmethod
@@ -71,6 +75,7 @@ class GraphNode:
             vector_id=data.get("vector_id"),
             created_at=created_at or datetime.now(),
             updated_at=updated_at or datetime.now(),
+            agent_id=data.get("agent_id", "default"),
         )
 
 
@@ -85,6 +90,7 @@ class GraphEdge:
     text_content: Optional[str] = None
     vector_id: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
+    agent_id: str = "default"
 
     @classmethod
     def create(
@@ -94,6 +100,7 @@ class GraphEdge:
         relation_type: str,
         properties: Dict[str, Any] = None,
         text_content: Optional[str] = None,
+        agent_id: str = "default",
     ) -> "GraphEdge":
         return cls(
             id=str(uuid.uuid4()),
@@ -104,6 +111,7 @@ class GraphEdge:
             text_content=text_content,
             vector_id=None,
             created_at=datetime.now(),
+            agent_id=agent_id,
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -116,6 +124,7 @@ class GraphEdge:
             "text_content": self.text_content,
             "vector_id": self.vector_id,
             "created_at": self.created_at.isoformat() if isinstance(self.created_at, datetime) else self.created_at,
+            "agent_id": self.agent_id,
         }
 
     @classmethod
@@ -137,6 +146,7 @@ class GraphEdge:
             text_content=data.get("text_content"),
             vector_id=data.get("vector_id"),
             created_at=created_at or datetime.now(),
+            agent_id=data.get("agent_id", "default"),
         )
 
 
@@ -145,6 +155,7 @@ class NodeCreate:
     type: str
     properties: Dict[str, Any] = field(default_factory=dict)
     text_content: Optional[str] = None
+    agent_id: str = "default"
 
 
 @dataclass
@@ -161,6 +172,7 @@ class EdgeCreate:
     relation_type: str
     properties: Dict[str, Any] = field(default_factory=dict)
     text_content: Optional[str] = None
+    agent_id: str = "default"
 
 
 @dataclass

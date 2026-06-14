@@ -27,6 +27,7 @@ class NodeCreateRequest(BaseModel):
     type: str
     properties: Dict[str, Any] = {}
     text_content: Optional[str] = None
+    agent_id: str = "default"
 
 
 class NodeUpdateRequest(BaseModel):
@@ -41,6 +42,7 @@ class EdgeCreateRequest(BaseModel):
     relation_type: str
     properties: Dict[str, Any] = {}
     text_content: Optional[str] = None
+    agent_id: str = "default"
 
 
 class EdgeUpdateRequest(BaseModel):
@@ -53,6 +55,7 @@ class SemanticSearchRequest(BaseModel):
     query: str
     node_type: Optional[str] = None
     limit: int = 10
+    agent_id: str = "default"
 
 
 class HybridSearchRequest(BaseModel):
@@ -60,18 +63,21 @@ class HybridSearchRequest(BaseModel):
     node_type: Optional[str] = None
     properties_filter: Optional[Dict[str, Any]] = None
     limit: int = 10
+    agent_id: str = "default"
 
 
 class TraversalBFSRequest(BaseModel):
     start_id: str
     max_depth: int = 10
     node_type_filter: Optional[str] = None
+    agent_id: str = "default"
 
 
 class TraversalDFSRequest(BaseModel):
     start_id: str
     max_depth: int = 10
     node_type_filter: Optional[str] = None
+    agent_id: str = "default"
 
 
 class ShortestPathRequest(BaseModel):
@@ -87,33 +93,33 @@ async def create_node(request: NodeCreateRequest, graph: GraphDatabase = Depends
         properties=request.properties,
         text_content=request.text_content,
     )
-    return graph.nodes.create(node_data)
+    return graph.nodes.create(node_data, agent_id=request.agent_id)
 
 
 @router.get("/nodes/{node_id}", response_model=Optional[GraphNode])
-async def get_node(node_id: str, graph: GraphDatabase = Depends(_get_graph_database)):
-    node = graph.nodes.get(node_id)
+async def get_node(node_id: str, agent_id: str = Query("default"), graph: GraphDatabase = Depends(_get_graph_database)):
+    node = graph.nodes.get(node_id, agent_id=agent_id)
     if not node:
         raise HTTPException(status_code=404, detail="节点不存在")
     return node
 
 
 @router.put("/nodes/{node_id}", response_model=Optional[GraphNode])
-async def update_node(node_id: str, request: NodeUpdateRequest, graph: GraphDatabase = Depends(_get_graph_database)):
+async def update_node(node_id: str, request: NodeUpdateRequest, agent_id: str = Query("default"), graph: GraphDatabase = Depends(_get_graph_database)):
     update_data = NodeUpdate(
         type=request.type,
         properties=request.properties,
         text_content=request.text_content,
     )
-    node = graph.nodes.update(node_id, update_data)
+    node = graph.nodes.update(node_id, update_data, agent_id=agent_id)
     if not node:
         raise HTTPException(status_code=404, detail="节点不存在")
     return node
 
 
 @router.delete("/nodes/{node_id}")
-async def delete_node(node_id: str, cascade: bool = True, graph: GraphDatabase = Depends(_get_graph_database)):
-    graph.nodes.delete(node_id, cascade=cascade)
+async def delete_node(node_id: str, cascade: bool = True, agent_id: str = Query("default"), graph: GraphDatabase = Depends(_get_graph_database)):
+    graph.nodes.delete(node_id, cascade=cascade, agent_id=agent_id)
     return {"status": "ok", "message": f"节点 {node_id} 已删除"}
 
 
@@ -123,7 +129,8 @@ async def batch_create_nodes(requests: List[NodeCreateRequest], graph: GraphData
         NodeCreate(type=r.type, properties=r.properties, text_content=r.text_content)
         for r in requests
     ]
-    nodes = graph.nodes.batch_create(nodes_data)
+    agent_id = requests[0].agent_id if requests else "default"
+    nodes = graph.nodes.batch_create(nodes_data, agent_id=agent_id)
     return {"created": len(nodes), "nodes": nodes}
 
 
@@ -133,8 +140,9 @@ async def search_nodes(
     node_type: Optional[str] = None,
     limit: int = Query(default=100, le=1000),
     offset: int = Query(default=0, ge=0),
+    agent_id: str = Query("default"),
 ):
-    result = graph.nodes.search(node_type=node_type, limit=limit, offset=offset)
+    result = graph.nodes.search(node_type=node_type, limit=limit, offset=offset, agent_id=agent_id)
     return result
 
 
@@ -144,8 +152,9 @@ async def get_neighbors(
     graph: GraphDatabase = Depends(_get_graph_database),
     max_depth: int = Query(default=1, ge=1, le=10),
     direction: str = Query(default="both", pattern="^(outgoing|incoming|both)$"),
+    agent_id: str = Query("default"),
 ):
-    neighbors = graph.traversal.get_neighbors(node_id, max_depth=max_depth, direction=direction)
+    neighbors = graph.traversal.get_neighbors(node_id, max_depth=max_depth, direction=direction, agent_id=agent_id)
     return {
         "node_id": node_id,
         "neighbors": [
@@ -165,35 +174,35 @@ async def create_edge(request: EdgeCreateRequest, graph: GraphDatabase = Depends
         text_content=request.text_content,
     )
     try:
-        return graph.edges.create(edge_data)
+        return graph.edges.create(edge_data, agent_id=request.agent_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/edges/{edge_id}", response_model=Optional[GraphEdge])
-async def get_edge(edge_id: str, graph: GraphDatabase = Depends(_get_graph_database)):
-    edge = graph.edges.get(edge_id)
+async def get_edge(edge_id: str, agent_id: str = Query("default"), graph: GraphDatabase = Depends(_get_graph_database)):
+    edge = graph.edges.get(edge_id, agent_id=agent_id)
     if not edge:
         raise HTTPException(status_code=404, detail="边不存在")
     return edge
 
 
 @router.put("/edges/{edge_id}", response_model=Optional[GraphEdge])
-async def update_edge(edge_id: str, request: EdgeUpdateRequest, graph: GraphDatabase = Depends(_get_graph_database)):
+async def update_edge(edge_id: str, request: EdgeUpdateRequest, agent_id: str = Query("default"), graph: GraphDatabase = Depends(_get_graph_database)):
     update_data = EdgeUpdate(
         relation_type=request.relation_type,
         properties=request.properties,
         text_content=request.text_content,
     )
-    edge = graph.edges.update(edge_id, update_data)
+    edge = graph.edges.update(edge_id, update_data, agent_id=agent_id)
     if not edge:
         raise HTTPException(status_code=404, detail="边不存在")
     return edge
 
 
 @router.delete("/edges/{edge_id}")
-async def delete_edge(edge_id: str, graph: GraphDatabase = Depends(_get_graph_database)):
-    graph.edges.delete(edge_id)
+async def delete_edge(edge_id: str, agent_id: str = Query("default"), graph: GraphDatabase = Depends(_get_graph_database)):
+    graph.edges.delete(edge_id, agent_id=agent_id)
     return {"status": "ok", "message": f"边 {edge_id} 已删除"}
 
 
@@ -205,6 +214,7 @@ async def search_edges(
     target_id: Optional[str] = None,
     limit: int = Query(default=100, le=1000),
     offset: int = Query(default=0, ge=0),
+    agent_id: str = Query("default"),
 ):
     result = graph.edges.search(
         relation_type=relation_type,
@@ -212,6 +222,7 @@ async def search_edges(
         target_id=target_id,
         limit=limit,
         offset=offset,
+        agent_id=agent_id,
     )
     return result
 
@@ -222,6 +233,7 @@ async def traverse_bfs(request: TraversalBFSRequest, graph: GraphDatabase = Depe
         start_id=request.start_id,
         max_depth=request.max_depth,
         node_type_filter=request.node_type_filter,
+        agent_id=request.agent_id,
     )
     return {"start_id": request.start_id, "nodes": [n.to_dict() if hasattr(n, 'to_dict') else n for n in nodes]}
 
@@ -232,6 +244,7 @@ async def traverse_dfs(request: TraversalDFSRequest, graph: GraphDatabase = Depe
         start_id=request.start_id,
         max_depth=request.max_depth,
         node_type_filter=request.node_type_filter,
+        agent_id=request.agent_id,
     )
     return {"start_id": request.start_id, "nodes": [n.to_dict() if hasattr(n, 'to_dict') else n for n in nodes]}
 
@@ -242,8 +255,9 @@ async def shortest_path(
     end_id: str,
     graph: GraphDatabase = Depends(_get_graph_database),
     max_length: int = Query(default=10, ge=1, le=50),
+    agent_id: str = Query("default"),
 ):
-    path = graph.traversal.shortest_path(start_id, end_id, max_length)
+    path = graph.traversal.shortest_path(start_id, end_id, max_length, agent_id=agent_id)
     if not path:
         raise HTTPException(status_code=404, detail="路径不存在")
     return {
@@ -261,6 +275,7 @@ async def semantic_search(request: SemanticSearchRequest, graph: GraphDatabase =
         query=request.query,
         node_type=request.node_type,
         limit=request.limit,
+        agent_id=request.agent_id,
     )
     return {
         "query": request.query,
@@ -283,6 +298,7 @@ async def hybrid_search(request: HybridSearchRequest, graph: GraphDatabase = Dep
         node_type=request.node_type,
         properties_filter=request.properties_filter,
         limit=request.limit,
+        agent_id=request.agent_id,
     )
     return {
         "query": request.query,
@@ -304,8 +320,9 @@ async def semantic_neighbors(
     graph: GraphDatabase = Depends(_get_graph_database),
     limit: int = Query(default=10, ge=1, le=50),
     depth: int = Query(default=1, ge=1, le=5),
+    agent_id: str = Query("default"),
 ):
-    results = graph.hybrid.semantic_neighbors(node_id=node_id, limit=limit, depth=depth)
+    results = graph.hybrid.semantic_neighbors(node_id=node_id, limit=limit, depth=depth, agent_id=agent_id)
     return {
         "node_id": node_id,
         "results": [
@@ -331,9 +348,9 @@ async def get_metrics(graph: GraphDatabase = Depends(_get_graph_database)):
 
 
 @router.get("/stats")
-async def get_graph_stats(graph: GraphDatabase = Depends(_get_graph_database)):
+async def get_graph_stats(agent_id: str = Query("default"), graph: GraphDatabase = Depends(_get_graph_database)):
     monitor = GraphMonitor(graph.db)
-    return monitor.get_graph_stats()
+    return monitor.get_graph_stats(agent_id=agent_id)
 
 
 @router.get("/algorithm/pagerank")
@@ -341,14 +358,19 @@ async def get_pagerank(
     graph: GraphDatabase = Depends(_get_graph_database),
     damping: float = Query(default=0.85, ge=0.0, le=1.0),
     max_iterations: int = Query(default=100, ge=1, le=1000),
+    agent_id: str = Query("default"),
 ):
-    scores = graph.traversal.pagerank(damping=damping, max_iterations=max_iterations)
+    scores = graph.traversal.pagerank(damping=damping, max_iterations=max_iterations, agent_id=agent_id)
     return {"damping": damping, "scores": scores}
 
 
 @router.get("/algorithm/important-nodes")
-async def get_important_nodes(graph: GraphDatabase = Depends(_get_graph_database), limit: int = Query(default=10, ge=1, le=100)):
-    nodes = graph.traversal.get_important_nodes(limit=limit)
+async def get_important_nodes(
+    graph: GraphDatabase = Depends(_get_graph_database),
+    limit: int = Query(default=10, ge=1, le=100),
+    agent_id: str = Query("default"),
+):
+    nodes = graph.traversal.get_important_nodes(limit=limit, agent_id=agent_id)
     return {
         "limit": limit,
         "nodes": [
@@ -365,8 +387,9 @@ async def get_important_nodes(graph: GraphDatabase = Depends(_get_graph_database
 async def get_communities(
     graph: GraphDatabase = Depends(_get_graph_database),
     method: str = Query(default="lpa", pattern="^(lpa|louvain)$"),
+    agent_id: str = Query("default"),
 ):
-    communities = graph.traversal.community_detection(method=method)
+    communities = graph.traversal.community_detection(method=method, agent_id=agent_id)
     return {
         "method": method,
         "communities": communities,
@@ -377,8 +400,9 @@ async def get_communities(
 async def get_community_stats(
     graph: GraphDatabase = Depends(_get_graph_database),
     method: str = Query(default="lpa", pattern="^(lpa|louvain)$"),
+    agent_id: str = Query("default"),
 ):
-    stats = graph.traversal.get_community_stats()
+    stats = graph.traversal.get_community_stats(agent_id=agent_id)
     return {
         "method": method,
         "stats": stats,
@@ -391,6 +415,7 @@ class SemanticQueryHopsRequest(BaseModel):
     hops: int = 2
     limit: int = 10
     direction: str = "both"
+    agent_id: str = "default"
 
 
 @router.post("/semantic/query-hops")
@@ -402,6 +427,7 @@ async def semantic_query_hops(request: SemanticQueryHopsRequest, graph: GraphDat
         hops=request.hops,
         limit=request.limit,
         direction=request.direction,
+        agent_id=request.agent_id,
     )
     return {
         "start_node_id": request.start_node_id,
@@ -424,6 +450,7 @@ class PathConstrainedSearchRequest(BaseModel):
     query: str
     max_path_length: int = 5
     limit: int = 10
+    agent_id: str = "default"
 
 
 @router.post("/semantic/path-constrained")
@@ -435,6 +462,7 @@ async def path_constrained_search(request: PathConstrainedSearchRequest, graph: 
         query=request.query,
         max_path_length=request.max_path_length,
         limit=request.limit,
+        agent_id=request.agent_id,
     )
     return {
         "start_node_id": request.start_node_id,
@@ -452,9 +480,9 @@ async def path_constrained_search(request: PathConstrainedSearchRequest, graph: 
 
 
 @router.get("/export/json")
-async def export_json(graph: GraphDatabase = Depends(_get_graph_database)):
+async def export_json(agent_id: str = Query("default"), graph: GraphDatabase = Depends(_get_graph_database)):
     exporter = GraphExporter(graph.db)
-    json_str = exporter.export_json()
+    json_str = exporter.export_json(agent_id=agent_id)
     return {"format": "json", "data": json.loads(json_str)}
 
 
@@ -462,9 +490,10 @@ async def export_json(graph: GraphDatabase = Depends(_get_graph_database)):
 async def export_graphml(
     graph: GraphDatabase = Depends(_get_graph_database),
     file_path: str = Query(default="graph_export.graphml"),
+    agent_id: str = Query("default"),
 ):
     exporter = GraphExporter(graph.db)
-    exporter.export_graphml(file_path)
+    exporter.export_graphml(file_path, agent_id=agent_id)
     return {"format": "graphml", "file_path": file_path, "status": "exported"}
 
 
@@ -472,9 +501,10 @@ async def export_graphml(
 async def export_dot(
     graph: GraphDatabase = Depends(_get_graph_database),
     file_path: str = Query(default="graph_export.dot"),
+    agent_id: str = Query("default"),
 ):
     exporter = GraphExporter(graph.db)
-    exporter.export_dot(file_path)
+    exporter.export_dot(file_path, agent_id=agent_id)
     return {"format": "dot", "file_path": file_path, "status": "exported"}
 
 

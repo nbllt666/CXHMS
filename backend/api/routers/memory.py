@@ -21,6 +21,7 @@ class MemoryCreateRequest(BaseModel):
     metadata: Dict = {}
     permanent: bool = False
     workspace_id: str = "default"
+    agent_id: str = "default"
 
 
 class MemoryUpdateRequest(BaseModel):
@@ -30,6 +31,7 @@ class MemoryUpdateRequest(BaseModel):
     importance: Optional[int] = None
     tags: Optional[List[str]] = None
     metadata: Optional[Dict] = None
+    agent_id: str = "default"
 
 
 class MemorySearchRequest(BaseModel):
@@ -173,6 +175,7 @@ async def create_memory(request: MemoryCreateRequest):
             permanent=request.permanent,
             emotion_score=emotion_score,
             workspace_id=request.workspace_id,
+            agent_id=request.agent_id,
         )
 
         return {"status": "success", "memory_id": memory_id, "message": "记忆创建成功"}
@@ -201,12 +204,12 @@ async def get_memory_stats(workspace_id: str = "default"):
 
 
 @router.get("/memories/{memory_id}")
-async def get_memory(memory_id: int):
+async def get_memory(memory_id: int, agent_id: str = "default"):
     from backend.api.app import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
-        memory = memory_mgr.get_memory(memory_id)
+        memory = memory_mgr.get_memory(memory_id, agent_id=agent_id)
 
         if not memory:
             raise HTTPException(status_code=404, detail="记忆不存在")
@@ -230,6 +233,7 @@ async def update_memory(memory_id: int, request: MemoryUpdateRequest):
             new_importance=request.importance,
             new_tags=request.tags,
             new_metadata=request.metadata,
+            agent_id=request.agent_id,
         )
 
         if not success:
@@ -243,13 +247,13 @@ async def update_memory(memory_id: int, request: MemoryUpdateRequest):
 
 
 @router.delete("/memories/{memory_id}")
-async def delete_memory(memory_id: int, soft_delete: bool = True):
+async def delete_memory(memory_id: int, soft_delete: bool = True, agent_id: str = "default"):
     """删除记忆（默认软删除）"""
     from backend.api.app import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
-        success = memory_mgr.delete_memory(memory_id, soft_delete=soft_delete)
+        success = memory_mgr.delete_memory(memory_id, soft_delete=soft_delete, agent_id=agent_id)
 
         if not success:
             raise HTTPException(status_code=404, detail="记忆不存在")
@@ -286,7 +290,7 @@ async def search_memories(request: MemorySearchRequest):
 
 
 @router.post("/memories/rag")
-async def rag_search(query: str, workspace_id: str = "default", limit: int = 5):
+async def rag_search(query: str, workspace_id: str = "default", limit: int = 5, agent_id: str = "default"):
     """RAG搜索"""
     from backend.api.app import get_memory_manager
     from backend.core.exceptions import VectorStoreError
@@ -296,11 +300,11 @@ async def rag_search(query: str, workspace_id: str = "default", limit: int = 5):
 
         if memory_mgr.is_vector_search_enabled():
             results = await memory_mgr.hybrid_search(
-                query=query, limit=limit, workspace_id=workspace_id
+                query=query, limit=limit, workspace_id=workspace_id, agent_id=agent_id
             )
         else:
             results = memory_mgr.search_memories(
-                query=query, limit=limit, workspace_id=workspace_id
+                query=query, limit=limit, workspace_id=workspace_id, agent_id=agent_id
             )
 
         return {"status": "success", "query": query, "results": results, "total": len(results)}
@@ -856,6 +860,7 @@ class SemanticSearchRequest(BaseModel):
     limit: int = 10
     threshold: float = 0.7
     workspace_id: str = "default"
+    agent_id: str = "default"
 
 
 @router.post("/memories/semantic-search")
@@ -871,7 +876,7 @@ async def semantic_search(request: SemanticSearchRequest):
             raise HTTPException(status_code=503, detail="向量搜索未启用")
 
         results = await memory_mgr.hybrid_search(
-            query=request.query, limit=request.limit, workspace_id=request.workspace_id
+            query=request.query, limit=request.limit, workspace_id=request.workspace_id, agent_id=request.agent_id
         )
 
         filtered_results = [r for r in results if r.get("score", 0) >= request.threshold]

@@ -105,7 +105,7 @@ class WeaviateVectorStore:
             # 检查集合是否已存在
             if not self._client.collections.exists(self.schema_class):
                 # 创建新集合
-                from weaviate.classes.config import Configure, DataType, Property
+                from weaviate.classes.config import Configure, DataType, Property, Tokenization
 
                 self._client.collections.create(
                     name=self.schema_class,
@@ -120,6 +120,12 @@ class WeaviateVectorStore:
                         Property(name="workspace_id", data_type=DataType.TEXT),
                         Property(name="is_archived", data_type=DataType.BOOL),
                         Property(name="emotion_score", data_type=DataType.NUMBER),
+                        Property(
+                            name="agent_id",
+                            data_type=DataType.TEXT,
+                            description="Agent ID for per-agent isolation",
+                            tokenization=Tokenization.FIELD,
+                        ),
                     ],
                 )
                 logger.info(f"Weaviate 集合已创建: {self.schema_class}")
@@ -139,7 +145,7 @@ class WeaviateVectorStore:
             return False
 
     async def add_memory_vector(
-        self, memory_id: int, content: str, embedding: List[float], metadata: Dict = None
+        self, memory_id: int, content: str, embedding: List[float], metadata: Dict = None, agent_id: str = "default"
     ) -> bool:
         """添加记忆向量"""
         if not self._client:
@@ -147,6 +153,11 @@ class WeaviateVectorStore:
 
         try:
             collection = self._client.collections.get(self.schema_class)
+
+            # 从 metadata 中获取 agent_id（优先使用参数）
+            effective_agent_id = agent_id
+            if effective_agent_id == "default" and metadata and metadata.get("agent_id"):
+                effective_agent_id = metadata["agent_id"]
 
             # 准备数据对象
             data_object = {
@@ -159,6 +170,7 @@ class WeaviateVectorStore:
                 "workspace_id": metadata.get("workspace_id", "default") if metadata else "default",
                 "is_archived": metadata.get("is_archived", False) if metadata else False,
                 "emotion_score": metadata.get("emotion_score", 0.0) if metadata else 0.0,
+                "agent_id": effective_agent_id,
             }
 
             # 插入数据
@@ -178,6 +190,7 @@ class WeaviateVectorStore:
         memory_type: str = None,
         min_score: float = 0.5,
         filters: Dict = None,
+        agent_id: str = "default",
     ) -> List[Dict]:
         """搜索相似向量"""
         if not self._client:
@@ -192,7 +205,7 @@ class WeaviateVectorStore:
             )
 
             # 添加过滤器
-            if memory_type or filters:
+            if memory_type or filters or (agent_id and agent_id != "default"):
                 from weaviate.classes.query import Filter
 
                 filter_conditions = []
@@ -207,6 +220,10 @@ class WeaviateVectorStore:
                         filter_conditions.append(
                             Filter.by_property("workspace_id").equal(filters["workspace_id"])
                         )
+                if agent_id and agent_id != "default":
+                    filter_conditions.append(
+                        Filter.by_property("agent_id").equal(agent_id)
+                    )
 
                 if filter_conditions:
                     query = query.with_filters(Filter.all_of(filter_conditions))
@@ -234,6 +251,7 @@ class WeaviateVectorStore:
                                 "created_at": obj.properties.get("created_at"),
                                 "workspace_id": obj.properties.get("workspace_id"),
                                 "is_archived": obj.properties.get("is_archived"),
+                                "agent_id": obj.properties.get("agent_id"),
                             },
                         }
                     )
@@ -317,6 +335,7 @@ class WeaviateVectorStore:
                         "created_at": obj.properties.get("created_at"),
                         "workspace_id": obj.properties.get("workspace_id"),
                         "is_archived": obj.properties.get("is_archived"),
+                        "agent_id": obj.properties.get("agent_id"),
                     },
                 }
 

@@ -27,6 +27,7 @@ class HybridSearchOptions:
     use_vector: bool = True
     use_keyword: bool = True
     workspace_id: str = None
+    agent_id: str = "default"
 
 
 class HybridSearch:

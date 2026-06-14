@@ -951,103 +951,103 @@ class ApiClient {
 
   // ========== Graph Database API ==========
 
-  async createNode(data: { type: string; properties?: Record<string, unknown>; text_content?: string }) {
-    const response = await this.client.post('/api/nodes', data);
+  async createNode(data: { type: string; properties?: Record<string, unknown>; text_content?: string }, agentId: string = 'default') {
+    const response = await this.client.post('/api/nodes', { ...data, agent_id: agentId });
     return response.data;
   }
 
-  async getNodes(params?: { node_type?: string; limit?: number; offset?: number }) {
+  async getNodes(params?: { node_type?: string; limit?: number; offset?: number; agent_id?: string }) {
     const response = await this.client.get('/api/nodes/search', { params });
     return response.data;
   }
 
-  async getNode(nodeId: string) {
-    const response = await this.client.get(`/api/nodes/${nodeId}`);
+  async getNode(nodeId: string, agentId: string = 'default') {
+    const response = await this.client.get(`/api/nodes/${nodeId}`, { params: { agent_id: agentId } });
     return response.data;
   }
 
-  async updateNode(nodeId: string, data: { type?: string; properties?: Record<string, unknown>; text_content?: string }) {
-    const response = await this.client.put(`/api/nodes/${nodeId}`, data);
+  async updateNode(nodeId: string, data: { type?: string; properties?: Record<string, unknown>; text_content?: string }, agentId: string = 'default') {
+    const response = await this.client.put(`/api/nodes/${nodeId}`, { ...data, agent_id: agentId });
     return response.data;
   }
 
-  async deleteNode(nodeId: string, cascade: boolean = true) {
-    const response = await this.client.delete(`/api/nodes/${nodeId}`, { params: { cascade } });
+  async deleteNode(nodeId: string, cascade: boolean = true, agentId: string = 'default') {
+    const response = await this.client.delete(`/api/nodes/${nodeId}`, { params: { cascade, agent_id: agentId } });
     return response.data;
   }
 
-  async createEdge(data: { source_id: string; target_id: string; relation_type: string; properties?: Record<string, unknown>; text_content?: string }) {
-    const response = await this.client.post('/api/edges', data);
+  async createEdge(data: { source_id: string; target_id: string; relation_type: string; properties?: Record<string, unknown>; text_content?: string }, agentId: string = 'default') {
+    const response = await this.client.post('/api/edges', { ...data, agent_id: agentId });
     return response.data;
   }
 
-  async getEdges(params?: { relation_type?: string; source_id?: string; target_id?: string; limit?: number; offset?: number }) {
+  async getEdges(params?: { relation_type?: string; source_id?: string; target_id?: string; limit?: number; offset?: number; agent_id?: string }) {
     const response = await this.client.get('/api/edges/search', { params });
     return response.data;
   }
 
-  async deleteEdge(edgeId: string) {
-    const response = await this.client.delete(`/api/edges/${edgeId}`);
+  async deleteEdge(edgeId: string, agentId: string = 'default') {
+    const response = await this.client.delete(`/api/edges/${edgeId}`, { params: { agent_id: agentId } });
     return response.data;
   }
 
-  async getNodeNeighbors(nodeId: string, params?: { max_depth?: number; direction?: string }) {
+  async getNodeNeighbors(nodeId: string, params?: { max_depth?: number; direction?: string; agent_id?: string }) {
     const response = await this.client.get(`/api/nodes/${nodeId}/neighbors`, { params });
     return response.data;
   }
 
-  async traverseBFS(data: { start_id: string; max_depth?: number; node_type_filter?: string }) {
+  async traverseBFS(data: { start_id: string; max_depth?: number; node_type_filter?: string; agent_id?: string }) {
     const response = await this.client.post('/api/traverse/bfs', data);
     return response.data;
   }
 
-  async traverseDFS(data: { start_id: string; max_depth?: number; node_type_filter?: string }) {
+  async traverseDFS(data: { start_id: string; max_depth?: number; node_type_filter?: string; agent_id?: string }) {
     const response = await this.client.post('/api/traverse/dfs', data);
     return response.data;
   }
 
-  async getShortestPath(params: { start_id: string; end_id: string; max_length?: number }) {
+  async getShortestPath(params: { start_id: string; end_id: string; max_length?: number; agent_id?: string }) {
     const response = await this.client.get('/api/paths/shortest', { params });
     return response.data;
   }
 
-  async graphSemanticSearch(data: { query: string; node_type?: string; limit?: number }) {
+  async graphSemanticSearch(data: { query: string; node_type?: string; limit?: number; agent_id?: string }) {
     const response = await this.client.post('/api/semantic/search', data);
     return response.data;
   }
 
-  async graphHybridSearch(data: { query: string; node_type?: string; properties_filter?: Record<string, unknown>; limit?: number }) {
+  async graphHybridSearch(data: { query: string; node_type?: string; properties_filter?: Record<string, unknown>; limit?: number; agent_id?: string }) {
     const response = await this.client.post('/api/semantic/hybrid', data);
     return response.data;
   }
 
-  async getGraphStats() {
-    const response = await this.client.get('/api/stats');
+  async getGraphStats(agentId: string = 'default') {
+    const response = await this.client.get('/api/stats', { params: { agent_id: agentId } });
     return response.data;
   }
 
-  async getGraphHealth() {
-    const response = await this.client.get('/api/health');
+  async getGraphHealth(agentId: string = 'default') {
+    const response = await this.client.get('/api/health', { params: { agent_id: agentId } });
     return response.data;
   }
 
-  async getImportantNodes(params?: { limit?: number }) {
+  async getImportantNodes(params?: { limit?: number; agent_id?: string }) {
     const response = await this.client.get('/api/algorithm/important-nodes', { params });
     return response.data;
   }
 
-  async pageRank(params?: { damping?: number; max_iterations?: number }) {
+  async pageRank(params?: { damping?: number; max_iterations?: number; agent_id?: string }) {
     const response = await this.client.get('/api/algorithm/pagerank', { params });
     return response.data;
   }
 
-  async detectCommunities(params?: { method?: string }) {
+  async detectCommunities(params?: { method?: string; agent_id?: string }) {
     const response = await this.client.get('/api/algorithm/communities', { params });
     return response.data;
   }
 
-  async exportGraph(format: string = 'json') {
-    const response = await this.client.get(`/api/export/${format}`);
+  async exportGraph(format: string = 'json', agentId: string = 'default') {
+    const response = await this.client.get(`/api/export/${format}`, { params: { agent_id: agentId } });
     return response.data;
   }
 

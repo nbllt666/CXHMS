@@ -59,6 +59,7 @@ class SemanticSearch:
                 {"name": "node_id", "dataType": ["string"]},
                 {"name": "node_type", "dataType": ["string"]},
                 {"name": "text_content", "dataType": ["text"]},
+                {"name": "agent_id", "dataType": ["string"]},
             ]
         }
 
@@ -75,6 +76,7 @@ class SemanticSearch:
         text_content: str,
         node_type: str,
         vector: Optional[np.ndarray] = None,
+        agent_id: str = "default",
     ) -> str:
         if vector is None:
             vector = self._vectorizer.encode(text_content)
@@ -88,6 +90,7 @@ class SemanticSearch:
                         "node_id": node_id,
                         "node_type": node_type,
                         "text_content": text_content,
+                        "agent_id": agent_id,
                     },
                     vector=vector.tolist(),
                 )
@@ -104,6 +107,7 @@ class SemanticSearch:
         node_type: Optional[str] = None,
         limit: int = 10,
         node_filter: Optional[Callable[[str], bool]] = None,
+        agent_id: str = "default",
     ) -> List[SemanticSearchResult]:
         if not self._initialized:
             self.initialize()
@@ -115,16 +119,38 @@ class SemanticSearch:
                 query_vector = self._vectorizer.encode(query)
 
                 where_filter = None
-                if node_type:
+                if node_type and agent_id and agent_id != "default":
+                    where_filter = {
+                        "operator": "And",
+                        "operands": [
+                            {
+                                "path": ["node_type"],
+                                "operator": "Equal",
+                                "valueString": node_type,
+                            },
+                            {
+                                "path": ["agent_id"],
+                                "operator": "Equal",
+                                "valueString": agent_id,
+                            },
+                        ]
+                    }
+                elif node_type:
                     where_filter = {
                         "path": ["node_type"],
                         "operator": "Equal",
                         "valueString": node_type
                     }
+                elif agent_id and agent_id != "default":
+                    where_filter = {
+                        "path": ["agent_id"],
+                        "operator": "Equal",
+                        "valueString": agent_id
+                    }
 
                 search = self._client.query.get(
                     "GraphNode",
-                    ["node_id", "node_type", "text_content", "_additional {certainty}"]
+                    ["node_id", "node_type", "text_content", "agent_id", "_additional {certainty}"]
                 ).with_near_vector(
                     {"vector": query_vector.tolist()}
                 ).with_limit(limit)
@@ -152,7 +178,7 @@ class SemanticSearch:
                 results = []
 
         if not results:
-            results = self._fallback_search(query, node_type, limit, node_filter)
+            results = self._fallback_search(query, node_type, limit, node_filter, agent_id)
 
         return results
 
@@ -162,6 +188,7 @@ class SemanticSearch:
         node_type: Optional[str],
         limit: int,
         node_filter: Optional[Callable],
+        agent_id: str = "default",
     ) -> List[SemanticSearchResult]:
         query_words = set(query.lower().split())
         results = []
@@ -174,6 +201,9 @@ class SemanticSearch:
         if node_type:
             sql += " AND type = ?"
             params.append(node_type)
+        if agent_id and agent_id != "default":
+            sql += " AND agent_id = ?"
+            params.append(agent_id)
 
         rows = db.execute(sql, tuple(params))
 

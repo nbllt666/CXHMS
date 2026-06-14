@@ -27,15 +27,16 @@ class SemanticQueryManager(BaseGraphRepository):
         hops: int = 2,
         limit: int = 10,
         direction: str = "both",
+        agent_id: str = "default",
     ) -> List[Dict[str, Any]]:
-        reachable_nodes = self._get_reachable_nodes(start_node_id, hops, direction)
+        reachable_nodes = self._get_reachable_nodes(start_node_id, hops, direction, agent_id)
 
         if not reachable_nodes:
             return []
 
         nodes_with_text = []
         for node_id in reachable_nodes:
-            node = self.get_node(node_id)
+            node = self.get_node(node_id, agent_id)
             if node:
                 text_content = self._extract_node_text(node)
                 nodes_with_text.append((node_id, node, text_content))
@@ -55,8 +56,8 @@ class SemanticQueryManager(BaseGraphRepository):
 
             similarity = self._cosine_similarity(query_embedding, node_embedding)
 
-            path = self._get_shortest_path(start_node_id, node_id)
-            path_edges = self._get_path_edges(path) if path else []
+            path = self._get_shortest_path(start_node_id, node_id, agent_id)
+            path_edges = self._get_path_edges(path, agent_id) if path else []
 
             results.append({
                 "node": node,
@@ -76,8 +77,9 @@ class SemanticQueryManager(BaseGraphRepository):
         query: str,
         max_path_length: int = 5,
         limit: int = 10,
+        agent_id: str = "default",
     ) -> List[Dict[str, Any]]:
-        all_paths = self._find_all_paths(start_node_id, end_node_id, max_path_length)
+        all_paths = self._find_all_paths(start_node_id, end_node_id, max_path_length, agent_id)
 
         if not all_paths:
             return []
@@ -91,7 +93,7 @@ class SemanticQueryManager(BaseGraphRepository):
             if node_id == start_node_id or node_id == end_node_id:
                 continue
 
-            node = self.get_node(node_id)
+            node = self.get_node(node_id, agent_id)
             if node:
                 text_content = self._extract_node_text(node)
                 nodes_with_text.append((node_id, node, text_content))
@@ -111,8 +113,8 @@ class SemanticQueryManager(BaseGraphRepository):
 
             similarity = self._cosine_similarity(query_embedding, node_embedding)
 
-            best_path = self._get_shortest_path(start_node_id, node_id)
-            path_edges = self._get_path_edges(best_path) if best_path else []
+            best_path = self._get_shortest_path(start_node_id, node_id, agent_id)
+            path_edges = self._get_path_edges(best_path, agent_id) if best_path else []
 
             results.append({
                 "node": node,
@@ -130,6 +132,7 @@ class SemanticQueryManager(BaseGraphRepository):
         start_id: str,
         max_hops: int,
         direction: str = "both",
+        agent_id: str = "default",
     ) -> Set[str]:
         visited: Set[str] = set()
         queue = deque([(start_id, 0)])
@@ -143,7 +146,7 @@ class SemanticQueryManager(BaseGraphRepository):
             visited.add(current_id)
 
             if depth < max_hops:
-                neighbor_ids = self.get_neighbor_ids(current_id, direction)
+                neighbor_ids = self.get_neighbor_ids(current_id, direction, agent_id)
                 for neighbor_id in neighbor_ids:
                     if neighbor_id not in visited:
                         queue.append((neighbor_id, depth + 1))
@@ -193,7 +196,7 @@ class SemanticQueryManager(BaseGraphRepository):
 
         return dot_product / (magnitude1 * magnitude2)
 
-    def _get_shortest_path(self, start_id: str, end_id: str) -> Optional[List[str]]:
+    def _get_shortest_path(self, start_id: str, end_id: str, agent_id: str = "default") -> Optional[List[str]]:
         if start_id == end_id:
             return [start_id]
 
@@ -203,7 +206,7 @@ class SemanticQueryManager(BaseGraphRepository):
         while queue:
             current_id, path = queue.popleft()
 
-            neighbor_ids = self.get_neighbor_ids(current_id, "both")
+            neighbor_ids = self.get_neighbor_ids(current_id, "both", agent_id)
             for neighbor_id in neighbor_ids:
                 if neighbor_id == end_id:
                     return path + [neighbor_id]
@@ -219,6 +222,7 @@ class SemanticQueryManager(BaseGraphRepository):
         start_id: str,
         end_id: str,
         max_length: int,
+        agent_id: str = "default",
     ) -> List[List[str]]:
         results: List[List[str]] = []
 
@@ -230,7 +234,7 @@ class SemanticQueryManager(BaseGraphRepository):
                 results.append(path.copy())
                 return
 
-            neighbor_ids = self.get_neighbor_ids(current, "both")
+            neighbor_ids = self.get_neighbor_ids(current, "both", agent_id)
             for neighbor_id in neighbor_ids:
                 if neighbor_id not in path:
                     path.append(neighbor_id)
@@ -240,7 +244,7 @@ class SemanticQueryManager(BaseGraphRepository):
         dfs(start_id, [start_id], 0)
         return results
 
-    def _get_path_edges(self, path: List[str]) -> List[GraphEdge]:
+    def _get_path_edges(self, path: List[str], agent_id: str = "default") -> List[GraphEdge]:
         if len(path) < 2:
             return []
 
@@ -249,20 +253,21 @@ class SemanticQueryManager(BaseGraphRepository):
             source = path[i]
             target = path[i + 1]
 
-            edge = self._get_edge_between(source, target)
+            edge = self._get_edge_between(source, target, agent_id)
             if edge:
                 edges.append(edge)
 
         return edges
 
-    def _get_edge_between(self, source_id: str, target_id: str) -> Optional[GraphEdge]:
+    def _get_edge_between(self, source_id: str, target_id: str, agent_id: str = "default") -> Optional[GraphEdge]:
         query = """
             SELECT * FROM edges
-            WHERE (source_id = ? AND target_id = ?)
-               OR (source_id = ? AND target_id = ?)
+            WHERE agent_id = ?
+              AND ((source_id = ? AND target_id = ?)
+               OR (source_id = ? AND target_id = ?))
             LIMIT 1
         """
-        row = self.db.execute_one(query, (source_id, target_id, target_id, source_id))
+        row = self.db.execute_one(query, (agent_id, source_id, target_id, target_id, source_id))
         if row:
             return GraphEdge.from_dict(dict(row))
         return None

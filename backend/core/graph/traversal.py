@@ -26,7 +26,8 @@ class TraversalManager(BaseGraphRepository):
         self,
         node_id: str,
         max_depth: int = 1,
-        direction: str = "both"
+        direction: str = "both",
+        agent_id: str = "default",
     ) -> List[Tuple[GraphNode, List[GraphEdge]]]:
         result = []
         visited: Set[str] = set()
@@ -41,13 +42,13 @@ class TraversalManager(BaseGraphRepository):
             visited.add(current_id)
 
             if depth > 0:
-                node = self.get_node(current_id)
+                node = self.get_node(current_id, agent_id)
                 if node:
-                    edges = self._get_edges_for_node(current_id, direction)
+                    edges = self._get_edges_for_node(current_id, direction, agent_id)
                     result.append((node, edges))
 
             if depth < max_depth:
-                neighbor_ids = self.get_neighbor_ids(current_id, direction)
+                neighbor_ids = self.get_neighbor_ids(current_id, direction, agent_id)
                 for neighbor_id in neighbor_ids:
                     if neighbor_id not in visited:
                         queue.append((neighbor_id, depth + 1))
@@ -59,6 +60,7 @@ class TraversalManager(BaseGraphRepository):
         start_id: str,
         max_depth: int = 10,
         node_type_filter: Optional[str] = None,
+        agent_id: str = "default",
     ) -> List[GraphNode]:
         result = []
         visited: Set[str] = set()
@@ -72,13 +74,13 @@ class TraversalManager(BaseGraphRepository):
 
             visited.add(current_id)
 
-            node = self.get_node(current_id)
+            node = self.get_node(current_id, agent_id)
             if node:
                 if node_type_filter is None or node.type == node_type_filter:
                     result.append(node)
 
             if depth < max_depth:
-                neighbor_ids = self.get_neighbor_ids(current_id, "both")
+                neighbor_ids = self.get_neighbor_ids(current_id, "both", agent_id)
                 for neighbor_id in neighbor_ids:
                     if neighbor_id not in visited:
                         queue.append((neighbor_id, depth + 1))
@@ -90,6 +92,7 @@ class TraversalManager(BaseGraphRepository):
         start_id: str,
         max_depth: int = 10,
         node_type_filter: Optional[str] = None,
+        agent_id: str = "default",
     ) -> List[GraphNode]:
         result = []
         visited: Set[str] = set()
@@ -100,13 +103,13 @@ class TraversalManager(BaseGraphRepository):
 
             visited.add(node_id)
 
-            node = self.get_node(node_id)
+            node = self.get_node(node_id, agent_id)
             if node:
                 if node_type_filter is None or node.type == node_type_filter:
                     result.append(node)
 
             if depth < max_depth:
-                neighbor_ids = self.get_neighbor_ids(node_id, "both")
+                neighbor_ids = self.get_neighbor_ids(node_id, "both", agent_id)
                 for neighbor_id in neighbor_ids:
                     if neighbor_id not in visited:
                         dfs(neighbor_id, depth + 1)
@@ -119,6 +122,7 @@ class TraversalManager(BaseGraphRepository):
         start_id: str,
         end_id: str,
         max_length: int = 10,
+        agent_id: str = "default",
     ) -> Optional[PathResult]:
         if start_id == end_id:
             return PathResult(path=[start_id], edges=[], length=0)
@@ -142,7 +146,7 @@ class TraversalManager(BaseGraphRepository):
             if current_dist > max_length:
                 continue
 
-            edges = self._get_edges_for_node(current_id, "outgoing")
+            edges = self._get_edges_for_node(current_id, "outgoing", agent_id)
             for edge in edges:
                 neighbor_id = edge.target_id
                 weight = 1.0
@@ -165,7 +169,7 @@ class TraversalManager(BaseGraphRepository):
             if current in previous:
                 prev_node, edge_id = previous[current]
                 if edge_id:
-                    edge = self.get_edge(edge_id)
+                    edge = self.get_edge(edge_id, agent_id)
                     if edge:
                         edges.append(edge)
                 current = prev_node
@@ -187,6 +191,7 @@ class TraversalManager(BaseGraphRepository):
         start_id: str,
         end_id: str,
         max_length: int = 5,
+        agent_id: str = "default",
     ) -> List[PathResult]:
         results = []
 
@@ -202,7 +207,7 @@ class TraversalManager(BaseGraphRepository):
             if depth >= max_length:
                 return
 
-            neighbor_edges = self._get_edges_for_node(current, "outgoing")
+            neighbor_edges = self._get_edges_for_node(current, "outgoing", agent_id)
             for edge in neighbor_edges:
                 neighbor = edge.target_id
                 if neighbor not in path:
@@ -215,23 +220,16 @@ class TraversalManager(BaseGraphRepository):
         dfs(start_id, [start_id], [], 0)
         return results
 
-    def get_edge(self, edge_id: str) -> Optional[GraphEdge]:
-        query = "SELECT * FROM edges WHERE id = ?"
-        row = self.db.execute_one(query, (edge_id,))
-        if row:
-            return GraphEdge.from_dict(dict(row))
-        return None
-
-    def _get_edges_for_node(self, node_id: str, direction: str = "both") -> List[GraphEdge]:
+    def _get_edges_for_node(self, node_id: str, direction: str = "both", agent_id: str = "default") -> List[GraphEdge]:
         if direction == "outgoing":
-            query = "SELECT * FROM edges WHERE source_id = ?"
-            rows = self.db.execute(query, (node_id,))
+            query = "SELECT * FROM edges WHERE source_id = ? AND agent_id = ?"
+            rows = self.db.execute(query, (node_id, agent_id))
         elif direction == "incoming":
-            query = "SELECT * FROM edges WHERE target_id = ?"
-            rows = self.db.execute(query, (node_id,))
+            query = "SELECT * FROM edges WHERE target_id = ? AND agent_id = ?"
+            rows = self.db.execute(query, (node_id, agent_id))
         else:
-            query = "SELECT * FROM edges WHERE source_id = ? OR target_id = ?"
-            rows = self.db.execute(query, (node_id, node_id))
+            query = "SELECT * FROM edges WHERE (source_id = ? OR target_id = ?) AND agent_id = ?"
+            rows = self.db.execute(query, (node_id, node_id, agent_id))
 
         return [GraphEdge.from_dict(dict(row)) for row in rows]
 
@@ -240,8 +238,9 @@ class TraversalManager(BaseGraphRepository):
         damping: float = 0.85,
         max_iterations: int = 100,
         tolerance: float = 1e-6,
+        agent_id: str = "default",
     ) -> Dict[str, float]:
-        all_nodes = self.db.execute("SELECT id FROM nodes")
+        all_nodes = self.db.execute("SELECT id FROM nodes WHERE agent_id = ?", (agent_id,))
         node_ids = [row["id"] for row in all_nodes]
         n = len(node_ids)
 
@@ -251,7 +250,7 @@ class TraversalManager(BaseGraphRepository):
         inlinks: Dict[str, Set[str]] = {node_id: set() for node_id in node_ids}
         outlinks: Dict[str, int] = {node_id: 0 for node_id in node_ids}
 
-        all_edges = self.db.execute("SELECT source_id, target_id FROM edges")
+        all_edges = self.db.execute("SELECT source_id, target_id FROM edges WHERE agent_id = ?", (agent_id,))
         for edge in all_edges:
             source, target = edge["source_id"], edge["target_id"]
             if source in inlinks and target in inlinks:
@@ -282,8 +281,8 @@ class TraversalManager(BaseGraphRepository):
 
         return pagerank_scores
 
-    def get_important_nodes(self, limit: int = 10) -> List[Dict[str, Any]]:
-        pagerank_scores = self.pagerank()
+    def get_important_nodes(self, limit: int = 10, agent_id: str = "default") -> List[Dict[str, Any]]:
+        pagerank_scores = self.pagerank(agent_id=agent_id)
 
         sorted_nodes = sorted(
             pagerank_scores.items(),
@@ -293,7 +292,7 @@ class TraversalManager(BaseGraphRepository):
 
         results = []
         for node_id, score in sorted_nodes[:limit]:
-            node = self.get_node(node_id)
+            node = self.get_node(node_id, agent_id)
             if node:
                 results.append({
                     "node": node,
@@ -305,25 +304,26 @@ class TraversalManager(BaseGraphRepository):
     def community_detection(
         self,
         method: str = "lpa",
+        agent_id: str = "default",
     ) -> Dict[int, List[str]]:
-        all_nodes = self.db.execute("SELECT id FROM nodes")
+        all_nodes = self.db.execute("SELECT id FROM nodes WHERE agent_id = ?", (agent_id,))
         node_ids = [row["id"] for row in all_nodes]
 
         if not node_ids:
             return {}
 
         if method == "lpa":
-            return self._lpa_community_detection(node_ids)
+            return self._lpa_community_detection(node_ids, agent_id)
         elif method == "louvain":
-            return self._louvain_community_detection(node_ids)
+            return self._louvain_community_detection(node_ids, agent_id)
         else:
             logger.warning(f"Unknown method {method}, using LPA")
-            return self._lpa_community_detection(node_ids)
+            return self._lpa_community_detection(node_ids, agent_id)
 
-    def _lpa_community_detection(self, node_ids: List[str]) -> Dict[int, List[str]]:
+    def _lpa_community_detection(self, node_ids: List[str], agent_id: str = "default") -> Dict[int, List[str]]:
         import random
 
-        edges = self.db.execute("SELECT source_id, target_id FROM edges")
+        edges = self.db.execute("SELECT source_id, target_id FROM edges WHERE agent_id = ?", (agent_id,))
         neighbors: Dict[str, Set[str]] = {node_id: set() for node_id in node_ids}
 
         for edge in edges:
@@ -374,8 +374,8 @@ class TraversalManager(BaseGraphRepository):
 
         return {i: list(node_set) for i, node_set in label_to_nodes.items()}
 
-    def _louvain_community_detection(self, node_ids: List[str]) -> Dict[int, List[str]]:
-        edges = self.db.execute("SELECT source_id, target_id FROM edges")
+    def _louvain_community_detection(self, node_ids: List[str], agent_id: str = "default") -> Dict[int, List[str]]:
+        edges = self.db.execute("SELECT source_id, target_id FROM edges WHERE agent_id = ?", (agent_id,))
         neighbors: Dict[str, Set[str]] = {node_id: set() for node_id in node_ids}
 
         for edge in edges:
@@ -457,8 +457,8 @@ class TraversalManager(BaseGraphRepository):
 
         return remapped
 
-    def get_community_stats(self) -> Dict[str, Any]:
-        communities = self.community_detection()
+    def get_community_stats(self, agent_id: str = "default") -> Dict[str, Any]:
+        communities = self.community_detection(agent_id=agent_id)
 
         if not communities:
             return {

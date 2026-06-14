@@ -64,11 +64,13 @@ class Database:
                     text_content TEXT,
                     vector_id TEXT,
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    agent_id VARCHAR(100) DEFAULT 'default'
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type);
                 CREATE INDEX IF NOT EXISTS idx_nodes_created_at ON nodes(created_at);
+                CREATE INDEX IF NOT EXISTS idx_nodes_agent_id ON nodes(agent_id);
 
                 CREATE TABLE IF NOT EXISTS edges (
                     id TEXT PRIMARY KEY,
@@ -79,6 +81,7 @@ class Database:
                     text_content TEXT,
                     vector_id TEXT,
                     created_at TEXT NOT NULL,
+                    agent_id VARCHAR(100) DEFAULT 'default',
                     FOREIGN KEY (source_id) REFERENCES nodes(id) ON DELETE CASCADE,
                     FOREIGN KEY (target_id) REFERENCES nodes(id) ON DELETE CASCADE
                 );
@@ -86,6 +89,7 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
                 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
                 CREATE INDEX IF NOT EXISTS idx_edges_relation_type ON edges(relation_type);
+                CREATE INDEX IF NOT EXISTS idx_edges_agent_id ON edges(agent_id);
 
                 CREATE TABLE IF NOT EXISTS traversal_paths (
                     path_id TEXT PRIMARY KEY,
@@ -96,6 +100,16 @@ class Database:
                 );
             """)
             logger.info("图数据库表结构创建完成")
+
+            # 迁移：为已有数据添加 agent_id 字段
+            try:
+                cursor.execute("SELECT agent_id FROM nodes LIMIT 1")
+            except:
+                cursor.execute("ALTER TABLE nodes ADD COLUMN agent_id VARCHAR(100) DEFAULT 'default'")
+                cursor.execute("ALTER TABLE edges ADD COLUMN agent_id VARCHAR(100) DEFAULT 'default'")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_nodes_agent_id ON nodes(agent_id)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_edges_agent_id ON edges(agent_id)")
+                logger.info("图数据库迁移：添加 agent_id 字段")
 
     def health_check(self) -> bool:
         try:

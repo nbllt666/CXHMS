@@ -746,12 +746,13 @@ class MemoryManager:
             logger.error(f"写入记忆失败: {e}", exc_info=True)
             raise
 
-    def get_memory(self, memory_id: int, include_deleted: bool = False) -> Optional[Dict]:
+    def get_memory(self, memory_id: int, include_deleted: bool = False, agent_id: str = "default") -> Optional[Dict]:
+        table_name = self._get_table_name(agent_id)
         conn = self._get_connection()
         cursor = conn.cursor()
 
         try:
-            query = "SELECT * FROM memories WHERE id = ?"
+            query = f"SELECT * FROM {table_name} WHERE id = ?"
             if not include_deleted:
                 query += " AND is_deleted = FALSE"
 
@@ -761,12 +762,15 @@ class MemoryManager:
             if row:
                 return self._row_to_memory(row)
 
+            # 如果在指定表中未找到，尝试在其他agent表中查找
             cursor.execute("SELECT table_name FROM agent_memory_tables")
             agent_tables = [r[0] for r in cursor.fetchall()]
 
-            for table_name in agent_tables:
+            for other_table_name in agent_tables:
+                if other_table_name == table_name:
+                    continue
                 try:
-                    agent_query = f"SELECT * FROM {table_name} WHERE id = ?"
+                    agent_query = f"SELECT * FROM {other_table_name} WHERE id = ?"
                     if not include_deleted:
                         agent_query += " AND is_deleted = FALSE"
                     cursor.execute(agent_query, (memory_id,))
@@ -1113,6 +1117,7 @@ class MemoryManager:
             "is_deleted": bool(row["is_deleted"]),
             "source": row["source"],
             "workspace_id": row["workspace_id"],
+            "agent_id": row["agent_id"] if "agent_id" in row.keys() else "default",
         }
 
     def enable_vector_search(
@@ -1224,13 +1229,14 @@ class MemoryManager:
         tags: List[str] = None,
         limit: int = 10,
         workspace_id: str = None,
+        agent_id: str = "default",
     ) -> List[Dict]:
         fallback = False
 
         if not self.is_vector_search_enabled():
             fallback = True
             results = self.search_memories(
-                query=query, memory_type=memory_type, tags=tags, limit=limit
+                query=query, memory_type=memory_type, tags=tags, limit=limit, agent_id=agent_id
             )
             for result in results:
                 result["fallback"] = fallback
@@ -1245,6 +1251,7 @@ class MemoryManager:
                 tags=tags,
                 limit=limit,
                 workspace_id=workspace_id,
+                agent_id=agent_id,
             )
 
             search_results = await self._hybrid_search.search(options)
@@ -1264,7 +1271,7 @@ class MemoryManager:
             logger.error(f"混合搜索失败: {e}")
             fallback = True
             results = self.search_memories(
-                query=query, memory_type=memory_type, tags=tags, limit=limit
+                query=query, memory_type=memory_type, tags=tags, limit=limit, agent_id=agent_id
             )
             for result in results:
                 result["fallback"] = fallback

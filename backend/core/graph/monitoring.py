@@ -112,17 +112,17 @@ class GraphMonitor:
             },
         }
 
-    def get_graph_stats(self) -> Dict[str, Any]:
-        node_count = self._get_node_count()
-        edge_count = self._get_edge_count()
+    def get_graph_stats(self, agent_id: str = "default") -> Dict[str, Any]:
+        node_count = self._get_node_count(agent_id)
+        edge_count = self._get_edge_count(agent_id)
 
         avg_degree = (2 * edge_count / node_count) if node_count > 0 else 0.0
 
         max_possible_edges = node_count * (node_count - 1) / 2
         graph_density = (2 * edge_count / max_possible_edges) if max_possible_edges > 0 else 0.0
 
-        node_types = self._get_node_type_distribution()
-        edge_types = self._get_edge_type_distribution()
+        node_types = self._get_node_type_distribution(agent_id)
+        edge_types = self._get_edge_type_distribution(agent_id)
 
         return {
             "node_count": node_count,
@@ -175,42 +175,42 @@ class GraphMonitor:
                 "reason": str(e),
             }
 
-    def _get_node_count(self) -> int:
+    def _get_node_count(self, agent_id: str = "default") -> int:
         try:
-            result = self.db.execute_one("SELECT COUNT(*) as cnt FROM nodes")
+            result = self.db.execute_one("SELECT COUNT(*) as cnt FROM nodes WHERE agent_id = ?", (agent_id,))
             return result["cnt"] if result else 0
         except Exception:
             return 0
 
-    def _get_edge_count(self) -> int:
+    def _get_edge_count(self, agent_id: str = "default") -> int:
         try:
-            result = self.db.execute_one("SELECT COUNT(*) as cnt FROM edges")
+            result = self.db.execute_one("SELECT COUNT(*) as cnt FROM edges WHERE agent_id = ?", (agent_id,))
             return result["cnt"] if result else 0
         except Exception:
             return 0
 
-    def _get_node_type_distribution(self) -> Dict[str, int]:
+    def _get_node_type_distribution(self, agent_id: str = "default") -> Dict[str, int]:
         try:
             query = """
                 SELECT type, COUNT(*) as cnt
                 FROM nodes
-                WHERE type IS NOT NULL AND type != ''
+                WHERE type IS NOT NULL AND type != '' AND agent_id = ?
                 GROUP BY type
             """
-            rows = self.db.execute(query)
+            rows = self.db.execute(query, (agent_id,))
             return {row["type"]: row["cnt"] for row in rows}
         except Exception:
             return {}
 
-    def _get_edge_type_distribution(self) -> Dict[str, int]:
+    def _get_edge_type_distribution(self, agent_id: str = "default") -> Dict[str, int]:
         try:
             query = """
                 SELECT relation_type, COUNT(*) as cnt
                 FROM edges
-                WHERE relation_type IS NOT NULL AND relation_type != ''
+                WHERE relation_type IS NOT NULL AND relation_type != '' AND agent_id = ?
                 GROUP BY relation_type
             """
-            rows = self.db.execute(query)
+            rows = self.db.execute(query, (agent_id,))
             return {row["relation_type"]: row["cnt"] for row in rows}
         except Exception:
             return {}
