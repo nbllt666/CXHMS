@@ -229,9 +229,12 @@ async def test_tool(name: str, request: ToolTestRequest):
 async def get_openai_functions(enabled_only: bool = True):
     """获取OpenAI格式的工具列表"""
     from backend.core.tools.registry import tool_registry
+    from backend.core.tools.builtin import get_builtin_tools
 
     try:
-        functions = tool_registry.list_openai_functions(enabled_only)
+        builtin_tools = get_builtin_tools()
+        registered_tools = tool_registry.list_openai_functions(enabled_only, include_builtin=False)
+        functions = builtin_tools + registered_tools
         return {"status": "success", "functions": functions}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))

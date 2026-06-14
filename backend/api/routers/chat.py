@@ -16,7 +16,7 @@ from backend.core.context.agent_context_manager import AgentContextManager
 from backend.core.llm.tools import parse_text_tool_calls, strip_text_tool_calls
 from backend.core.logging_config import get_contextual_logger
 from backend.core.tools import tool_registry
-from backend.core.tools.builtin import call_builtin_tool, get_builtin_tools
+from backend.core.tools.builtin import BUILTIN_TOOL_NAMES, call_builtin_tool, get_builtin_tools
 
 logger = get_contextual_logger(__name__)
 
@@ -29,53 +29,11 @@ MAIN_HIDDEN_SYSTEM_PROMPT = """<role>
 你是 CXHMS 智能助手系统的核心模型。你的职责是理解用户需求并提供准确、有帮助的回复。
 </role>
 
-<tools>
-### 基础工具
-- **calculator** - 数学计算，支持基本运算、三角函数、对数等
-- **datetime** - 获取当前日期和时间
-- **random** - 生成随机数
-- **json_format** - 格式化 JSON 字符串
-
-### 记忆工具
-- **write_long_term_memory** - 将重要信息写入长期记忆
-  - 参数：content (str) - 记忆内容, importance (int 1-5) - 重要性等级
-  - 场景：用户分享个人信息、偏好、重要事件时主动保存
-- **search_all_memories** - 语义搜索所有记忆
-  - 参数：query (str) - 搜索词, limit (int) - 返回数量
-  - 场景：需要回忆之前聊过的信息时使用
-- **write_permanent_memory** - 写入永久记忆（永不被衰减或删除）
-  - 参数：content (str) - 记忆内容, importance (int 1-5) - 重要性等级
-  - 场景：用户明确要求永久记住的信息
-
-### 助手调用
-- **call_assistant** - 调用记忆管理模型处理复杂记忆操作
-  - 参数：message (str) - 发送给助手的指令
-  - 场景：需要批量管理、导出、合并、深度搜索记忆时
-
-### 提醒工具
-- **set_alarm** - 设置定时提醒
-  - 参数：message (str) - 提醒内容, seconds (int) - 多少秒后提醒
-- **get_alarms** - 获取当前提醒列表
-- **cancel_alarm** - 取消提醒
-  - 参数：alarm_id (str) - 提醒ID
-
-### 上下文工具
-- **mono** - 将信息保持在接下来的对话上下文中
-  - 参数：content (str) - 要保持的信息, rounds (int) - 保持轮数
-  - 场景：需要跨多轮对话记住关键信息时
-
-### ACP 远程协作
-- **acp_list_agents** - 列出可用的远程 Agent
-- **acp_connect** - 连接远程 Agent
-  - 参数：agent_id (str), host (str), port (int)
-- **acp_disconnect** - 断开远程 Agent 连接
-  - 参数：agent_id (str)
-- **acp_send_message** - 向远程 Agent 发送消息
-  - 参数：agent_id (str), message (str)
-- **acp_create_group** - 创建 Agent 群组
-- **acp_join_group** - 加入群组
-- **acp_leave_group** - 离开群组
-</tools>
+<instruction>
+你可以使用系统提供的工具来帮助用户。工具已通过 API 自动注册，你无需在回复中描述或列举工具。
+当需要执行操作时，必须通过 function calling 机制调用工具，不要在文本中输出工具调用标记（如 <execute_tool>）。
+直接调用对应的函数即可，系统会自动执行并返回结果。
+</instruction>
 
 <rules>
 1. 用中文回答用户问题
@@ -84,68 +42,18 @@ MAIN_HIDDEN_SYSTEM_PROMPT = """<role>
 4. 当需要设置提醒时，使用 set_alarm，注意 seconds 参数单位是秒
 5. 当记忆管理任务较复杂时，使用 call_assistant 委托给记忆管理模型
 6. 不要编造不存在的工具或功能
+7. 绝对不要在回复文本中输出 <execute_tool> 或类似标记，必须通过 function calling 调用工具
 </rules>"""
 
 MEMORY_AGENT_HIDDEN_SYSTEM_PROMPT = """<role>
-你是 CXHMS 记忆管理助手，专门负责帮助用户管理和维护记忆库。你可以通过自然语言理解用户的需求，并调用相应的工具来执行记忆管理操作。
+你是 CXHMS 记忆管理助手，专门负责帮助用户管理和维护记忆库。
 </role>
 
-<tools>
-### 搜索与查询
-- **search_memories** - 关键词搜索记忆
-  - 参数：query (str) - 搜索关键词, limit (int) - 返回数量上限
-  - 场景：用户想查找特定主题的记忆
-- **search_by_time** - 按时间范围搜索记忆
-  - 参数：start_time (str) - 起始时间, end_time (str) - 结束时间, limit (int) - 返回数量
-  - 场景：用户想查找某段时间内的记忆
-- **search_by_tag** - 按标签搜索记忆
-  - 参数：tag (str) - 标签名, limit (int) - 返回数量
-  - 场景：用户想按分类标签查找记忆
-- **search_similar_memories** - 搜索与指定记忆相似的其他记忆
-  - 参数：memory_id (int) - 参考记忆ID, limit (int) - 返回数量
-  - 场景：查找与某条记忆内容相似的其他记忆
-- **get_similar_memories** - 获取与给定内容相似的记忆
-  - 参数：content (str) - 参考内容, limit (int) - 返回数量
-  - 场景：根据内容描述查找相似记忆
-
-### 修改与管理
-- **update_memory_node** - 更新已存在的记忆节点内容
-  - 参数：memory_id (int) - 记忆ID, content (str) - 新内容
-  - 场景：用户想修正或补充某条记忆的信息
-- **delete_memory** - 删除指定记忆（软删除，7天后自动清理，可恢复）
-  - 参数：memory_id (int) - 要删除的记忆ID
-  - 场景：用户想删除某条记忆
-- **restore_memory** - 恢复软删除的记忆
-  - 参数：memory_id (int) - 要恢复的记忆ID
-  - 场景：用户想恢复之前删除的记忆
-- **merge_memories** - 将多个相似记忆合并为一个
-  - 参数：memory_ids (list[int]) - 要合并的记忆ID列表
-  - 场景：发现多条重复或高度相似的记忆时合并
-- **bulk_delete** - 批量删除记忆（软删除）
-  - 参数：memory_ids (list[int]) - 要删除的记忆ID列表
-  - 场景：用户想一次删除多条记忆
-
-### 维护与清理
-- **clean_expired** - 清理已软删除超过7天的记忆
-  - 场景：用户想彻底清理已标记删除的过期记忆
-- **export_memories** - 导出记忆数据为指定格式
-  - 参数：format (str) - 导出格式（json/csv）, agent_id (str) - 可选，指定Agent
-  - 场景：用户想导出记忆数据备份或分析
-
-### 统计与日志
-- **get_memory_stats** - 获取记忆库统计信息
-  - 场景：用户想了解记忆库的整体情况（数量、类型分布等）
-- **get_memory_logs** - 获取记忆管理操作日志
-  - 参数：limit (int) - 返回条数
-  - 场景：用户想查看最近的记忆操作记录
-- **get_chat_history** - 读取指定会话的聊天历史
-  - 参数：session_id (str) - 会话ID, limit (int) - 返回条数
-  - 场景：需要查看某次对话的完整内容
-
-### 辅助
-- **get_available_commands** - 获取所有可用的记忆管理命令列表及描述
-  - 场景：用户不确定可以执行什么操作时查看帮助
-</tools>
+<instruction>
+你可以使用系统提供的工具来执行记忆管理操作。工具已通过 API 自动注册，你无需在回复中描述或列举工具。
+当需要执行操作时，必须通过 function calling 机制调用工具，不要在文本中输出工具调用标记（如 <execute_tool>）。
+直接调用对应的函数即可，系统会自动执行并返回结果。
+</instruction>
 
 <rules>
 1. 用中文回答用户问题
@@ -154,6 +62,7 @@ MEMORY_AGENT_HIDDEN_SYSTEM_PROMPT = """<role>
 4. 操作完成后简要报告结果，包括影响的记忆数量
 5. 如果用户请求的操作超出你的能力范围，如实告知
 6. 不要编造不存在的工具或功能
+7. 绝对不要在回复文本中输出 <execute_tool> 或类似标记，必须通过 function calling 调用工具
 </rules>"""
 
 
@@ -427,19 +336,18 @@ async def chat(request: ChatRequest):
             images=request.images,
         )
 
-        # 7. 获取工具（只过滤 summary 类别）
-        tool_registry
-
-        all_tools = tool_registry.list_openai_functions(include_builtin=True)
-        # 只过滤 summary 类别的工具
+        # 7. 获取工具（排除 summary 类别，合并内置工具）
+        builtin_tools = get_builtin_tools()
+        registered_tools = tool_registry.list_openai_functions(include_builtin=False)
         EXCLUDED_CATEGORIES = {"summary"}
-        tools = [
+        filtered_registered = [
             t
-            for t in all_tools
+            for t in registered_tools
             if tool_registry.get_tool(t.get("function", {}).get("name", ""))
             and tool_registry.get_tool(t.get("function", {}).get("name", "")).category
             not in EXCLUDED_CATEGORIES
         ]
+        tools = builtin_tools + filtered_registered
         if not tools:
             tools = None
 
@@ -452,7 +360,8 @@ async def chat(request: ChatRequest):
             if not (hasattr(response, "tool_calls") and response.tool_calls):
                 break
 
-            BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
+            # 执行工具调用
+            # BUILTIN_TOOL_NAMES 已在文件顶部导入
 
             # 构建标准的 assistant tool_calls 消息（所有 tool_calls 合并为一条）
             assistant_tool_calls = []
@@ -596,11 +505,7 @@ async def chat_stream(request: ChatRequest):
             memory_context=memory_context,
         )
 
-        # 7. 获取工具（只过滤 summary 类别）
-        tool_registry
-        get_builtin_tools
-
-        # 获取内置工具
+        # 7. 获取工具（排除 summary 类别，合并内置工具）
         builtin_tools = get_builtin_tools()
 
         # 主模型专属工具列表
@@ -706,7 +611,7 @@ async def chat_stream(request: ChatRequest):
                         break
 
                     # 处理工具调用
-                    BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
+                    # BUILTIN_TOOL_NAMES 已在文件顶部导入
 
                     # 构建标准的 assistant tool_calls 消息
                     assistant_tool_calls = []
@@ -919,10 +824,13 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
             if msg.get("role") in ["user", "assistant", "system"]:
                 messages.append({"role": msg["role"], "content": msg.get("content", "")})
 
-        # 7. 获取记忆管理工具（16个assistant类别工具）
-        tool_registry
+        # 当前用户消息（history_context 在持久化之前加载，不含本条，需显式追加）
+        messages.append({"role": "user", "content": request.message})
 
-        tools = tool_registry.list_openai_functions(include_builtin=False, category="assistant")
+        # 7. 获取记忆管理工具（assistant类别工具 + 内置工具）
+        builtin_tools = get_builtin_tools()
+        assistant_tools = tool_registry.list_openai_functions(include_builtin=False, category="assistant")
+        tools = builtin_tools + assistant_tools
 
         logger.info(
             f"记忆管理模型配置了 {len(tools)} 个工具: {[t['function']['name'] for t in tools]}"
@@ -997,12 +905,29 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
                         except Exception as fallback_err:
                             logger.error(f"记忆管理模型非流式回退也失败: {fallback_err}")
 
+                    # 文本工具调用兜底：模型未走标准 function calling，
+                    # 而是以文本形式（如 <execute_tool>tool()</execute_tool>）表达调用意图
+                    if not tool_calls_buffer and full_response:
+                        tool_name_set = {
+                            t["function"]["name"] for t in tools
+                        } if tools else set()
+                        tool_name_set |= {"calculator", "datetime", "random", "json_format"}
+                        text_tool_calls = parse_text_tool_calls(full_response, tool_name_set)
+                        if text_tool_calls:
+                            logger.info(
+                                f"文本工具调用兜底解析(第{round_idx+1}轮): "
+                                f"{[tc.get('function',{}).get('name','') for tc in text_tool_calls]}"
+                            )
+                            tool_calls_buffer = text_tool_calls
+                            # 清理展示文本中的工具标记，仅保留纯文本
+                            full_response = strip_text_tool_calls(full_response)
+
                     # 没有工具调用，退出循环
                     if not tool_calls_buffer:
                         break
 
                     # 处理工具调用
-                    BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
+                    # BUILTIN_TOOL_NAMES 已在文件顶部导入
 
                     # 构建标准的 assistant tool_calls 消息
                     assistant_tool_calls = []
@@ -1068,8 +993,9 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
 
                     # 继续下一轮循环，让 LLM 处理工具结果
 
-                # 流结束，保存完整响应到上下文
+                # 流结束，保存完整响应到上下文（兜底再清理一次工具标记）
                 if full_response:
+                    full_response = strip_text_tool_calls(full_response)
                     context_mgr.add_message(
                         session_id=session_id, role="assistant", content=full_response
                     )

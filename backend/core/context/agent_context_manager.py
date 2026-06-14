@@ -268,7 +268,7 @@ class AgentContextManager:
                 SELECT role, content, metadata, created_at 
                 FROM agent_context_messages 
                 WHERE agent_id = ?
-                ORDER BY created_at DESC
+                ORDER BY id DESC
                 LIMIT ?
             """,
                 (agent_id, limit),
@@ -283,7 +283,7 @@ class AgentContextManager:
                     "metadata": json.loads(row[2]) if row[2] else None,
                     "created_at": row[3],
                 }
-                for row in reversed(rows)  # 按时间正序返回
+                for row in reversed(rows)  # 按插入顺序（id 正序）返回
             ]
         except Exception as e:
             logger.error(f"获取Agent消息历史失败: {e}")

@@ -10,6 +10,9 @@ import random as random_module
 from datetime import datetime
 from typing import Any, Dict, List
 
+# 内置工具名称集合 - 权威定义，其他文件应从此处导入
+BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
+
 
 class BuiltinTools:
     """内置工具集合 - 单例模式，全局可用"""

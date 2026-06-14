@@ -10,7 +10,7 @@ from .manager import get_websocket_manager
 logger = get_contextual_logger(__name__)
 
 # 内置工具名称集合，用于区分内置工具和注册工具
-BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
+from backend.core.tools.builtin import BUILTIN_TOOL_NAMES
 
 
 class ChatWebSocketHandler:
@@ -170,7 +170,6 @@ class ChatWebSocketHandler:
 
         full_response = ""
         full_thinking = ""
-        tool_calls_buffer: List[Dict] = []
 
         # 发送会话ID作为第一个消息
         await self.ws_manager.send_to_client(
@@ -182,51 +181,59 @@ class ChatWebSocketHandler:
                 f"开始流式聊天，消息数: {len(messages)}, 工具数: {len(tools) if tools else 0}"
             )
 
-            # 调用 LLM 流式接口
-            async for chunk in llm.stream_chat(
-                messages=messages,
-                temperature=agent_config.get("temperature", 0.7),
-                max_tokens=agent_config.get("max_tokens") or 4096,
-                tools=tools if tools else None,
-            ):
-                # 检查取消
-                if self._cancel_flags.get(client_id, False):
-                    await self.ws_manager.send_to_client(
-                        client_id, {"type": "cancelled", "timestamp": datetime.now().isoformat()}
-                    )
-                    return
+            max_tool_rounds = 50
+            for round_idx in range(max_tool_rounds):
+                full_response = ""
+                tool_calls_buffer: List[Dict] = []
 
-                if chunk:
-                    if isinstance(chunk, dict):
-                        chunk_type = chunk.get("type")
-                        if chunk_type == "thinking":
-                            thinking_content = chunk.get("content", "")
-                            full_thinking += thinking_content
-                            await self.ws_manager.send_to_client(
-                                client_id, {"type": "thinking", "content": thinking_content}
-                            )
-                        elif chunk_type == "content":
-                            content = chunk.get("content", "")
-                            full_response += content
-                            await self.ws_manager.send_to_client(
-                                client_id, {"type": "content", "content": content}
-                            )
-                        elif chunk_type == "tool_calls":
-                            new_tool_calls = chunk.get("tool_calls", [])
-                            logger.info(f"检测到工具调用: {new_tool_calls}")
-                            tool_calls_buffer.extend(new_tool_calls)
-                            for tool_call in new_tool_calls:
-                                await self.ws_manager.send_to_client(
-                                    client_id, {"type": "tool_call", "tool_call": tool_call}
-                                )
-                    elif isinstance(chunk, str):
-                        full_response += chunk
+                # 调用 LLM 流式接口
+                async for chunk in llm.stream_chat(
+                    messages=messages,
+                    temperature=agent_config.get("temperature", 0.7),
+                    max_tokens=agent_config.get("max_tokens") or 4096,
+                    tools=tools if tools else None,
+                ):
+                    # 检查取消
+                    if self._cancel_flags.get(client_id, False):
                         await self.ws_manager.send_to_client(
-                            client_id, {"type": "content", "content": chunk}
+                            client_id, {"type": "cancelled", "timestamp": datetime.now().isoformat()}
                         )
+                        return
 
-            # 处理工具调用
-            if tool_calls_buffer:
+                    if chunk:
+                        if isinstance(chunk, dict):
+                            chunk_type = chunk.get("type")
+                            if chunk_type == "thinking":
+                                thinking_content = chunk.get("content", "")
+                                full_thinking += thinking_content
+                                await self.ws_manager.send_to_client(
+                                    client_id, {"type": "thinking", "content": thinking_content}
+                                )
+                            elif chunk_type == "content":
+                                content = chunk.get("content", "")
+                                full_response += content
+                                await self.ws_manager.send_to_client(
+                                    client_id, {"type": "content", "content": content}
+                                )
+                            elif chunk_type == "tool_calls":
+                                new_tool_calls = chunk.get("tool_calls", [])
+                                logger.info(f"检测到工具调用(第{round_idx+1}轮): {[tc.get('function',{}).get('name','') for tc in new_tool_calls]}")
+                                tool_calls_buffer.extend(new_tool_calls)
+                                for tool_call in new_tool_calls:
+                                    await self.ws_manager.send_to_client(
+                                        client_id, {"type": "tool_call", "tool_call": tool_call}
+                                    )
+                        elif isinstance(chunk, str):
+                            full_response += chunk
+                            await self.ws_manager.send_to_client(
+                                client_id, {"type": "content", "content": chunk}
+                            )
+
+                # 没有工具调用，退出循环
+                if not tool_calls_buffer:
+                    break
+
+                # 处理工具调用
                 # 构建标准的 assistant tool_calls 消息
                 assistant_tool_calls = []
                 for tool_call in tool_calls_buffer:
@@ -294,48 +301,7 @@ class ChatWebSocketHandler:
                             "content": json.dumps(tool_result, ensure_ascii=False),
                         }
                     )
-
-                # 再次调用 LLM 获取最终响应（流式，带 tools 支持链式调用）
-                full_response = ""
-                async for chunk in llm.stream_chat(
-                    messages=messages,
-                    temperature=agent_config.get("temperature", 0.7),
-                    max_tokens=agent_config.get("max_tokens") or 4096,
-                    tools=tools if tools else None,
-                ):
-                    # 检查取消
-                    if self._cancel_flags.get(client_id, False):
-                        await self.ws_manager.send_to_client(
-                            client_id, {"type": "cancelled", "timestamp": datetime.now().isoformat()}
-                        )
-                        return
-
-                    if chunk:
-                        if isinstance(chunk, dict):
-                            chunk_type = chunk.get("type")
-                            if chunk_type == "content":
-                                content = chunk.get("content", "")
-                                full_response += content
-                                await self.ws_manager.send_to_client(
-                                    client_id, {"type": "content", "content": content}
-                                )
-                            elif chunk_type == "thinking":
-                                thinking_content = chunk.get("content", "")
-                                await self.ws_manager.send_to_client(
-                                    client_id, {"type": "thinking", "content": thinking_content}
-                                )
-                            elif chunk_type == "tool_calls":
-                                new_tool_calls = chunk.get("tool_calls", [])
-                                tool_calls_buffer.extend(new_tool_calls)
-                                for tc in new_tool_calls:
-                                    await self.ws_manager.send_to_client(
-                                        client_id, {"type": "tool_call", "tool_call": tc}
-                                    )
-                        elif isinstance(chunk, str):
-                            full_response += chunk
-                            await self.ws_manager.send_to_client(
-                                client_id, {"type": "content", "content": chunk}
-                            )
+                # 继续下一轮循环，让 LLM 处理工具结果
 
             # 保存完整响应到上下文
             if full_response:

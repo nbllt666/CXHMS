@@ -15,44 +15,8 @@ from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
 
-# 内置工具名称集合 - 这些工具不会显示在工具管理界面
-BUILTIN_TOOL_NAMES = {
-    # 基础工具
-    "calculator",
-    "datetime",
-    "random",
-    "json_format",
-    # 主模型工具
-    "write_long_term_memory",
-    "search_all_memories",
-    "call_assistant",
-    "set_alarm",
-    "get_alarms",
-    "cancel_alarm",
-    "mono",
-    # 摘要模型工具
-    "summarize_content",
-    "save_summary_memory",
-    # 助手工具
-    "update_memory_node",
-    "search_memories",
-    "delete_memory",
-    "merge_memories",
-    "clean_expired",
-    "export_memories",
-    "get_memory_stats",
-    "search_by_time",
-    "search_by_tag",
-    "bulk_delete",
-    "restore_memory",
-    "search_similar_memories",
-    "get_chat_history",
-    "get_similar_memories",
-    "get_memory_logs",
-    "get_available_commands",
-    # 记忆工具
-    "save_memory",
-}
+# 内置工具名称集合 - 从 builtin.py 导入权威定义
+from backend.core.tools.builtin import BUILTIN_TOOL_NAMES
 
 
 @dataclass

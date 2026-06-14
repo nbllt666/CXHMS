@@ -8,7 +8,7 @@ from backend.api.routers.agents import _load_agents
 from backend.api.routers.chat import MEMORY_AGENT_HIDDEN_SYSTEM_PROMPT
 from backend.core.logging_config import get_contextual_logger
 from backend.core.tools import tool_registry
-from backend.core.tools.builtin import call_builtin_tool
+from backend.core.tools.builtin import BUILTIN_TOOL_NAMES, call_builtin_tool, get_builtin_tools
 from backend.core.utils import format_messages_for_summary
 
 logger = get_contextual_logger(__name__)
@@ -989,8 +989,10 @@ class SecondaryModelRouter:
                 {"role": "user", "content": user_message},
             ]
 
-            # 获取记忆管理工具
-            tools = tool_registry.list_openai_functions(include_builtin=False, category="assistant")
+            # 获取记忆管理工具（assistant类别工具 + 内置工具）
+            builtin_tools = get_builtin_tools()
+            assistant_tools = tool_registry.list_openai_functions(include_builtin=False, category="assistant")
+            tools = builtin_tools + assistant_tools
 
             # 第一次调用 LLM（带 tools）
             response = await memory_client.chat(
@@ -1020,7 +1022,7 @@ class SecondaryModelRouter:
                     break
 
                 # 执行工具调用
-                BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
+                # BUILTIN_TOOL_NAMES 已在文件顶部导入
 
                 # 构建标准的 assistant tool_calls 消息
                 assistant_tool_calls = []
