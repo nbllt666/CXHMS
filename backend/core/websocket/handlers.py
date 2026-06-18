@@ -83,9 +83,6 @@ class ChatWebSocketHandler:
                 workspace_id="default", title=f"与 {agent_config['name']} 的对话"
             )
 
-        # 添加用户消息
-        context_mgr.add_message(session_id=session_id, role="user", content=user_message)
-
         # 检索记忆
         memory_context = None
         if agent_config.get("use_memory", True) and memory_mgr:
@@ -99,10 +96,10 @@ class ChatWebSocketHandler:
             )
             if routing_result.memories:
                 memory_context = "\n".join(
-                    [f"- {m['content']}" for m in routing_result.memories[:5]]
+                    [f"- {m['content']}" for m in routing_result.memories[:agent_config.get("memory_context_limit", 5)]]
                 )
 
-        # 构建消息列表
+        # 构建消息列表（在 add_message 之前，避免当前用户消息重复）
         messages = build_messages(
             agent_config=agent_config,
             context_mgr=context_mgr,
@@ -110,6 +107,9 @@ class ChatWebSocketHandler:
             user_message=user_message,
             memory_context=memory_context,
         )
+
+        # 添加用户消息到上下文（在构建消息之后，避免历史中重复）
+        context_mgr.add_message(session_id=session_id, role="user", content=user_message)
 
         # 获取工具（只过滤 summary 类别）
         from backend.core.tools import tool_registry
@@ -190,7 +190,7 @@ class ChatWebSocketHandler:
                 async for chunk in llm.stream_chat(
                     messages=messages,
                     temperature=agent_config.get("temperature", 0.7),
-                    max_tokens=agent_config.get("max_tokens") or 4096,
+                    max_tokens=(agent_config.get("max_tokens") if agent_config.get("max_tokens") is not None else 4096),
                     tools=tools if tools else None,
                 ):
                     # 检查取消

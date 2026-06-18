@@ -207,7 +207,7 @@ def get_llm_client_for_agent(agent_config: dict):
                     host=main_client.host,
                     model=model,
                     temperature=agent_config.get("temperature", 0.7),
-                    max_tokens=agent_config.get("max_tokens") or 4096,
+                    max_tokens=(agent_config.get("max_tokens") if agent_config.get("max_tokens") is not None else 4096),
                 )
     except Exception as e:
         import logging
@@ -241,8 +241,9 @@ def build_messages(
     if memory_context and agent_config.get("use_memory", True):
         messages.append({"role": "system", "content": f"相关记忆:\n{memory_context}"})
 
-    # 3. 历史消息（最近10条）
-    history = context_mgr.get_messages(session_id, limit=10)
+    # 3. 历史消息（最近 N 条，可由 Agent 配置 history_limit 调整，默认 50）
+    history_limit = agent_config.get("history_limit", 50)
+    history = context_mgr.get_messages(session_id, limit=history_limit)
     for msg in history:
         if msg.get("role") in ["user", "assistant"]:
             messages.append({"role": msg["role"], "content": msg.get("content", "")})
@@ -303,10 +304,7 @@ async def chat(request: ChatRequest):
                 metadata={"agent_id": request.agent_id},
             )
 
-        # 4. 添加用户消息到上下文
-        context_mgr.add_message(session_id=session_id, role="user", content=request.message)
-
-        # 5. 检索记忆（如果启用）
+        # 4. 检索记忆（如果启用）
         memory_context = None
         if agent_config.get("use_memory", True) and memory_mgr:
             from backend.core.memory.router import MemoryRouter
@@ -323,10 +321,10 @@ async def chat(request: ChatRequest):
             )
             if routing_result.memories:
                 memory_context = "\n".join(
-                    [f"- {m['content']}" for m in routing_result.memories[:5]]
+                    [f"- {m['content']}" for m in routing_result.memories[:agent_config.get("memory_context_limit", 5)]]
                 )
 
-        # 6. 构建消息列表
+        # 5. 构建消息列表（在 add_message 之前，避免当前用户消息重复）
         messages = build_messages(
             agent_config=agent_config,
             context_mgr=context_mgr,
@@ -335,6 +333,9 @@ async def chat(request: ChatRequest):
             memory_context=memory_context,
             images=request.images,
         )
+
+        # 6. 添加用户消息到上下文（在构建消息之后，避免历史中重复）
+        context_mgr.add_message(session_id=session_id, role="user", content=request.message)
 
         # 7. 获取工具（排除 summary 类别，合并内置工具）
         builtin_tools = get_builtin_tools()
@@ -473,10 +474,7 @@ async def chat_stream(request: ChatRequest):
                 metadata={"agent_id": request.agent_id},
             )
 
-        # 4. 添加用户消息到上下文
-        context_mgr.add_message(session_id=session_id, role="user", content=request.message)
-
-        # 5. 检索记忆（如果启用）
+        # 4. 检索记忆（如果启用）
         memory_context = None
         if agent_config.get("use_memory", True) and memory_mgr:
             from backend.core.memory.router import MemoryRouter
@@ -493,10 +491,10 @@ async def chat_stream(request: ChatRequest):
             )
             if routing_result.memories:
                 memory_context = "\n".join(
-                    [f"- {m['content']}" for m in routing_result.memories[:5]]
+                    [f"- {m['content']}" for m in routing_result.memories[:agent_config.get("memory_context_limit", 5)]]
                 )
 
-        # 6. 构建消息列表
+        # 5. 构建消息列表（在 add_message 之前，避免当前用户消息重复）
         messages = build_messages(
             agent_config=agent_config,
             context_mgr=context_mgr,
@@ -504,6 +502,9 @@ async def chat_stream(request: ChatRequest):
             user_message=request.message,
             memory_context=memory_context,
         )
+
+        # 6. 添加用户消息到上下文（在构建消息之后，避免历史中重复）
+        context_mgr.add_message(session_id=session_id, role="user", content=request.message)
 
         # 7. 获取工具（排除 summary 类别，合并内置工具）
         builtin_tools = get_builtin_tools()
@@ -560,7 +561,7 @@ async def chat_stream(request: ChatRequest):
                     async for chunk in llm.stream_chat(
                         messages=messages,
                         temperature=agent_config.get("temperature", 0.7),
-                        max_tokens=agent_config.get("max_tokens") or 4096,
+                        max_tokens=(agent_config.get("max_tokens") if agent_config.get("max_tokens") is not None else 4096),
                         tools=tools if tools else None,
                     ):
                         if chunk:
@@ -595,7 +596,7 @@ async def chat_stream(request: ChatRequest):
                                 messages=messages,
                                 stream=False,
                                 temperature=agent_config.get("temperature", 0.7),
-                                max_tokens=agent_config.get("max_tokens") or 4096,
+                                max_tokens=(agent_config.get("max_tokens") if agent_config.get("max_tokens") is not None else 4096),
                                 tools=tools if tools else None,
                             )
                             if hasattr(response, "tool_calls") and response.tool_calls:
@@ -800,9 +801,10 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
                 title="记忆管理对话",
             )
 
-        # 5. 加载历史上下文（从数据库）
+        # 5. 加载历史上下文（从数据库，条数可由 history_limit 配置，默认 50）
         agent_id = "memory-agent"
-        history_context = agent_context_mgr.get_message_history(agent_id, limit=20)
+        history_limit = agent_config.get("history_limit", 50)
+        history_context = agent_context_mgr.get_message_history(agent_id, limit=history_limit)
 
         # 6. 添加用户消息到上下文（持久化）
         context_mgr.add_message(session_id=session_id, role="user", content=request.message)
@@ -859,7 +861,7 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
                     async for chunk in llm.stream_chat(
                         messages=messages,
                         temperature=agent_config.get("temperature", 0.3),
-                        max_tokens=agent_config.get("max_tokens") or 4096,
+                        max_tokens=(agent_config.get("max_tokens") if agent_config.get("max_tokens") is not None else 4096),
                         tools=tools if tools else None,
                     ):
                         if chunk:
@@ -894,7 +896,7 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
                                 messages=messages,
                                 stream=False,
                                 temperature=agent_config.get("temperature", 0.3),
-                                max_tokens=agent_config.get("max_tokens") or 4096,
+                                max_tokens=(agent_config.get("max_tokens") if agent_config.get("max_tokens") is not None else 4096),
                                 tools=tools if tools else None,
                             )
                             if hasattr(response, "tool_calls") and response.tool_calls:

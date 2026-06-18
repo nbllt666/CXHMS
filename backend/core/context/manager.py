@@ -302,14 +302,12 @@ class ContextManager:
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        query = "SELECT * FROM messages WHERE session_id = ?"
-        params = [session_id]
-
         if not include_deleted:
-            query += " AND is_deleted = FALSE"
-
-        query += " ORDER BY created_at ASC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
+            query = "SELECT * FROM (SELECT * FROM messages WHERE session_id = ? AND is_deleted = FALSE ORDER BY created_at DESC LIMIT ? OFFSET ?) ORDER BY created_at ASC"
+            params = [session_id, limit, offset]
+        else:
+            query = "SELECT * FROM (SELECT * FROM messages WHERE session_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?) ORDER BY created_at ASC"
+            params = [session_id, limit, offset]
 
         cursor.execute(query, params)
         rows = cursor.fetchall()
