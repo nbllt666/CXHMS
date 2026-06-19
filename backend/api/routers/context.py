@@ -3,6 +3,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from backend.core.exceptions import ContextError
 from backend.core.utils import format_messages_for_summary
 
 router = APIRouter()
@@ -148,6 +149,8 @@ async def add_message(request: MessageCreateRequest):
             metadata=request.metadata,
         )
         return {"status": "success", "message_id": message_id, "message": "消息添加成功"}
+    except ContextError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

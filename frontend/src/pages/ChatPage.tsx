@@ -142,7 +142,7 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
             <div className="space-y-2">
               {toolCalls.map((toolCall, idx) => (
                 <div
-                  key={idx}
+                  key={toolCall.id || `${toolCall.name}_${idx}`}
                   className="p-2 bg-[var(--color-bg-tertiary)] rounded border border-[var(--color-border)]"
                 >
                   <div className="flex items-center gap-2 mb-1">
@@ -186,13 +186,13 @@ export function ChatPage() {
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [autoStartSummary, setAutoStartSummary] = useState(false);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
-  const [alarms, setAlarms] = useState<{ message: string; triggeredAt: string }[]>([]);
+  const [alarms, setAlarms] = useState<{ id: string; message: string; triggeredAt: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const tempAssistantIdRef = useRef<string>('');
   const abortControllerRef = useRef<AbortController | null>(null);
   const alarmTimeoutRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  const { agents, currentAgentId, fetchAgents } = useChatStore();
+  const { agents, currentAgentId, currentSessionId, fetchAgents } = useChatStore();
 
   const handleWebSocketMessage = useCallback(
     (data: {
@@ -342,9 +342,10 @@ export function ChatPage() {
   );
 
   const handleAlarm = useCallback((message: string, triggeredAt: string) => {
-    setAlarms((prev) => [...prev, { message, triggeredAt }]);
+    const alarmId = crypto.randomUUID();
+    setAlarms((prev) => [...prev, { id: alarmId, message, triggeredAt }]);
     const id = setTimeout(() => {
-      setAlarms((prev) => prev.slice(1));
+      setAlarms((prev) => prev.filter((a) => a.id !== alarmId));
     }, 5000);
     alarmTimeoutRef.current.push(id);
   }, []);
@@ -412,6 +413,7 @@ export function ChatPage() {
     return () => {
       abortControllerRef.current?.abort();
       alarmTimeoutRef.current.forEach((id) => clearTimeout(id));
+      alarmTimeoutRef.current = [];
     };
   }, []);
 
@@ -432,17 +434,25 @@ export function ChatPage() {
     const files = e.target.files;
     if (!files) return;
 
-    Array.from(files).forEach((file) => {
-      if (!file.type.startsWith('image/')) return;
-      if (selectedImages.length >= 4) {
-        alert('最多只能上传4张图片');
-        return;
-      }
+    if (selectedImages.length >= 4) {
+      alert('最多只能上传4张图片');
+      e.target.value = '';
+      return;
+    }
 
+    const imageFiles = Array.from(files).filter((file) => file.type.startsWith('image/'));
+    const remaining = 4 - selectedImages.length;
+    const filesToAdd = imageFiles.slice(0, remaining);
+
+    if (imageFiles.length > remaining) {
+      alert('最多只能上传4张图片');
+    }
+
+    filesToAdd.forEach((file) => {
       const reader = new FileReader();
       reader.onload = (event) => {
         const base64 = event.target?.result as string;
-        setSelectedImages((prev) => [...prev, base64]);
+        setSelectedImages((prev) => (prev.length >= 4 ? prev : [...prev, base64]));
       };
       reader.readAsDataURL(file);
     });
@@ -640,7 +650,7 @@ export function ChatPage() {
     if (!confirm('确定要清空当前对话的上下文吗？这将清除所有对话历史。')) return;
 
     try {
-      const sessionId = `agent-${currentAgentId}`;
+      const sessionId = currentSessionId || currentAgentId || 'default';
       await api.clearSessionMessages(sessionId);
       // 清空后重新加载历史（会创建新的空会话）
       await loadAgentHistory(currentAgentId || 'default');
@@ -985,9 +995,9 @@ export function ChatPage() {
       {/* 提醒通知 */}
       {alarms.length > 0 && (
         <div className="fixed top-4 right-4 z-50 space-y-2">
-          {alarms.map((alarm, index) => (
+          {alarms.map((alarm) => (
             <div
-              key={index}
+              key={alarm.id}
               className="bg-[var(--color-accent)] text-white px-4 py-3 rounded-lg shadow-lg animate-slide-in max-w-sm"
             >
               <div className="flex items-center gap-2">
@@ -1022,7 +1032,6 @@ export function ChatPage() {
         }}
         contextText={getContextText()}
         agentId={currentAgentId || 'default'}
-        sessionId={currentAgentId || 'default'}
         autoStart={autoStartSummary}
       />
     </div>

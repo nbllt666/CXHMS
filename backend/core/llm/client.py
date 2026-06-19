@@ -400,8 +400,11 @@ class VLLMClient(LLMClient):
             if response.status_code == 200:
                 result = response.json()
                 choice = result["choices"][0]
+                content = choice["message"].get("content")
+                if not content:
+                    content = choice["message"].get("reasoning_content")
                 return LLMResponse(
-                    content=choice["message"].get("content"),
+                    content=content,
                     finish_reason=choice.get("finish_reason", "stop"),
                     usage=result.get("usage", {}),
                     tool_calls=choice["message"].get("tool_calls"),
@@ -415,8 +418,11 @@ class VLLMClient(LLMClient):
                     if response.status_code == 200:
                         result = response.json()
                         choice = result["choices"][0]
+                        content = choice["message"].get("content")
+                        if not content:
+                            content = choice["message"].get("reasoning_content")
                         return LLMResponse(
-                            content=choice["message"].get("content"),
+                            content=content,
                             finish_reason=choice.get("finish_reason", "stop"),
                             usage=result.get("usage", {}),
                         )
@@ -456,8 +462,11 @@ class VLLMClient(LLMClient):
                     if response.status_code == 200:
                         result = response.json()
                         choice = result["choices"][0]
+                        content = choice["message"].get("content")
+                        if not content:
+                            content = choice["message"].get("reasoning_content")
                         return LLMResponse(
-                            content=choice["message"].get("content"),
+                            content=content,
                             finish_reason=choice.get("finish_reason", "stop"),
                             usage=result.get("usage", {}),
                         )
@@ -549,6 +558,9 @@ class VLLMClient(LLMClient):
                                 try:
                                     chunk = json.loads(data)
                                     delta = chunk["choices"][0].get("delta", {})
+                                    reasoning_content = delta.get("reasoning_content", "")
+                                    if reasoning_content and reasoning_content != "<pad>":
+                                        yield {"type": "thinking", "content": reasoning_content}
                                     content = delta.get("content", "")
                                     if content and content != "<pad>":
                                         yield {"type": "content", "content": content}

@@ -62,7 +62,7 @@ class SessionCleanupTask:
     async def _perform_cleanup(self):
         """执行清理"""
         # 清理过期会话
-        expired_count = self.session_store.cleanup_expired_sessions()
+        expired_count = await asyncio.to_thread(self.session_store.cleanup_expired_sessions)
 
         # 清理长期未访问的会话
         old_count = await self._cleanup_old_sessions()

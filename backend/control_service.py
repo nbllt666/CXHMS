@@ -32,11 +32,11 @@ logger = get_contextual_logger(__name__)
 
 app = FastAPI(title="CXHMS Control Service", version="1.0.0")
 
-# 启用 CORS
+# 启用 CORS（origins=["*"] 时禁止携带凭证，符合 CORS 规范）
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

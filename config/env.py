@@ -6,7 +6,7 @@
 import os
 from dataclasses import fields, is_dataclass
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Type, get_type_hints
+from typing import Any, Dict, List, Optional, get_type_hints
 
 
 class EnvConfig:
@@ -57,24 +57,6 @@ class EnvConfig:
     @classmethod
     def get_env_value(cls, env_key: str) -> Optional[str]:
         return os.environ.get(env_key)
-
-    @classmethod
-    def parse_value(cls, value: str, target_type: Type) -> Any:
-        if target_type == bool:
-            return value.lower() in ("true", "1", "yes", "on")
-        elif target_type == int:
-            return int(value)
-        elif target_type == float:
-            return float(value)
-        elif target_type == list:
-            return [item.strip() for item in value.split(",")]
-        elif hasattr(target_type, "__origin__"):
-            if target_type.__origin__ == list:
-                return [item.strip() for item in value.split(",")]
-            elif target_type.__origin__ == Optional:
-                inner_type = target_type.__args__[0]
-                return cls.parse_value(value, inner_type)
-        return value
 
     @classmethod
     def set_nested_value(cls, config_dict: Dict, path: str, value: Any) -> None:

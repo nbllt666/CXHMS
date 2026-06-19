@@ -3,6 +3,7 @@
 检测相似记忆并记录重复关系
 """
 
+import asyncio
 import hashlib
 import json
 from dataclasses import dataclass, field
@@ -87,8 +88,12 @@ class DeduplicationEngine:
 
         try:
             # 获取记忆内容
-            memory_1 = self.memory_manager.get_memory(memory_id_1)
-            memory_2 = self.memory_manager.get_memory(memory_id_2)
+            if asyncio.iscoroutinefunction(self.memory_manager.get_memory):
+                memory_1 = await self.memory_manager.get_memory(memory_id_1)
+                memory_2 = await self.memory_manager.get_memory(memory_id_2)
+            else:
+                memory_1 = self.memory_manager.get_memory(memory_id_1)
+                memory_2 = self.memory_manager.get_memory(memory_id_2)
 
             if not memory_1 or not memory_2:
                 return 0.0
@@ -148,9 +153,14 @@ class DeduplicationEngine:
 
         try:
             # 获取所有记忆
-            all_memories = self.memory_manager.search_memories(
-                memory_type=None, limit=10000, include_deleted=False
-            )
+            if asyncio.iscoroutinefunction(self.memory_manager.search_memories):
+                all_memories = await self.memory_manager.search_memories(
+                    memory_type=None, limit=10000, include_deleted=False
+                )
+            else:
+                all_memories = self.memory_manager.search_memories(
+                    memory_type=None, limit=10000, include_deleted=False
+                )
 
             for other_memory in all_memories:
                 other_id = other_memory["id"]
@@ -186,9 +196,14 @@ class DeduplicationEngine:
 
         if memory_ids is None:
             # 获取所有记忆
-            all_memories = self.memory_manager.search_memories(
-                memory_type=None, limit=10000, include_deleted=False
-            )
+            if asyncio.iscoroutinefunction(self.memory_manager.search_memories):
+                all_memories = await self.memory_manager.search_memories(
+                    memory_type=None, limit=10000, include_deleted=False
+                )
+            else:
+                all_memories = self.memory_manager.search_memories(
+                    memory_type=None, limit=10000, include_deleted=False
+                )
             memory_ids = [m["id"] for m in all_memories]
 
         # 构建相似性图
@@ -223,13 +238,20 @@ class DeduplicationEngine:
                             similarity_matrix[f"{id_1}:{id_2}"] = sim
 
                 # 选择代表性记忆（创建时间最早的）
-                def get_created_time(memory_id):
-                    memory = self.memory_manager.get_memory(memory_id)
-                    if memory is None:
-                        return ""
-                    return memory.get("created_at", "")
+                if asyncio.iscoroutinefunction(self.memory_manager.get_memory):
+                    created_times = {}
+                    for mid in group_memories:
+                        memory = await self.memory_manager.get_memory(mid)
+                        created_times[mid] = memory.get("created_at", "") if memory else ""
+                    canonical_id = min(group_memories, key=lambda mid: created_times[mid])
+                else:
+                    def get_created_time(memory_id):
+                        memory = self.memory_manager.get_memory(memory_id)
+                        if memory is None:
+                            return ""
+                        return memory.get("created_at", "")
 
-                canonical_id = min(group_memories, key=get_created_time)
+                    canonical_id = min(group_memories, key=get_created_time)
 
                 group = DuplicateGroup(
                     group_id=group_id,

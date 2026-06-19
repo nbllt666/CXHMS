@@ -6,14 +6,15 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
 const getPageTitles = (t: TFunction): Record<string, string> => ({
-  '/': t('nav.chat'),
+  '/': t('nav.dashboard'),
+  '/chat': t('nav.chat'),
   '/agents': t('agent.title'),
   '/memories': t('memory.title'),
   '/archive': t('archive.title'),
   '/acp': t('acp.title'),
   '/tools': t('tools.title'),
   '/settings': t('settings.title'),
-  '/memory-agent': '记忆管理助手',
+  '/memory-agent': t('nav.memoryAgent'),
 });
 
 export function Header() {

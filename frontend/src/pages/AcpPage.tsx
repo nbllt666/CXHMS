@@ -1,4 +1,4 @@
-﻿﻿﻿﻿import { useState } from 'react';
+﻿﻿import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Bot,
@@ -350,7 +350,7 @@ function AcpAgentModal({ title, onClose, onSubmit, isLoading }: AcpAgentModalPro
             <input
               type="number"
               value={formData.port}
-              onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) || 0 })}
+              onChange={(e) => setFormData({ ...formData, port: Math.max(1, Math.min(65535, parseInt(e.target.value) || 1)) })}
               className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
               placeholder="8000"
               min={1}

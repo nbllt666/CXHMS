@@ -4,14 +4,61 @@
 这些工具对所有 Agent 默认可用，不依赖工具注册表
 """
 
+import ast
 import json
 import math
+import operator as op
 import random as random_module
 from datetime import datetime
 from typing import Any, Dict, List
 
 # 内置工具名称集合 - 权威定义，其他文件应从此处导入
 BUILTIN_TOOL_NAMES = {"calculator", "datetime", "random", "json_format"}
+
+# 安全的数学运算 AST 求值，替代 eval
+_SAFE_BIN_OPS = {
+    ast.Add: op.add,
+    ast.Sub: op.sub,
+    ast.Mult: op.mul,
+    ast.Div: op.truediv,
+    ast.Pow: op.pow,
+    ast.Mod: op.mod,
+}
+_SAFE_UNARY_OPS = {ast.USub: op.neg, ast.UAdd: op.pos}
+
+
+def _safe_math_eval(node, safe_dict):
+    """递归求值数学表达式 AST 节点，仅允许数字、基本运算符和白名单函数。"""
+    if isinstance(node, ast.Expression):
+        return _safe_math_eval(node.body, safe_dict)
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.BinOp):
+        if type(node.op) not in _SAFE_BIN_OPS:
+            raise ValueError(f"Unsupported binary operation: {type(node.op).__name__}")
+        return _SAFE_BIN_OPS[type(node.op)](
+            _safe_math_eval(node.left, safe_dict), _safe_math_eval(node.right, safe_dict)
+        )
+    if isinstance(node, ast.UnaryOp):
+        if type(node.op) not in _SAFE_UNARY_OPS:
+            raise ValueError(f"Unsupported unary operation: {type(node.op).__name__}")
+        return _SAFE_UNARY_OPS[type(node.op)](_safe_math_eval(node.operand, safe_dict))
+    if isinstance(node, ast.Call):
+        if not isinstance(node.func, ast.Name):
+            raise ValueError("Only named function calls are allowed")
+        func_name = node.func.id
+        if func_name not in safe_dict or not callable(safe_dict[func_name]):
+            raise ValueError(f"Unsupported function: {func_name}")
+        args = [_safe_math_eval(a, safe_dict) for a in node.args]
+        return safe_dict[func_name](*args)
+    if isinstance(node, ast.Name):
+        if node.id not in safe_dict:
+            raise ValueError(f"Unsupported name: {node.id}")
+        val = safe_dict[node.id]
+        if callable(val):
+            raise ValueError(f"Name {node.id} is a function, not a value")
+        return val
+    raise ValueError(f"Unsupported expression: {type(node).__name__}")
 
 
 class BuiltinTools:
@@ -74,20 +121,8 @@ class BuiltinTools:
                 "nan": math.nan,
             }
 
-            # 编译表达式
-            code = compile(expression, "<string>", "eval")
-
-            # 检查是否包含不安全的名称
-            for name in code.co_names:
-                if name not in safe_dict:
-                    return {
-                        "success": False,
-                        "error": f"不安全的函数或变量: {name}",
-                        "result": None,
-                    }
-
-            # 执行计算
-            result = eval(code, {"__builtins__": {}}, safe_dict)
+            # 使用 AST 安全求值，避免 eval 的安全风险
+            result = _safe_math_eval(ast.parse(expression, mode='eval'), safe_dict)
 
             return {"success": True, "result": result, "expression": expression}
 

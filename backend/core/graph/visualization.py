@@ -158,7 +158,8 @@ class GraphExporter:
 
             label = node_data.get("name", node_id)
             node_type = node_data.get("type", "")
-            properties = node_data.get("properties", {})
+            props_raw = node_data.get("properties", "{}")
+            properties = json.loads(props_raw) if isinstance(props_raw, str) else (props_raw or {})
 
             escaped_label = label.replace('"', '\\"').replace("\n", "\\n")
             props_str = ", ".join(f'{k}="{v}"' for k, v in properties.items()) if properties else ""

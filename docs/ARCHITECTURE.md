@@ -1,6 +1,6 @@
 # CXHMS 架构文档
 
-> **文档版本**: v2.1.0 | **最后更新**: 2026-06-13
+> **文档版本**: v2.2.0 | **最后更新**: 2026-06-19
 
 ## 系统概述
 
@@ -183,7 +183,7 @@ class Memory:
 - GraphML/DOT导出
 - Neo4j迁移
 
-**文件列表** (15个):
+**文件列表** (14个):
 - `config.py`: 图数据库配置
 - `database.py`: 数据库连接管理
 - `edges.py`: 边操作
@@ -210,7 +210,7 @@ class Memory:
 - 连接管理
 - 事件推送
 
-**文件列表** (6个):
+**文件列表** (5个):
 - `discovery.py`: 插件发现
 - `manager.py`: 管理器
 - `models.py`: 数据模型
@@ -332,6 +332,8 @@ class AgentConfig:
 - 配置动态调整
 - 性能指标收集
 
+> **注意**: 控制服务作为独立进程运行，不在主服务 `app.py` 的 lifespan 初始化序列中。它通过独立入口启动，与主服务生命周期解耦。
+
 **API响应格式**:
 - `APIResponse[T]`: 泛型统一响应封装
 - `PaginatedResponse[T]`: 分页数据封装
@@ -356,12 +358,12 @@ class AgentConfig:
 - `graph_store`: SQLite图存储
 - `cxfc_manager`: CXFC管理器（Optional）
 
-**初始化顺序**（20步）:
+**初始化顺序**（18步）:
 1. 模型路由器
 2. 记忆管理器
 3. 上下文管理器
-4. ACP管理器
-5. LLM客户端
+4. ACP管理器（含start()）
+5. LLM客户端（优先从model_router获取，回退到LLMFactory）
 6. 副模型路由器
 7. MCP管理器
 8. 内置工具注册
@@ -370,16 +372,14 @@ class AgentConfig:
 11. 记忆管理模型工具注册
 12. 向量搜索启用
 13. 提醒管理器 + WebSocket离线保存
-14. 批量衰减处理器
-15. 异步记忆管理器
-16. 图数据库（条件启用）
-17. CXFC管理器（条件启用）
-18. 图数据库工具注册（条件注册）
-19. SQLiteGraphStore初始化
-20. 控制服务启动（独立FastAPI，端口8765）
+14. 异步记忆管理器
+15. 图数据库 + SQLiteGraphStore（条件启用）
+16. CXFC管理器（条件启用，含start()）
+17. 图数据库工具注册（条件注册）
+18. ServiceState注入
 
 **关闭顺序**:
-CXFCManager → GraphDatabase → AlarmManager → WebSocketManager → ACPManager → MemoryManager → BackupManager → PluginManager → ModelRouter
+CXFCManager → GraphDatabase → AlarmManager → WebSocketManager(stop_cleanup_task) → ACPManager(stop) → MemoryManager → BackupManager → PluginManager → ModelRouter
 
 ### 记忆写入流程
 
@@ -422,6 +422,27 @@ MCP工具调用:
 ## 配置系统
 
 **配置文件**: `config/default.yaml`
+
+**CXHMSConfig 数据类层级**:
+```
+CXHMSConfig
+  ├── llm: LLMConfig
+  ├── models: ModelsConfig (main/summary/memory/embedding + defaults)
+  ├── vector: VectorConfig
+  ├── acp: ACPConfig (discovery/connection/group)
+  ├── database: DatabaseConfig
+  ├── memory: MemoryConfig (milvus_lite/qdrant/weaviate/chroma)
+  ├── context: ContextConfig
+  ├── rate_limit: RateLimitConfig
+  ├── cors: CORSConfig
+  ├── system: SystemConfig (host/port/debug/log_level/workers)
+  ├── graph: GraphConfigSection
+  └── cxfc: CXFCConfig
+```
+
+> **注意**: `default.yaml` 中的 `llm_params`、`agent`、`security`、`monitoring`、`tools` 等配置节未被 `CXHMSConfig` 加载，属于配置孤儿（仅存在于YAML文件中，不会被代码消费）。`graph` 和 `cxfc` 配置节存在于 `settings.py` 的数据类定义中，但尚未添加到 `default.yaml`。
+
+> **端口不一致注意**: `default.yaml` 中 `server.port` 默认值为 8001，但 `SystemConfig` 数据类默认值为 8000，`.env.example` 也显示 8000。实际运行时以 `SystemConfig` 默认值和环境变量为准。
 
 **配置结构**:
 ```yaml
@@ -752,7 +773,7 @@ cxfc:                      # CXFC配置
 ## 版本兼容性
 
 ### API版本
-- 当前版本: v2.1.0
+- 当前版本: v2.2.0
 - 版本控制: URL路径（预留）
 
 ### 数据迁移
@@ -798,5 +819,5 @@ cxfc:                      # CXFC配置
 
 ---
 
-*文档版本: v2.1.0*
-*最后更新: 2026-06-13*
+*文档版本: v2.2.0*
+*最后更新: 2026-06-19*

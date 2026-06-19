@@ -213,6 +213,8 @@ class LLMTools:
         for tool_call in tool_calls:
             tool_name = tool_call.get("function", {}).get("name", "")
             arguments = tool_call.get("function", {}).get("arguments", {})
+            if isinstance(arguments, str):
+                arguments = json.loads(arguments)
             tool_call_id = tool_call.get("id", "")
 
             result = tool_registry.call_tool(tool_name, arguments)

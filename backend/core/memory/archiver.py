@@ -3,6 +3,7 @@
 实现归档的归档、智能合并、压缩等功能
 """
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -168,7 +169,7 @@ class AdvancedArchiver:
         """归档单个记忆"""
         try:
             # 获取原记忆
-            memory = self.memory_manager.get_memory(memory_id)
+            memory = await asyncio.to_thread(self.memory_manager.get_memory, memory_id)
             if not memory:
                 logger.warning(f"记忆不存在: {memory_id}")
                 return None
@@ -186,66 +187,69 @@ class AdvancedArchiver:
                 len(compressed_content) / len(original_content) if original_content else 1.0
             )
 
+            compression_metadata = {
+                "original_length": len(original_content),
+                "compressed_length": len(compressed_content),
+                "compression_ratio": compression_ratio,
+                "target_level": target_level,
+            }
+
             # 保存归档记录
-            conn = None
-            try:
-                conn = self.memory_manager._get_connection()
-                if not conn:
-                    logger.error("无法获取数据库连接")
-                    return None
+            def _save_archive():
+                conn = None
+                try:
+                    conn = self.memory_manager._get_connection()
+                    if not conn:
+                        logger.error("无法获取数据库连接")
+                        return None
 
-                cursor = conn.cursor()
+                    cursor = conn.cursor()
 
-                compression_metadata = {
-                    "original_length": len(original_content),
-                    "compressed_length": len(compressed_content),
-                    "compression_ratio": compression_ratio,
-                    "target_level": target_level,
-                }
+                    cursor.execute(
+                        """
+                        INSERT INTO archive_records
+                        (original_memory_id, archive_level, compressed_content, original_content, compression_metadata)
+                        VALUES (?, ?, ?, ?, ?)
+                    """,
+                        (
+                            memory_id,
+                            target_level,
+                            compressed_content,
+                            original_content,
+                            json.dumps(compression_metadata),
+                        ),
+                    )
 
-                cursor.execute(
-                    """
-                    INSERT INTO archive_records 
-                    (original_memory_id, archive_level, compressed_content, original_content, compression_metadata)
-                    VALUES (?, ?, ?, ?, ?)
-                """,
-                    (
-                        memory_id,
-                        target_level,
-                        compressed_content,
-                        original_content,
-                        json.dumps(compression_metadata),
-                    ),
-                )
+                    archive_id = cursor.lastrowid
 
-                archive_id = cursor.lastrowid
+                    # 更新记忆状态为已归档
+                    cursor.execute(
+                        """
+                        UPDATE memories
+                        SET is_archived = TRUE, archive_level = ?
+                        WHERE id = ?
+                    """,
+                        (target_level, memory_id),
+                    )
 
-                # 更新记忆状态为已归档
-                cursor.execute(
-                    """
-                    UPDATE memories 
-                    SET is_archived = TRUE, archive_level = ?
-                    WHERE id = ?
-                """,
-                    (target_level, memory_id),
-                )
+                    conn.commit()
 
-                conn.commit()
+                    logger.info(f"记忆已归档: {memory_id} -> 级别 {target_level}")
 
-                logger.info(f"记忆已归档: {memory_id} -> 级别 {target_level}")
+                    return ArchiveRecord(
+                        archive_id=archive_id,
+                        original_memory_id=memory_id,
+                        archive_level=target_level,
+                        compressed_content=compressed_content,
+                        original_content=original_content,
+                        compression_metadata=compression_metadata,
+                    )
+                except Exception:
+                    if conn:
+                        conn.rollback()
+                    raise
 
-                return ArchiveRecord(
-                    archive_id=archive_id,
-                    original_memory_id=memory_id,
-                    archive_level=target_level,
-                    compressed_content=compressed_content,
-                    original_content=original_content,
-                    compression_metadata=compression_metadata,
-                )
-            except Exception as e:
-                if conn:
-                    conn.rollback()
-                raise
+            return await asyncio.to_thread(_save_archive)
 
         except Exception as e:
             logger.error(f"归档记忆失败: {e}")
@@ -302,7 +306,7 @@ class AdvancedArchiver:
             # 获取所有记忆内容
             memories = []
             for mid in memory_ids:
-                memory = self.memory_manager.get_memory(mid)
+                memory = await asyncio.to_thread(self.memory_manager.get_memory, mid)
                 if memory:
                     memories.append(memory)
 
@@ -335,7 +339,8 @@ class AdvancedArchiver:
             }
 
             # 更新主记忆
-            self.memory_manager.update_memory(
+            await asyncio.to_thread(
+                self.memory_manager.update_memory,
                 memory_id=primary_id,
                 new_content=merged_content,
                 new_tags=list(all_tags),
@@ -347,38 +352,41 @@ class AdvancedArchiver:
             )
 
             # 标记其他记忆为已合并
-            conn = self.memory_manager._get_connection()
-            cursor = conn.cursor()
+            def _mark_merged():
+                conn = self.memory_manager._get_connection()
+                cursor = conn.cursor()
 
-            for memory in memories[1:]:
-                # 在Python中处理metadata更新，避免依赖SQLite JSON1扩展
-                new_metadata = {**(memory.get("metadata") or {}), "merged_into": primary_id}
-                cursor.execute(
-                    """
-                    UPDATE memories 
-                    SET is_deleted = TRUE, 
-                        metadata = ?
-                    WHERE id = ?
-                """,
-                    (json.dumps(new_metadata), memory["id"]),
-                )
+                for memory in memories[1:]:
+                    # 在Python中处理metadata更新，避免依赖SQLite JSON1扩展
+                    new_metadata = {**(memory.get("metadata") or {}), "merged_into": primary_id}
+                    cursor.execute(
+                        """
+                        UPDATE memories
+                        SET is_deleted = TRUE,
+                            metadata = ?
+                        WHERE id = ?
+                    """,
+                        (json.dumps(new_metadata), memory["id"]),
+                    )
 
-                # 记录合并关系
-                cursor.execute(
-                    """
-                    INSERT INTO merge_records 
-                    (merged_memory_id, merged_from, merged_content, merge_metadata)
-                    VALUES (?, ?, ?, ?)
-                """,
-                    (
-                        primary_id,
-                        json.dumps(memory_ids),
-                        merged_content,
-                        json.dumps(merge_metadata),
-                    ),
-                )
+                    # 记录合并关系
+                    cursor.execute(
+                        """
+                        INSERT INTO merge_records
+                        (merged_memory_id, merged_from, merged_content, merge_metadata)
+                        VALUES (?, ?, ?, ?)
+                    """,
+                        (
+                            primary_id,
+                            json.dumps(memory_ids),
+                            merged_content,
+                            json.dumps(merge_metadata),
+                        ),
+                    )
 
-            conn.commit()
+                conn.commit()
+
+            await asyncio.to_thread(_mark_merged)
 
             logger.info(f"记忆已合并: {memory_ids} -> {primary_id}")
 
@@ -444,31 +452,30 @@ class AdvancedArchiver:
     async def archive_of_archives(self, archive_level: int = 4):
         """归档的归档 - 对已有归档进行二次压缩"""
         try:
-            conn = self.memory_manager._get_connection()
-            cursor = conn.cursor()
+            def _fetch_archives():
+                conn = self.memory_manager._get_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT * FROM archive_records
+                    WHERE archive_level = ?
+                    ORDER BY archived_at DESC
+                """,
+                    (archive_level - 1,),
+                )
+                return conn, cursor, cursor.fetchall()
 
-            # 获取指定层级的归档记录
-            cursor.execute(
-                """
-                SELECT * FROM archive_records 
-                WHERE archive_level = ?
-                ORDER BY archived_at DESC
-            """,
-                (archive_level - 1,),
-            )
-
-            archives = cursor.fetchall()
+            conn, cursor, archives = await asyncio.to_thread(_fetch_archives)
 
             if not archives:
                 logger.info(f"没有需要二次归档的级别 {archive_level - 1} 记录")
                 return []
 
-            results = []
-
+            # 先压缩所有内容（异步），收集结果
+            prepared = []
             for archive in archives:
                 archive_id = archive[0]
                 original_id = archive[1]
-                current_level = archive[2]
                 current_content = archive[3]
                 original_content = archive[4]
 
@@ -491,33 +498,44 @@ class AdvancedArchiver:
                     ),
                 }
 
-                cursor.execute(
-                    """
-                    INSERT INTO archive_records 
-                    (original_memory_id, archive_level, compressed_content, original_content, compression_metadata)
-                    VALUES (?, ?, ?, ?, ?)
-                """,
-                    (
-                        original_id,
-                        archive_level,
-                        further_compressed,
-                        original_content,
-                        json.dumps(compression_metadata),
-                    ),
+                prepared.append(
+                    (original_id, further_compressed, original_content, compression_metadata)
                 )
 
-                new_archive_id = cursor.lastrowid
+            # 在线程中执行所有写入和提交
+            def _save_records():
+                results = []
+                for original_id, further_compressed, original_content, compression_metadata in prepared:
+                    cursor.execute(
+                        """
+                        INSERT INTO archive_records
+                        (original_memory_id, archive_level, compressed_content, original_content, compression_metadata)
+                        VALUES (?, ?, ?, ?, ?)
+                    """,
+                        (
+                            original_id,
+                            archive_level,
+                            further_compressed,
+                            original_content,
+                            json.dumps(compression_metadata),
+                        ),
+                    )
 
-                results.append(
-                    {
-                        "archive_id": new_archive_id,
-                        "original_memory_id": original_id,
-                        "archive_level": archive_level,
-                        "compression_ratio": compression_metadata["total_compression_ratio"],
-                    }
-                )
+                    new_archive_id = cursor.lastrowid
 
-            conn.commit()
+                    results.append(
+                        {
+                            "archive_id": new_archive_id,
+                            "original_memory_id": original_id,
+                            "archive_level": archive_level,
+                            "compression_ratio": compression_metadata["total_compression_ratio"],
+                        }
+                    )
+
+                conn.commit()
+                return results
+
+            results = await asyncio.to_thread(_save_records)
 
             logger.info(f"完成归档的归档: {len(results)} 条记录升级到级别 {archive_level}")
 

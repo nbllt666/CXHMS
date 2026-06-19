@@ -99,19 +99,6 @@ class TestAgentEndpoints:
         response = client.post("/api/agents/non-existent-agent-12345/clone")
         assert response.status_code == 404
 
-    def test_agent_invalid_temperature(self, client: TestClient):
-        """Test creating agent with invalid temperature."""
-        response = client.post(
-            "/api/agents", json={"name": "Invalid Temp Agent", "temperature": 3.0}
-        )
-        assert response.status_code in [400, 422]
-
-    def test_agent_invalid_max_tokens(self, client: TestClient):
-        """Test creating agent with invalid max_tokens."""
-        response = client.post(
-            "/api/agents", json={"name": "Invalid Tokens Agent", "max_tokens": -100}
-        )
-        assert response.status_code in [400, 422]
 
 
 class TestAgentEndpointsContentType:

@@ -196,12 +196,19 @@ async def import_backup(file: UploadFile = File(...)):
     try:
         manager = get_backup_manager()
 
+        # 文件大小检查，防止 OOM
+        MAX_IMPORT_SIZE = 100 * 1024 * 1024  # 100MB
+        if file.size is not None and file.size > MAX_IMPORT_SIZE:
+            raise HTTPException(status_code=413, detail="文件过大，最大允许 100MB")
+
         # 保存上传的文件
         import os
         import tempfile
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
-            content = await file.read()
+            content = await file.read(MAX_IMPORT_SIZE + 1)
+            if len(content) > MAX_IMPORT_SIZE:
+                raise HTTPException(status_code=413, detail="文件过大，最大允许 100MB")
             tmp.write(content)
             tmp_path = tmp.name
 

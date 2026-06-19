@@ -1,98 +1,79 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-export function cn(...inputs: ClassValue[]) {
+/**
+ * 合并 className，结合 clsx 与 tailwind-merge
+ */
+export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * 将日期格式化为可读形式，例如 "2024-01-15 14:30"
+ */
 export function formatDate(date: string | Date): string {
-  const d = new Date(date);
-  return d.toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const d = typeof date === 'string' ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}`;
 }
 
+/**
+ * 将日期格式化为相对时间，例如 "3分钟前"、"昨天"
+ */
 export function formatRelativeTime(date: string | Date): string {
-  const d = new Date(date);
-  const now = new Date();
-  const diff = now.getTime() - d.getTime();
-
-  const seconds = Math.floor(diff / 1000);
+  const d = typeof date === 'string' ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return '';
+  const diffMs = Date.now() - d.getTime();
+  const seconds = Math.floor(diffMs / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
-  if (days > 7) {
-    return formatDate(d);
-  } else if (days > 0) {
-    return `${days}天前`;
-  } else if (hours > 0) {
-    return `${hours}小时前`;
-  } else if (minutes > 0) {
-    return `${minutes}分钟前`;
-  } else {
-    return '刚刚';
-  }
+  if (seconds < 60) return '刚刚';
+  if (minutes < 60) return `${minutes}分钟前`;
+  if (hours < 24) return `${hours}小时前`;
+  if (days === 1) return '昨天';
+  if (days < 7) return `${days}天前`;
+  return formatDate(d);
 }
 
-export function truncate(str: string, length: number): string {
-  if (str.length <= length) return str;
-  return str.slice(0, length) + '...';
+/**
+ * 截断文本并添加省略号
+ */
+export function truncate(text: string, maxLength: number): string {
+  if (!text) return '';
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}...`;
 }
 
-export const truncateText = truncate;
-
+/**
+ * 根据重要性等级（1-5）返回对应的背景色 class
+ * 返回值形如 "bg-info"，消费方会通过 replace('bg-', '') 映射到 CSS 变量
+ */
 export function getImportanceColor(importance: number): string {
   const colors: Record<number, string> = {
-    5: 'bg-red-500',
-    4: 'bg-orange-500',
-    3: 'bg-yellow-500',
-    2: 'bg-blue-500',
-    1: 'bg-gray-500',
+    1: 'bg-info',
+    2: 'bg-success',
+    3: 'bg-warning',
+    4: 'bg-accent',
+    5: 'bg-error',
   };
-  return colors[importance] || 'bg-gray-500';
+  return colors[importance] ?? 'bg-info';
 }
 
+/**
+ * 根据重要性等级（1-5）返回对应的中文标签
+ */
 export function getImportanceLabel(importance: number): string {
   const labels: Record<number, string> = {
-    5: '极高',
-    4: '高',
-    3: '中',
-    2: '低',
     1: '极低',
+    2: '低',
+    3: '中',
+    4: '高',
+    5: '极高',
   };
-  return labels[importance] || '未知';
-}
-
-export function generateId(): string {
-  return Math.random().toString(36).substring(2, 15);
-}
-
-export function debounce<T extends (...args: unknown[]) => unknown>(
-  fn: T,
-  delay: number
-): (...args: Parameters<T>) => void {
-  let timeoutId: ReturnType<typeof setTimeout>;
-  return (...args: Parameters<T>) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn(...args), delay);
-  };
-}
-
-export function throttle<T extends (...args: unknown[]) => unknown>(
-  fn: T,
-  delay: number
-): (...args: Parameters<T>) => void {
-  let lastCall = 0;
-  return (...args: Parameters<T>) => {
-    const now = Date.now();
-    if (now - lastCall >= delay) {
-      lastCall = now;
-      fn(...args);
-    }
-  };
+  return labels[importance] ?? '未知';
 }

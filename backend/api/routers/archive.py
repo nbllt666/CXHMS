@@ -370,14 +370,19 @@ async def auto_archive_process(
                                 }
                             )
 
-        cutoff_date = (datetime.now() - timedelta(days=min_age_days)).isoformat()
+        cutoff_date = datetime.now() - timedelta(days=min_age_days)
 
         old_memories = memory_mgr.search_memories(
             memory_type=None, limit=1000, include_deleted=False
         )
 
         for memory in old_memories:
-            if memory.get("created_at", "") < cutoff_date:
+            created_at_str = memory.get("created_at", "")
+            try:
+                created_at = datetime.fromisoformat(created_at_str)
+            except (ValueError, TypeError):
+                continue
+            if created_at < cutoff_date:
                 if not memory.get("archived_at"):
                     archive_result = await memory_mgr.archiver.archive_memory(
                         memory_id=memory["id"], target_level=target_level

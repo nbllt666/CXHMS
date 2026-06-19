@@ -582,7 +582,7 @@ def mono(content: str, session_id: str = None, rounds: int = 1) -> Dict[str, Any
         if result:
             from datetime import datetime, timedelta
 
-            expires_at = datetime.now() + timedelta(days=rounds)
+            expires_at = datetime.now() + timedelta(hours=rounds)
             return {
                 "status": "success",
                 "message": "上下文已添加，将在指定轮数内保持",

@@ -394,11 +394,15 @@ class TraversalManager(BaseGraphRepository):
         def modularity(communities: Dict[int, List[str]]) -> float:
             q = 0.0
             for comm_nodes in communities.values():
+                in_edges = 0
+                degree_sum = 0
                 for i in comm_nodes:
+                    degree_sum += len(neighbors[i])
                     for j in comm_nodes:
                         if j in neighbors[i]:
-                            q += 1
-            return q / (2 * m) if m > 0 else 0.0
+                            in_edges += 1
+                q += (in_edges / (2 * m)) - (degree_sum / (2 * m)) ** 2
+            return q
 
         improved = True
         iteration = 0
@@ -437,17 +441,16 @@ class TraversalManager(BaseGraphRepository):
                         best_q = new_q
                         best_label = comm_label
                         improved = True
-                    else:
-                        communities[current_label].append(node_id)
-                        communities[comm_label].remove(node_id)
+
+                    # Always revert to current_label so each candidate is
+                    # evaluated from the same baseline (node in current_label)
+                    communities[current_label].append(node_id)
+                    communities[comm_label].remove(node_id)
 
                 labels[node_id] = best_label
                 if best_label != current_label:
-                    communities[best_label] = communities.get(best_label, [])
-                    if node_id not in communities[best_label]:
-                        communities[best_label].append(node_id)
-                    if node_id in communities[current_label]:
-                        communities[current_label].remove(node_id)
+                    communities[best_label].append(node_id)
+                    communities[current_label].remove(node_id)
                     if not communities[current_label]:
                         del communities[current_label]
 

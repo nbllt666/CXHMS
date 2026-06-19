@@ -10,6 +10,9 @@ CXHMS (CX-O History & Memory Service) 是一个智能记忆管理平台，提供
 - **CXFC 插件协议**: 插件发现、技能注册、心跳管理、事件推送
 - **工具生态**: MCP 协议支持、内置工具（calculator/datetime/random/json_format）、主模型工具（write_long_term_memory/search_all_memories/call_assistant/set_alarm/mono/write_permanent_memory/ACP工具）、摘要工具、记忆管理工具（16个）、图工具
 - **对话系统**: 流式响应、RAG 检索增强、多 Agent 支持、多模态视觉、WebSocket实时通信
+- **双通信模式**: WebSocket + SSE fallback，自动降级保障连接可靠性
+- **连接检测与动态配置**: ConnectionCheck 组件实时检测后端连接状态，支持动态配置切换
+- **视觉/多模态支持**: 图片上传与识别，支持视觉模型多模态对话
 - **提醒系统**: 定时提醒、闹钟管理
 - **备份恢复**: 选择性备份、导入导出
 - **控制服务**: 独立端口8765，管理后端启停
@@ -53,6 +56,8 @@ cd frontend && npm install && npm run dev
 | 前端界面 | http://localhost:3000 |
 | 控制服务 | http://localhost:8765 |
 
+> **注意**: API 默认端口为 8001（见 `config/default.yaml`），前端开发服务器通过代理转发请求至 8001 端口，Swagger/ReDoc 文档通过前端代理访问。
+
 ## 主要 API
 
 | 端点 | 描述 |
@@ -66,6 +71,7 @@ cd frontend && npm install && npm run dev
 | `POST /api/memories/rag` | RAG检索 |
 | `POST /api/memories/3d` | 3D评分搜索 |
 | `POST /api/memories/batch/*` | 批量操作（write/update/delete/tags/archive/restore/tag-by-query/delete-by-query/archive-by-query） |
+| `POST /api/memories/batch/write` | 批量写入记忆 |
 | `GET/POST /api/agents` | Agent 管理 |
 | `GET/POST /api/tools` | 工具管理 |
 | `POST /api/acp/discover` | Agent 发现 |
@@ -120,11 +126,12 @@ CXHMS/
 │   │   ├── session/   # 会话管理
 │   │   ├── tools/     # 工具系统
 │   │   └── websocket/ # WebSocket 管理
-│   │   ├── cache.py   # 缓存
-│   │   ├── exceptions.py # 异常定义
-│   │   ├── logging_config.py # 日志配置
-│   │   ├── model_router.py # 模型路由
-│   │   └── utils.py   # 工具函数
+│   ├── cache.py       # 缓存
+│   ├── exceptions.py  # 异常定义
+│   ├── logging_config.py # 日志配置
+│   ├── model_router.py # 模型路由
+│   ├── utils.py       # 工具函数
+│   ├── control_service.py # 控制服务 (端口8765)
 │   ├── models/        # 数据模型 (acp.py, context.py, memory.py)
 │   └── tests/         # 测试用例 (18个测试文件 + LLM E2E测试框架)
 ├── frontend/          # React 前端
@@ -134,7 +141,9 @@ CXHMS/
 │       ├── store/     # 状态管理 (chatStore + themeStore)
 │       ├── hooks/     # 自定义Hooks (useWebSocket + useHotkey)
 │       ├── i18n/      # 国际化 (zh-CN + en-US)
-│       └── api/       # API 客户端
+│       ├── api/       # API 客户端
+│       ├── styles/    # 样式文件 (animations.css, variables.css)
+│       └── test/      # 测试配置 (setup.ts)
 ├── config/            # 配置文件
 │   ├── default.yaml   # 默认配置
 │   ├── env.py         # 环境变量
@@ -182,13 +191,13 @@ memory:
 
 server:
   host: 0.0.0.0
-  port: 8000
+  port: 8001
 ```
 
 ## 技术栈
 
 **后端**: FastAPI, Pydantic v2, SQLite, Milvus Lite/Chroma/Qdrant/Weaviate, Ollama/vLLM/OpenAI/Anthropic/DeepSeek, httpx, psutil
-**前端**: React 18, TypeScript 5, Vite 6, Tailwind CSS 3, Zustand 5, React Query 5, i18next, Framer Motion, Recharts, Lucide React, Axios, React Markdown, date-fns
+**前端**: React 18.3.1, TypeScript 5.7.2, Vite 6.0.6, Tailwind CSS 3.4.17, Zustand 5.0.2, React Query 5.62.11, i18next 25.8.4, Framer Motion 11.15.0, Recharts 2.15.0, Lucide React 0.469.0, Axios 1.7.9, React Markdown 9.0.1, date-fns 4.1.0
 
 ## 开发
 
@@ -231,6 +240,12 @@ npm run typecheck
 
 # 代码格式化
 npm run format
+
+# 运行测试
+npm run test
+
+# 测试覆盖率
+npm run test:coverage
 ```
 
 ## 文档

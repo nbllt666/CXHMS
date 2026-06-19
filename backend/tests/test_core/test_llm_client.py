@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import httpx
 import pytest
 
-from backend.core.llm.client import LLMResponse, OllamaClient
+from backend.core.llm.client import LLMResponse, OllamaClient, VLLMClient
 
 
 class TestOllamaClient:
@@ -205,3 +205,122 @@ class TestOllamaClient:
 
             assert response.error is not None
             assert "无法连接" in response.error or "connection" in response.error.lower()
+
+
+class TestVLLMClient:
+    """Test VLLM client functionality."""
+
+    @pytest.fixture
+    def client(self):
+        """Create a VLLM client for testing."""
+        return VLLMClient(model="test-model", host="http://localhost:8100")
+
+    @pytest.mark.asyncio
+    async def test_chat_with_reasoning_content_fallback(self, client):
+        """Test chat falls back to reasoning_content when content is empty."""
+        with patch("requests.post") as mock_post:
+            mock_post.return_value = Mock(
+                status_code=200,
+                json=Mock(
+                    return_value={
+                        "choices": [
+                            {
+                                "message": {"content": None, "reasoning_content": "思考过程内容"},
+                                "finish_reason": "stop",
+                            }
+                        ],
+                        "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+                    }
+                ),
+            )
+
+            response = await client.chat([{"role": "user", "content": "Hello"}])
+
+            assert isinstance(response, LLMResponse)
+            assert response.content == "思考过程内容"
+            assert response.finish_reason == "stop"
+
+    @pytest.mark.asyncio
+    async def test_chat_with_content_takes_priority(self, client):
+        """Test chat uses content when both content and reasoning_content exist."""
+        with patch("requests.post") as mock_post:
+            mock_post.return_value = Mock(
+                status_code=200,
+                json=Mock(
+                    return_value={
+                        "choices": [
+                            {
+                                "message": {"content": "正式回复", "reasoning_content": "思考过程"},
+                                "finish_reason": "stop",
+                            }
+                        ],
+                        "usage": {},
+                    }
+                ),
+            )
+
+            response = await client.chat([{"role": "user", "content": "Hello"}])
+
+            assert response.content == "正式回复"
+
+    @pytest.mark.asyncio
+    async def test_stream_chat_with_reasoning_content(self, client):
+        """Test stream_chat yields thinking events for reasoning_content."""
+        with patch("httpx.AsyncClient.stream") as mock_stream:
+            mock_response = AsyncMock()
+            mock_response.status_code = 200
+
+            async def async_lines():
+                # reasoning_content chunk
+                yield 'data: {"choices":[{"delta":{"reasoning_content":"让我想想"}}]}'
+                # content chunk
+                yield 'data: {"choices":[{"delta":{"content":"答案是42"}}]}'
+                yield "data: [DONE]"
+
+            mock_response.aiter_lines = async_lines
+            mock_stream.return_value.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_stream.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            chunks = []
+            async for chunk in client.stream_chat([{"role": "user", "content": "Hello"}]):
+                if chunk:
+                    chunks.append(chunk)
+
+            thinking_chunks = [c for c in chunks if c.get("type") == "thinking"]
+            content_chunks = [c for c in chunks if c.get("type") == "content"]
+
+            assert len(thinking_chunks) == 1
+            assert thinking_chunks[0]["content"] == "让我想想"
+            assert len(content_chunks) == 1
+            assert content_chunks[0]["content"] == "答案是42"
+
+    @pytest.mark.asyncio
+    async def test_stream_chat_filters_pad_reasoning(self, client):
+        """Test stream_chat filters out <pad> from reasoning_content."""
+        with patch("httpx.AsyncClient.stream") as mock_stream:
+            mock_response = AsyncMock()
+            mock_response.status_code = 200
+
+            async def async_lines():
+                yield 'data: {"choices":[{"delta":{"reasoning_content":"<pad>"}}]}'
+                yield 'data: {"choices":[{"delta":{"reasoning_content":"真正的思考"}}]}'
+                yield 'data: {"choices":[{"delta":{"content":"结果"}}]}'
+                yield "data: [DONE]"
+
+            mock_response.aiter_lines = async_lines
+            mock_stream.return_value.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_stream.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            chunks = []
+            async for chunk in client.stream_chat([{"role": "user", "content": "Hello"}]):
+                if chunk:
+                    chunks.append(chunk)
+
+            thinking_chunks = [c for c in chunks if c.get("type") == "thinking"]
+            # <pad> should be filtered out
+            assert len(thinking_chunks) == 1
+            assert thinking_chunks[0]["content"] == "真正的思考"
+
+    def test_model_name(self, client):
+        """Test VLLM model name property."""
+        assert client.model_name == "vllm/test-model"

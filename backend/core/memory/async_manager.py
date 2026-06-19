@@ -95,6 +95,21 @@ class AsyncMemoryManager:
             await self._pool.commit()
             logger.info("数据库表结构初始化完成")
 
+        await self._pool.execute("""
+            CREATE TABLE IF NOT EXISTS permanent_memories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content TEXT NOT NULL,
+                importance_score REAL NOT NULL DEFAULT 1.0,
+                emotion_score REAL NOT NULL DEFAULT 0.0,
+                tags TEXT,
+                metadata TEXT,
+                created_at TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'user',
+                verified INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        await self._pool.commit()
+
     async def _get_connection(self) -> aiosqlite.Connection:
         async with self._pool_lock:
             if not self._initialized:

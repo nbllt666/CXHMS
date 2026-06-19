@@ -262,5 +262,4 @@ class SemanticSearch:
     def close(self) -> None:
         if self._client:
             self._client = None
-        self._vectorizer.close()
         self._initialized = False

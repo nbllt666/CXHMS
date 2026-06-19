@@ -98,7 +98,7 @@ export const useChatStore = create<ChatState>()(
         set({ isLoadingSessions: true, sessionsError: null });
         try {
           const data = await api.getSessions();
-          const sessionsList = Array.isArray(data) ? data : data.sessions || [];
+          const sessionsList = Array.isArray(data) ? data : data?.sessions ?? [];
           set({ sessions: sessionsList });
         } catch (error) {
           console.error('Failed to fetch sessions:', error);
@@ -110,7 +110,7 @@ export const useChatStore = create<ChatState>()(
 
       createSession: async (agentId?: string) => {
         try {
-          const data = await api.createSession();
+          const data = await api.createSession(undefined, agentId);
           if (data.session_id) {
             if (agentId) {
               set({ currentAgentId: agentId });

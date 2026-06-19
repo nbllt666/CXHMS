@@ -120,7 +120,8 @@ class NodeManager:
             query = "SELECT * FROM nodes WHERE agent_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?"
             query_params = (agent_id, limit, offset)
 
-        total = self.db.execute_one(count_query, count_params)["cnt"]
+        total = self.db.execute_one(count_query, count_params)
+        total = total["cnt"] if total else 0
         rows = self.db.execute(query, query_params)
 
         nodes = [GraphNode.from_dict(dict(row)) for row in rows]
@@ -224,4 +225,5 @@ class NodeManager:
         else:
             query = "SELECT COUNT(*) as cnt FROM nodes WHERE agent_id = ?"
             result = self.db.execute_one(query, (agent_id,))
+        return result["cnt"] if result else 0
         return result["cnt"] if result else 0

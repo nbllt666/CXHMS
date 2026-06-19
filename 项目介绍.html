@@ -1,0 +1,1691 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CXHMS - 晨曦人格化记忆系统</title>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-light: #818cf8;
+            --primary-dark: #4f46e5;
+            --accent: #f59e0b;
+            --accent-light: #fbbf24;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --bg-card-hover: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border: #334155;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+            --danger: #ef4444;
+            --gradient-1: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a78bfa 100%);
+            --gradient-2: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            --gradient-3: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+            --shadow-lg: 0 10px 30px -5px rgba(0, 0, 0, 0.4);
+            --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.15);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+
+        /* ===== Navigation ===== */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            transition: all 0.3s ease;
+        }
+
+        nav .nav-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 64px;
+        }
+
+        nav .logo {
+            font-size: 1.25rem;
+            font-weight: 700;
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        nav .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        nav .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        nav .nav-links a:hover { color: var(--primary-light); }
+
+        /* ===== Hero ===== */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 6rem 2rem 4rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(ellipse at 30% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 60%),
+                        radial-gradient(ellipse at 70% 50%, rgba(139, 92, 246, 0.06) 0%, transparent 60%);
+            animation: heroGlow 15s ease-in-out infinite alternate;
+        }
+
+        @keyframes heroGlow {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(-2%, 2%) scale(1.05); }
+        }
+
+        .hero-content { position: relative; z-index: 1; max-width: 900px; }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1.25rem;
+            border-radius: 100px;
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            font-size: 0.8rem;
+            color: var(--primary-light);
+            margin-bottom: 2rem;
+            letter-spacing: 0.5px;
+        }
+
+        .hero-badge .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .hero h1 {
+            font-size: clamp(2.5rem, 6vw, 4.5rem);
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 1rem;
+            letter-spacing: -1.5px;
+        }
+
+        .hero h1 .highlight {
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero .subtitle {
+            font-size: clamp(1rem, 2.5vw, 1.35rem);
+            color: var(--text-secondary);
+            margin-bottom: 2.5rem;
+            max-width: 700px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .hero-stats {
+            display: flex;
+            justify-content: center;
+            gap: 3rem;
+            margin-top: 3rem;
+        }
+
+        .hero-stats .stat {
+            text-align: center;
+        }
+
+        .hero-stats .stat-value {
+            font-size: 2rem;
+            font-weight: 800;
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero-stats .stat-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
+        /* ===== Sections ===== */
+        section {
+            padding: 5rem 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 4rem;
+        }
+
+        .section-header .tag {
+            display: inline-block;
+            padding: 0.3rem 1rem;
+            border-radius: 100px;
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            font-size: 0.75rem;
+            color: var(--primary-light);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 1rem;
+        }
+
+        .section-header h2 {
+            font-size: 2.25rem;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin-bottom: 0.75rem;
+        }
+
+        .section-header p {
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* ===== Feature Cards ===== */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2rem;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--gradient-1);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .feature-card:hover {
+            border-color: rgba(99, 102, 241, 0.4);
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-glow);
+        }
+
+        .feature-card:hover::before { opacity: 1; }
+
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .feature-card h3 {
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .feature-card p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
+        .feature-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .feature-tags span {
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 500;
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--primary-light);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+        }
+
+        /* ===== Architecture ===== */
+        .arch-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2.5rem;
+            overflow-x: auto;
+        }
+
+        .arch-layer {
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            position: relative;
+        }
+
+        .arch-layer:last-child { margin-bottom: 0; }
+
+        .arch-layer-title {
+            position: absolute;
+            top: -0.7rem;
+            left: 1.5rem;
+            background: var(--bg-card);
+            padding: 0 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--primary-light);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .arch-modules {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            justify-content: center;
+        }
+
+        .arch-module {
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            border: 1px solid;
+            text-align: center;
+            min-width: 100px;
+        }
+
+        .arch-module.api { background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.3); color: #60a5fa; }
+        .arch-module.core { background: rgba(99, 102, 241, 0.1); border-color: rgba(99, 102, 241, 0.3); color: #818cf8; }
+        .arch-module.storage { background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.3); color: #34d399; }
+        .arch-module.protocol { background: rgba(245, 158, 11, 0.1); border-color: rgba(245, 158, 11, 0.3); color: #fbbf24; }
+        .arch-module.frontend { background: rgba(236, 72, 153, 0.1); border-color: rgba(236, 72, 153, 0.3); color: #f472b6; }
+
+        .arch-arrow {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 1.5rem;
+            padding: 0.25rem 0;
+        }
+
+        /* ===== Tech Stack ===== */
+        .tech-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .tech-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2rem;
+        }
+
+        .tech-card h3 {
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .tech-card h3 .icon { font-size: 1.25rem; }
+
+        .tech-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+
+        .tech-list li {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .tech-list li::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .tech-list.backend li::before { background: #818cf8; }
+        .tech-list.frontend li::before { background: #f472b6; }
+        .tech-list.storage li::before { background: #34d399; }
+        .tech-list.llm li::before { background: #fbbf24; }
+
+        /* ===== API Table ===== */
+        .api-table-wrapper {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .api-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .api-table th {
+            background: rgba(99, 102, 241, 0.1);
+            padding: 1rem 1.25rem;
+            text-align: left;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--primary-light);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .api-table td {
+            padding: 0.85rem 1.25rem;
+            font-size: 0.85rem;
+            border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+        }
+
+        .api-table tr:last-child td { border-bottom: none; }
+
+        .api-table tr:hover td { background: rgba(99, 102, 241, 0.03); }
+
+        .api-method {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+        }
+
+        .api-method.get { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+        .api-method.post { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+        .api-method.put { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+        .api-method.delete { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+        .api-method.ws { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+
+        .api-path {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        /* ===== Data Flow ===== */
+        .flow-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+        }
+
+        .flow-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 1.5rem;
+            position: relative;
+        }
+
+        .flow-step-indicator {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .flow-step-num {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--gradient-3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: white;
+            flex-shrink: 0;
+        }
+
+        .flow-step-line {
+            width: 2px;
+            height: 40px;
+            background: var(--border);
+        }
+
+        .flow-step-content {
+            padding-bottom: 2rem;
+        }
+
+        .flow-step-content h4 {
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: 0.35rem;
+        }
+
+        .flow-step-content p {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        /* ===== Project Structure ===== */
+        .structure-tree {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2rem;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.8rem;
+            line-height: 1.8;
+            overflow-x: auto;
+        }
+
+        .structure-tree .dir { color: var(--primary-light); font-weight: 600; }
+        .structure-tree .file { color: var(--text-secondary); }
+        .structure-tree .comment { color: var(--text-muted); font-style: italic; }
+        .structure-tree .highlight-dir { color: #fbbf24; font-weight: 600; }
+
+        /* ===== Quick Start ===== */
+        .quickstart-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .quickstart-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2rem;
+        }
+
+        .quickstart-card h3 {
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .quickstart-card .step-num {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: var(--gradient-3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: white;
+        }
+
+        .code-block {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.8rem;
+            color: #a5f3fc;
+            overflow-x: auto;
+            margin-top: 0.75rem;
+        }
+
+        .code-block .comment { color: var(--text-muted); }
+
+        /* ===== Services ===== */
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1rem;
+        }
+
+        .service-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .service-card:hover {
+            border-color: rgba(99, 102, 241, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .service-card .port {
+            font-size: 1.75rem;
+            font-weight: 800;
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .service-card .name {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-top: 0.5rem;
+        }
+
+        .service-card .desc {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
+        /* ===== Memory Model ===== */
+        .memory-model {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .memory-type {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .memory-type .type-icon { font-size: 2rem; margin-bottom: 0.75rem; }
+
+        .memory-type h4 { font-size: 0.95rem; font-weight: 700; margin-bottom: 0.35rem; }
+
+        .memory-type p { font-size: 0.8rem; color: var(--text-secondary); }
+
+        /* ===== Vector Backends ===== */
+        .vector-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+        }
+
+        .vector-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .vector-card:hover { border-color: rgba(16, 185, 129, 0.4); }
+
+        .vector-card .name {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #34d399;
+        }
+
+        .vector-card .desc {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.35rem;
+        }
+
+        .vector-card .default-badge {
+            display: inline-block;
+            margin-top: 0.5rem;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+        }
+
+        /* ===== Footer ===== */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        footer p {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        footer .license {
+            margin-top: 0.5rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* ===== Responsive ===== */
+        @media (max-width: 768px) {
+            nav .nav-links { display: none; }
+            .hero-stats { flex-direction: column; gap: 1.5rem; }
+            .features-grid { grid-template-columns: 1fr; }
+            .tech-grid { grid-template-columns: 1fr; }
+            .quickstart-grid { grid-template-columns: 1fr; }
+            .api-table { font-size: 0.75rem; }
+            .api-table th, .api-table td { padding: 0.6rem 0.75rem; }
+        }
+
+        /* ===== Scrollbar ===== */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-dark); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+        /* ===== Animations ===== */
+        .fade-in {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+
+        .fade-in.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* ===== Tool Categories ===== */
+        .tool-categories {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .tool-category {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.75rem;
+        }
+
+        .tool-category h4 {
+            font-size: 0.95rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .tool-items {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+        }
+
+        .tool-items span {
+            padding: 0.25rem 0.65rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            background: rgba(99, 102, 241, 0.08);
+            color: var(--text-secondary);
+            border: 1px solid rgba(99, 102, 241, 0.15);
+        }
+
+        /* ===== LLM Providers ===== */
+        .llm-providers {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            justify-content: center;
+        }
+
+        .llm-provider {
+            padding: 0.6rem 1.25rem;
+            border-radius: 10px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            transition: all 0.3s;
+        }
+
+        .llm-provider:hover {
+            border-color: rgba(245, 158, 11, 0.4);
+            transform: translateY(-2px);
+        }
+
+        /* ===== Config Preview ===== */
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .config-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.75rem;
+        }
+
+        .config-card h4 {
+            font-size: 0.95rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: var(--primary-light);
+        }
+
+        .config-card .code-block {
+            font-size: 0.75rem;
+        }
+
+        /* ===== Separator ===== */
+        .section-divider {
+            width: 60px;
+            height: 3px;
+            background: var(--gradient-1);
+            border-radius: 3px;
+            margin: 0 auto 0;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Navigation -->
+<nav>
+    <div class="nav-inner">
+        <div class="logo">CXHMS</div>
+        <ul class="nav-links">
+            <li><a href="#features">核心特性</a></li>
+            <li><a href="#architecture">系统架构</a></li>
+            <li><a href="#tech-stack">技术栈</a></li>
+            <li><a href="#memory">记忆系统</a></li>
+            <li><a href="#tools">工具生态</a></li>
+            <li><a href="#api">API</a></li>
+            <li><a href="#quickstart">快速开始</a></li>
+        </ul>
+    </div>
+</nav>
+
+<!-- Hero Section -->
+<section class="hero">
+    <div class="hero-content">
+        <div class="hero-badge">
+            <span class="dot"></span>
+            CX-O History & Memory Service v1.0.0
+        </div>
+        <h1>
+            <span class="highlight">晨曦</span>人格化<br>记忆系统
+        </h1>
+        <p class="subtitle">
+            一个智能AI代理中间层平台，提供长期记忆存储、语义搜索、自动归档、多模型对话、ACP协议通信、图数据库、CXFC插件协议和工具调用功能
+        </p>
+        <div class="hero-stats">
+            <div class="stat">
+                <div class="stat-value">17</div>
+                <div class="stat-label">API 路由模块</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">12</div>
+                <div class="stat-label">核心子系统</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">5</div>
+                <div class="stat-label">向量存储后端</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">6</div>
+                <div class="stat-label">LLM 提供商</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Features Section -->
+<section id="features">
+    <div class="section-header fade-in">
+        <span class="tag">Core Features</span>
+        <h2>核心特性</h2>
+        <p>全方位AI代理中间层能力，从记忆管理到多协议互联</p>
+    </div>
+    <div class="features-grid">
+        <div class="feature-card fade-in">
+            <div class="feature-icon" style="background: rgba(99, 102, 241, 0.15);">&#x1F9E0;</div>
+            <h3>智能记忆系统</h3>
+            <p>多向量存储后端、双阶段指数衰减+艾宾浩斯遗忘曲线、三维评分、混合搜索、情感分析、去重检测、副模型路由</p>
+            <div class="feature-tags">
+                <span>双阶段衰减</span>
+                <span>三维评分</span>
+                <span>混合搜索</span>
+                <span>情感分析</span>
+                <span>去重检测</span>
+            </div>
+        </div>
+        <div class="feature-card fade-in">
+            <div class="feature-icon" style="background: rgba(16, 185, 129, 0.15);">&#x1F578;</div>
+            <h3>图数据库</h3>
+            <p>知识图谱管理、语义搜索、路径分析、社区检测、PageRank算法、GraphML/DOT导出、Neo4j迁移支持</p>
+            <div class="feature-tags">
+                <span>知识图谱</span>
+                <span>语义搜索</span>
+                <span>社区检测</span>
+                <span>PageRank</span>
+                <span>可视化</span>
+            </div>
+        </div>
+        <div class="feature-card fade-in">
+            <div class="feature-icon" style="background: rgba(245, 158, 11, 0.15);">&#x1F4E1;</div>
+            <h3>ACP 协议通信</h3>
+            <p>局域网自动发现（UDP广播）、点对点通信、群组协同、Agent互联，实现多Agent协作网络</p>
+            <div class="feature-tags">
+                <span>UDP发现</span>
+                <span>点对点</span>
+                <span>群组协同</span>
+                <span>Agent互联</span>
+            </div>
+        </div>
+        <div class="feature-card fade-in">
+            <div class="feature-icon" style="background: rgba(236, 72, 153, 0.15);">&#x1F527;</div>
+            <h3>工具生态</h3>
+            <p>MCP协议支持、内置工具、主模型工具、摘要工具、记忆管理工具（16个）、图工具，完整的工具调用链</p>
+            <div class="feature-tags">
+                <span>MCP协议</span>
+                <span>内置工具</span>
+                <span>16个记忆工具</span>
+                <span>图工具</span>
+            </div>
+        </div>
+        <div class="feature-card fade-in">
+            <div class="feature-icon" style="background: rgba(59, 130, 246, 0.15);">&#x1F4AC;</div>
+            <h3>对话系统</h3>
+            <p>流式响应、RAG检索增强、多Agent支持、多模态视觉、WebSocket实时通信、上下文摘要</p>
+            <div class="feature-tags">
+                <span>流式响应</span>
+                <span>RAG增强</span>
+                <span>多模态</span>
+                <span>WebSocket</span>
+            </div>
+        </div>
+        <div class="feature-card fade-in">
+            <div class="feature-icon" style="background: rgba(139, 92, 246, 0.15);">&#x1F504;</div>
+            <h3>CXFC 插件协议</h3>
+            <p>插件发现、技能注册、心跳管理、事件推送，可扩展的插件生态体系</p>
+            <div class="feature-tags">
+                <span>插件发现</span>
+                <span>技能注册</span>
+                <span>心跳管理</span>
+                <span>事件推送</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Architecture Section -->
+<section id="architecture">
+    <div class="section-header fade-in">
+        <span class="tag">Architecture</span>
+        <h2>系统架构</h2>
+        <p>分层设计，从API层到存储层，模块化高内聚</p>
+    </div>
+    <div class="arch-container fade-in">
+        <!-- API Layer -->
+        <div class="arch-layer">
+            <span class="arch-layer-title">API Layer / 前端界面</span>
+            <div class="arch-modules">
+                <div class="arch-module api">Chat API</div>
+                <div class="arch-module api">Memory API</div>
+                <div class="arch-module api">Context API</div>
+                <div class="arch-module api">Tools API</div>
+                <div class="arch-module api">ACP API</div>
+                <div class="arch-module api">Graph API</div>
+                <div class="arch-module api">CXFC API</div>
+                <div class="arch-module api">WebSocket</div>
+                <div class="arch-module frontend">React UI</div>
+            </div>
+        </div>
+
+        <div class="arch-arrow">&#x2B07;</div>
+
+        <!-- Core Layer -->
+        <div class="arch-layer">
+            <span class="arch-layer-title">Core Services Layer / 核心服务</span>
+            <div class="arch-modules">
+                <div class="arch-module core">MemoryManager</div>
+                <div class="arch-module core">ContextManager</div>
+                <div class="arch-module core">ToolRegistry</div>
+                <div class="arch-module core">ACPManager</div>
+                <div class="arch-module core">ModelRouter</div>
+                <div class="arch-module core">LLMClient</div>
+                <div class="arch-module core">GraphDatabase</div>
+                <div class="arch-module core">CXFCManager</div>
+                <div class="arch-module core">AlarmManager</div>
+                <div class="arch-module core">BackupManager</div>
+                <div class="arch-module core">PluginManager</div>
+                <div class="arch-module core">SessionManager</div>
+            </div>
+        </div>
+
+        <div class="arch-arrow">&#x2B07;</div>
+
+        <!-- Protocol Layer -->
+        <div class="arch-layer">
+            <span class="arch-layer-title">Protocol Layer / 协议层</span>
+            <div class="arch-modules">
+                <div class="arch-module protocol">ACP 协议</div>
+                <div class="arch-module protocol">MCP 协议</div>
+                <div class="arch-module protocol">CXFC 协议</div>
+                <div class="arch-module protocol">OpenAI Functions</div>
+            </div>
+        </div>
+
+        <div class="arch-arrow">&#x2B07;</div>
+
+        <!-- Storage Layer -->
+        <div class="arch-layer">
+            <span class="arch-layer-title">Storage Layer / 存储层</span>
+            <div class="arch-modules">
+                <div class="arch-module storage">SQLite</div>
+                <div class="arch-module storage">Weaviate</div>
+                <div class="arch-module storage">Chroma</div>
+                <div class="arch-module storage">Milvus Lite</div>
+                <div class="arch-module storage">Qdrant</div>
+                <div class="arch-module storage">SQLite Graph</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Tech Stack Section -->
+<section id="tech-stack">
+    <div class="section-header fade-in">
+        <span class="tag">Tech Stack</span>
+        <h2>技术栈</h2>
+        <p>精选现代化技术，兼顾性能与开发体验</p>
+    </div>
+    <div class="tech-grid">
+        <div class="tech-card fade-in">
+            <h3><span class="icon">&#x1F40D;</span> 后端</h3>
+            <ul class="tech-list backend">
+                <li>FastAPI - 高性能异步Web框架</li>
+                <li>Pydantic v2 - 数据验证与序列化</li>
+                <li>Uvicorn - ASGI服务器</li>
+                <li>httpx - 异步HTTP客户端</li>
+                <li>psutil - 系统监控</li>
+                <li>aiofiles - 异步文件操作</li>
+            </ul>
+        </div>
+        <div class="tech-card fade-in">
+            <h3><span class="icon">&#x2699;&#xFE0F;</span> 前端</h3>
+            <ul class="tech-list frontend">
+                <li>React 18 + TypeScript 5</li>
+                <li>Vite 6 - 构建工具</li>
+                <li>Tailwind CSS 3 - 样式框架</li>
+                <li>Zustand 5 - 状态管理</li>
+                <li>React Query 5 - 数据请求</li>
+                <li>Framer Motion - 动画库</li>
+                <li>Recharts - 图表可视化</li>
+                <li>i18next - 国际化</li>
+                <li>Lucide React - 图标库</li>
+            </ul>
+        </div>
+        <div class="tech-card fade-in">
+            <h3><span class="icon">&#x1F4BE;</span> 存储</h3>
+            <ul class="tech-list storage">
+                <li>SQLite - 结构化数据存储</li>
+                <li>Weaviate - 向量搜索引擎</li>
+                <li>Chroma - 轻量向量存储</li>
+                <li>Milvus Lite - 嵌入式向量库</li>
+                <li>Qdrant - 高性能向量搜索</li>
+            </ul>
+        </div>
+        <div class="tech-card fade-in">
+            <h3><span class="icon">&#x1F916;</span> LLM 提供商</h3>
+            <ul class="tech-list llm">
+                <li>Ollama - 本地模型服务</li>
+                <li>vLLM - 高性能推理引擎</li>
+                <li>OpenAI - GPT系列</li>
+                <li>Anthropic - Claude系列</li>
+                <li>DeepSeek - DeepSeek系列</li>
+                <li>Local - 本地自定义接口</li>
+            </ul>
+        </div>
+    </div>
+</section>
+
+<!-- Memory System Section -->
+<section id="memory">
+    <div class="section-header fade-in">
+        <span class="tag">Memory System</span>
+        <h2>智能记忆系统</h2>
+        <p>模拟人类记忆机制，支持衰减、召回、情感与多维评分</p>
+    </div>
+
+    <!-- Memory Types -->
+    <h3 style="font-size:1.1rem; font-weight:700; margin-bottom:1.25rem; color: var(--text-secondary);">记忆类型</h3>
+    <div class="memory-model fade-in" style="margin-bottom: 3rem;">
+        <div class="memory-type">
+            <div class="type-icon">&#x1F4CC;</div>
+            <h4>短期记忆</h4>
+            <p>临时会话信息，快速衰减，用于当前对话上下文</p>
+        </div>
+        <div class="memory-type">
+            <div class="type-icon">&#x1F4DA;</div>
+            <h4>长期记忆</h4>
+            <p>重要信息持久存储，支持衰减与召回，可被搜索检索</p>
+        </div>
+        <div class="memory-type">
+            <div class="type-icon">&#x1F48E;</div>
+            <h4>永久记忆</h4>
+            <p>永不衰减的核心知识，始终可用，最高优先级</p>
+        </div>
+    </div>
+
+    <!-- Decay Model -->
+    <h3 style="font-size:1.1rem; font-weight:700; margin-bottom:1.25rem; color: var(--text-secondary);">衰减模型</h3>
+    <div class="features-grid fade-in" style="margin-bottom: 3rem;">
+        <div class="feature-card">
+            <h3>双阶段指数衰减</h3>
+            <p>记忆强度随时间按指数函数递减，支持召回重激活（reactivation_boost），模拟人类遗忘-回忆机制</p>
+            <div class="feature-tags">
+                <span>指数衰减</span>
+                <span>召回增强</span>
+                <span>可配置衰减率</span>
+            </div>
+        </div>
+        <div class="feature-card">
+            <h3>艾宾浩斯遗忘曲线</h3>
+            <p>基于艾宾浩斯遗忘曲线模型，参数 t50（半衰期）和 k（曲线陡度）可配置，更贴合人类记忆规律</p>
+            <div class="feature-tags">
+                <span>遗忘曲线</span>
+                <span>t50 半衰期</span>
+                <span>k 陡度</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vector Backends -->
+    <h3 style="font-size:1.1rem; font-weight:700; margin-bottom:1.25rem; color: var(--text-secondary);">向量存储后端</h3>
+    <div class="vector-grid fade-in" style="margin-bottom: 3rem;">
+        <div class="vector-card">
+            <div class="name">Weaviate</div>
+            <div class="desc">高性能向量搜索引擎，支持gRPC</div>
+            <div class="default-badge">DEFAULT</div>
+        </div>
+        <div class="vector-card">
+            <div class="name">Chroma</div>
+            <div class="desc">轻量级嵌入式向量库，Windows兼容</div>
+        </div>
+        <div class="vector-card">
+            <div class="name">Milvus Lite</div>
+            <div class="desc">嵌入式Milvus，零依赖本地运行</div>
+        </div>
+        <div class="vector-card">
+            <div class="name">Qdrant</div>
+            <div class="desc">高性能向量相似度搜索</div>
+        </div>
+        <div class="vector-card">
+            <div class="name">Weaviate Embedded</div>
+            <div class="desc">嵌入式Weaviate，无需独立服务</div>
+        </div>
+    </div>
+
+    <!-- Memory Search Flow -->
+    <h3 style="font-size:1.1rem; font-weight:700; margin-bottom:1.25rem; color: var(--text-secondary);">记忆搜索流程</h3>
+    <div class="arch-container fade-in">
+        <div class="flow-steps">
+            <div class="flow-step">
+                <div class="flow-step-indicator">
+                    <div class="flow-step-num">1</div>
+                    <div class="flow-step-line"></div>
+                </div>
+                <div class="flow-step-content">
+                    <h4>用户查询</h4>
+                    <p>通过 API 接收搜索请求，支持关键词搜索和语义搜索</p>
+                </div>
+            </div>
+            <div class="flow-step">
+                <div class="flow-step-indicator">
+                    <div class="flow-step-num">2</div>
+                    <div class="flow-step-line"></div>
+                </div>
+                <div class="flow-step-content">
+                    <h4>混合搜索</h4>
+                    <p>并行执行向量搜索（语义相似度）和关键词搜索（SQLite LIKE），结果融合排序</p>
+                </div>
+            </div>
+            <div class="flow-step">
+                <div class="flow-step-indicator">
+                    <div class="flow-step-num">3</div>
+                    <div class="flow-step-line"></div>
+                </div>
+                <div class="flow-step-content">
+                    <h4>三维评分计算</h4>
+                    <p>综合重要性（importance）、时间衰减（temporal）、语义相关性（relevance）三维评分</p>
+                </div>
+            </div>
+            <div class="flow-step">
+                <div class="flow-step-indicator">
+                    <div class="flow-step-num">4</div>
+                    <div class="flow-step-line"></div>
+                </div>
+                <div class="flow-step-content">
+                    <h4>结果返回</h4>
+                    <p>按综合评分排序返回搜索结果，支持分页和过滤</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Tools Section -->
+<section id="tools">
+    <div class="section-header fade-in">
+        <span class="tag">Tools Ecosystem</span>
+        <h2>工具生态</h2>
+        <p>丰富的工具体系，覆盖计算、记忆管理、图操作等场景</p>
+    </div>
+    <div class="tool-categories fade-in">
+        <div class="tool-category">
+            <h4>&#x2699;&#xFE0F; 内置工具</h4>
+            <div class="tool-items">
+                <span>calculator</span>
+                <span>datetime</span>
+                <span>random</span>
+                <span>json_format</span>
+            </div>
+        </div>
+        <div class="tool-category">
+            <h4>&#x1F451; 主模型工具</h4>
+            <div class="tool-items">
+                <span>write_long_term_memory</span>
+                <span>search_all_memories</span>
+                <span>call_assistant</span>
+                <span>set_alarm</span>
+                <span>mono</span>
+                <span>write_permanent_memory</span>
+                <span>ACP工具</span>
+            </div>
+        </div>
+        <div class="tool-category">
+            <h4>&#x1F4DD; 摘要工具</h4>
+            <div class="tool-items">
+                <span>summarize_context</span>
+                <span>summarize_memories</span>
+            </div>
+        </div>
+        <div class="tool-category">
+            <h4>&#x1F9E0; 记忆管理工具</h4>
+            <div class="tool-items">
+                <span>16个专业工具</span>
+                <span>记忆写入</span>
+                <span>记忆搜索</span>
+                <span>记忆更新</span>
+                <span>记忆删除</span>
+                <span>标签管理</span>
+                <span>批量操作</span>
+            </div>
+        </div>
+        <div class="tool-category">
+            <h4>&#x1F578; 图工具</h4>
+            <div class="tool-items">
+                <span>节点操作</span>
+                <span>边操作</span>
+                <span>路径查询</span>
+                <span>语义搜索</span>
+            </div>
+        </div>
+        <div class="tool-category">
+            <h4>&#x1F517; MCP 协议</h4>
+            <div class="tool-items">
+                <span>进程生命周期管理</span>
+                <span>HTTP端点通信</span>
+                <span>工具自动同步</span>
+                <span>健康检查</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- LLM Providers Section -->
+<section id="llm">
+    <div class="section-header fade-in">
+        <span class="tag">LLM Support</span>
+        <h2>LLM 提供商支持</h2>
+        <p>灵活的模型路由，支持多种LLM后端无缝切换</p>
+    </div>
+    <div class="llm-providers fade-in" style="margin-bottom: 2rem;">
+        <div class="llm-provider">Ollama (本地)</div>
+        <div class="llm-provider">vLLM (高性能)</div>
+        <div class="llm-provider">OpenAI</div>
+        <div class="llm-provider">Anthropic</div>
+        <div class="llm-provider">DeepSeek</div>
+        <div class="llm-provider">Local (自定义)</div>
+    </div>
+    <div class="features-grid fade-in">
+        <div class="feature-card">
+            <h3>模型路由器</h3>
+            <p>管理多个LLM模型客户端，按用途路由请求（main/summary/memory/embedding），支持模型配置热加载、健康检查和故障转移</p>
+            <div class="feature-tags">
+                <span>多模型路由</span>
+                <span>热加载</span>
+                <span>故障转移</span>
+            </div>
+        </div>
+        <div class="feature-card">
+            <h3>副模型路由器</h3>
+            <p>SecondaryModelRouter 将特定任务（摘要、记忆处理）路由到专用模型，减轻主模型负载，提升响应质量</p>
+            <div class="feature-tags">
+                <span>任务分流</span>
+                <span>专用模型</span>
+                <span>负载优化</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- API Section -->
+<section id="api">
+    <div class="section-header fade-in">
+        <span class="tag">API Reference</span>
+        <h2>API 接口</h2>
+        <p>17个路由模块，覆盖所有核心功能</p>
+    </div>
+    <div class="api-table-wrapper fade-in">
+        <table class="api-table">
+            <thead>
+                <tr>
+                    <th>方法</th>
+                    <th>端点</th>
+                    <th>描述</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td><span class="api-method post">POST</span></td><td><span class="api-path">/api/chat/stream</span></td><td>流式聊天对话</td></tr>
+                <tr><td><span class="api-method post">POST</span></td><td><span class="api-path">/api/chat</span></td><td>同步聊天对话</td></tr>
+                <tr><td><span class="api-method post">POST</span></td><td><span class="api-path">/api/memory-agent/chat/stream</span></td><td>记忆管理Agent对话</td></tr>
+                <tr><td><span class="api-method get">GET</span></td><td><span class="api-path">/api/memories</span></td><td>获取记忆列表</td></tr>
+                <tr><td><span class="api-method post">POST</span></td><td><span class="api-path">/api/memories</span></td><td>写入新记忆</td></tr>
+                <tr><td><span class="api-method post">POST</span></td><td><span class="api-path">/api/memories/search</span></td><td>关键词搜索记忆</td></tr>
+                <tr><td><span class="api-method post">POST</span></td><td><span class="api-path">/api/memories/semantic-search</span></td><td>语义搜索记忆</td></tr>
+                <tr><td><span class="api-method post">POST</span></td><td><span class="api-path">/api/memories/rag</span></td><td>RAG检索增强</td></tr>
+                <tr><td><span class="api-method post">POST</span></td><td><span class="api-path">/api/memories/3d</span></td><td>三维评分搜索</td></tr>
+                <tr><td><span class="api-method post">POST</span></td><td><span class="api-path">/api/memories/batch/*</span></td><td>批量操作（write/update/delete/tags/archive/restore等）</td></tr>
+                <tr><td><span class="api-method get">GET</span></td><td><span class="api-path">/api/agents</span></td><td>获取Agent列表</td></tr>
+                <tr><td><span class="api-method post">POST</span></td><td><span class="api-path">/api/agents</span></td><td>创建Agent配置</td></tr>
+                <tr><td><span class="api-method get">GET</span></td><td><span class="api-path">/api/tools</span></td><td>获取工具列表</td></tr>
+                <tr><td><span class="api-method post">POST</span></td><td><span class="api-path">/api/acp/discover</span></td><td>Agent发现</td></tr>
+                <tr><td><span class="api-method get">GET</span></td><td><span class="api-path">/api/nodes</span></td><td>获取图节点</td></tr>
+                <tr><td><span class="api-method get">GET</span></td><td><span class="api-path">/api/edges</span></td><td>获取图边</td></tr>
+                <tr><td><span class="api-method post">POST</span></td><td><span class="api-path">/api/traverse/bfs|dfs</span></td><td>图遍历（BFS/DFS）</td></tr>
+                <tr><td><span class="api-method get">GET</span></td><td><span class="api-path">/api/vector/*</span></td><td>向量数据库管理</td></tr>
+                <tr><td><span class="api-method get">GET</span></td><td><span class="api-path">/api/cxfc/*</span></td><td>CXFC插件管理</td></tr>
+                <tr><td><span class="api-method get">GET</span></td><td><span class="api-path">/api/config</span></td><td>获取配置</td></tr>
+                <tr><td><span class="api-method get">GET</span></td><td><span class="api-path">/api/stats</span></td><td>统计信息</td></tr>
+                <tr><td><span class="api-method post">POST</span></td><td><span class="api-path">/api/archive/*</span></td><td>归档管理</td></tr>
+                <tr><td><span class="api-method get">GET</span></td><td><span class="api-path">/api/backups</span></td><td>备份列表</td></tr>
+                <tr><td><span class="api-method ws">WS</span></td><td><span class="api-path">/ws/{agent_id}</span></td><td>WebSocket实时通信</td></tr>
+                <tr><td><span class="api-method get">GET</span></td><td><span class="api-path">/health</span></td><td>健康检查</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- Project Structure Section -->
+<section id="structure">
+    <div class="section-header fade-in">
+        <span class="tag">Project Structure</span>
+        <h2>项目结构</h2>
+        <p>清晰的模块化组织，前后端分离</p>
+    </div>
+    <div class="structure-tree fade-in">
+        <span class="dir">CXHMS/</span><br>
+        &#x251C;&#x2500;&#x2500; <span class="highlight-dir">backend/</span> <span class="comment"># Python 后端 (FastAPI)</span><br>
+        &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="dir">api/routers/</span> <span class="comment"># 17个API路由模块</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="file">chat.py</span> <span class="comment"># 聊天接口</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="file">memory.py</span> <span class="comment"># 记忆管理</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="file">context.py</span> <span class="comment"># 上下文管理</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="file">tools.py</span> <span class="comment"># 工具管理</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="file">acp.py</span> <span class="comment"># ACP协议</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="file">graph.py</span> <span class="comment"># 图数据库</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="file">cxfc.py</span> <span class="comment"># CXFC插件协议</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2502;&#xA0;&#xA0; &#x2514;&#x2500;&#x2500; <span class="file">... (10 more)</span><br>
+        &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="dir">core/</span> <span class="comment"># 12个核心子模块</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="dir">memory/</span> <span class="comment"># 记忆系统 (5种向量后端)</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="dir">graph/</span> <span class="comment"># 图数据库 (15个文件)</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="dir">llm/</span> <span class="comment"># LLM客户端</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="dir">tools/</span> <span class="comment"># 工具系统</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="dir">acp/</span> <span class="comment"># ACP协议</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="dir">cxfc/</span> <span class="comment"># CXFC插件协议</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="dir">context/</span> <span class="comment"># 上下文管理</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2502;&#xA0;&#xA0; &#x2514;&#x2500;&#x2500; <span class="dir">... (5 more)</span><br>
+        &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="dir">models/</span> <span class="comment"># 数据模型</span><br>
+        &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="dir">tests/</span> <span class="comment"># 测试 (18+ 测试文件)</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2514;&#x2500;&#x2500; <span class="file">control_service.py</span> <span class="comment"># 控制服务 (端口8765)</span><br>
+        &#x251C;&#x2500;&#x2500; <span class="highlight-dir">frontend/</span> <span class="comment"># React 前端</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2514;&#x2500;&#x2500; <span class="dir">src/</span><br>
+        &#x2502;&#xA0;&#xA0;&#xA0;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="dir">pages/</span> <span class="comment"># 9个页面组件</span><br>
+        &#x2502;&#xA0;&#xA0;&#xA0;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="dir">components/</span> <span class="comment"># UI组件库 + 功能组件</span><br>
+        &#x2502;&#xA0;&#xA0;&#xA0;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="dir">store/</span> <span class="comment"># Zustand状态管理</span><br>
+        &#x2502;&#xA0;&#xA0;&#xA0;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="dir">hooks/</span> <span class="comment"># 自定义Hooks</span><br>
+        &#x2502;&#xA0;&#xA0;&#xA0;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="dir">i18n/</span> <span class="comment"># 国际化 (zh-CN/en-US)</span><br>
+        &#x2502;&#xA0;&#xA0;&#xA0;&#xA0;&#xA0; &#x2514;&#x2500;&#x2500; <span class="dir">api/</span> <span class="comment"># API客户端</span><br>
+        &#x251C;&#x2500;&#x2500; <span class="dir">config/</span> <span class="comment"># 配置系统</span><br>
+        &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="file">default.yaml</span> <span class="comment"># 默认配置</span><br>
+        &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="file">settings.py</span> <span class="comment"># 设置加载</span><br>
+        &#x2502;&#xA0;&#xA0; &#x251C;&#x2500;&#x2500; <span class="file">validation.py</span> <span class="comment"># 配置验证</span><br>
+        &#x2502;&#xA0;&#xA0; &#x2514;&#x2500;&#x2500; <span class="file">repair.py</span> <span class="comment"># 自动修复</span><br>
+        &#x251C;&#x2500;&#x2500; <span class="dir">plugins/</span> <span class="comment"># 示例插件</span><br>
+        &#x251C;&#x2500;&#x2500; <span class="dir">docs/</span> <span class="comment"># 文档</span><br>
+        &#x251C;&#x2500;&#x2500; <span class="file">main.py</span> <span class="comment"># 启动入口</span><br>
+        &#x251C;&#x2500;&#x2500; <span class="file">Dockerfile</span> <span class="comment"># Docker构建</span><br>
+        &#x2514;&#x2500;&#x2500; <span class="file">requirements.txt</span> <span class="comment"># Python依赖</span>
+    </div>
+</section>
+
+<!-- Services Section -->
+<section id="services">
+    <div class="section-header fade-in">
+        <span class="tag">Services</span>
+        <h2>服务端口</h2>
+        <p>多服务协作，各司其职</p>
+    </div>
+    <div class="services-grid fade-in">
+        <div class="service-card">
+            <div class="port">8000</div>
+            <div class="name">FastAPI 服务</div>
+            <div class="desc">主API服务，Swagger/ReDoc文档</div>
+        </div>
+        <div class="service-card">
+            <div class="port">3000</div>
+            <div class="name">前端界面</div>
+            <div class="desc">React开发服务器</div>
+        </div>
+        <div class="service-card">
+            <div class="port">8765</div>
+            <div class="name">控制服务</div>
+            <div class="desc">独立管理后端启停</div>
+        </div>
+        <div class="service-card">
+            <div class="port">8090</div>
+            <div class="name">Weaviate</div>
+            <div class="desc">向量搜索引擎</div>
+        </div>
+    </div>
+</section>
+
+<!-- Quick Start Section -->
+<section id="quickstart">
+    <div class="section-header fade-in">
+        <span class="tag">Quick Start</span>
+        <h2>快速开始</h2>
+        <p>三步启动，即刻体验</p>
+    </div>
+    <div class="quickstart-grid fade-in">
+        <div class="quickstart-card">
+            <h3><span class="step-num">1</span> 安装依赖</h3>
+            <div class="code-block">
+                <span class="comment"># 后端依赖</span><br>
+                pip install -r requirements.txt<br><br>
+                <span class="comment"># 拉取模型 (Ollama)</span><br>
+                ollama pull qwen3-vl:8b<br>
+                ollama pull nomic-embed-text
+            </div>
+        </div>
+        <div class="quickstart-card">
+            <h3><span class="step-num">2</span> 启动后端</h3>
+            <div class="code-block">
+                python main.py<br><br>
+                <span class="comment"># 或使用 Conda 环境</span><br>
+                <span class="comment"># 2.启动后端(Conda环境).bat</span>
+            </div>
+        </div>
+        <div class="quickstart-card">
+            <h3><span class="step-num">3</span> 启动前端</h3>
+            <div class="code-block">
+                cd frontend<br>
+                npm install<br>
+                npm run dev<br><br>
+                <span class="comment"># Windows 一键启动:</span><br>
+                <span class="comment"># 1.1.启动前端(含控制服务)(Conda).bat</span>
+            </div>
+        </div>
+    </div>
+
+    <div style="margin-top: 2rem;">
+        <div class="config-grid fade-in">
+            <div class="config-card">
+                <h4>环境要求</h4>
+                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                    <p style="margin-bottom: 0.5rem;">&#x2705; Python 3.10+</p>
+                    <p style="margin-bottom: 0.5rem;">&#x2705; Node.js 18+</p>
+                    <p>&#x2705; Ollama (推荐) 或其他 LLM 服务</p>
+                </div>
+            </div>
+            <div class="config-card">
+                <h4>最小配置</h4>
+                <div class="code-block">
+models:<br>
+&nbsp;&nbsp;main:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;provider: ollama<br>
+&nbsp;&nbsp;&nbsp;&nbsp;model: qwen3-vl:8b<br>
+&nbsp;&nbsp;&nbsp;&nbsp;enabled: true<br>
+&nbsp;&nbsp;embedding:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;provider: ollama<br>
+&nbsp;&nbsp;&nbsp;&nbsp;model: nomic-embed-text<br>
+&nbsp;&nbsp;&nbsp;&nbsp;enabled: true
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Agent System Section -->
+<section id="agents">
+    <div class="section-header fade-in">
+        <span class="tag">Agent System</span>
+        <h2>Agent 系统</h2>
+        <p>多Agent配置管理，支持独立上下文和工具集</p>
+    </div>
+    <div class="features-grid fade-in">
+        <div class="feature-card">
+            <h3>默认助手 (default)</h3>
+            <p>128k上下文窗口，支持记忆检索和工具调用，通用对话场景</p>
+            <div class="feature-tags">
+                <span>128k上下文</span>
+                <span>记忆检索</span>
+                <span>工具调用</span>
+            </div>
+        </div>
+        <div class="feature-card">
+            <h3>记忆管理助手 (memory-agent)</h3>
+            <p>128k上下文窗口，配备16个专业记忆管理工具，专注记忆操作</p>
+            <div class="feature-tags">
+                <span>128k上下文</span>
+                <span>16个记忆工具</span>
+                <span>专业管理</span>
+            </div>
+        </div>
+        <div class="feature-card">
+            <h3>自定义 Agent</h3>
+            <p>支持创建自定义Agent，配置系统提示词、模型、温度、记忆场景、衰减模型等参数</p>
+            <div class="feature-tags">
+                <span>自定义提示词</span>
+                <span>模型选择</span>
+                <span>视觉支持</span>
+                <span>Agent克隆</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Frontend Pages Section -->
+<section id="frontend">
+    <div class="section-header fade-in">
+        <span class="tag">Frontend</span>
+        <h2>前端页面</h2>
+        <p>9个功能页面，覆盖所有管理场景</p>
+    </div>
+    <div class="features-grid fade-in">
+        <div class="feature-card">
+            <div class="feature-icon" style="background: rgba(59, 130, 246, 0.15);">&#x1F4CA;</div>
+            <h3>Dashboard</h3>
+            <p>系统概览仪表盘，展示关键指标和状态</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon" style="background: rgba(99, 102, 241, 0.15);">&#x1F4AC;</div>
+            <h3>Chat</h3>
+            <p>智能对话页面，流式响应，支持多Agent切换</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon" style="background: rgba(16, 185, 129, 0.15);">&#x1F9E0;</div>
+            <h3>Memories</h3>
+            <p>记忆管理页面，搜索、筛选、编辑记忆</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon" style="background: rgba(245, 158, 11, 0.15);">&#x1F4C1;</div>
+            <h3>Archive</h3>
+            <p>归档管理页面，查看和恢复已归档记忆</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon" style="background: rgba(236, 72, 153, 0.15);">&#x1F916;</div>
+            <h3>Agents</h3>
+            <p>Agent配置管理，创建和编辑Agent</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon" style="background: rgba(139, 92, 246, 0.15);">&#x1F527;</div>
+            <h3>Tools</h3>
+            <p>工具管理页面，查看已注册工具</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon" style="background: rgba(59, 130, 246, 0.15);">&#x1F4E1;</div>
+            <h3>ACP</h3>
+            <p>ACP协议页面，Agent发现与通信</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon" style="background: rgba(16, 185, 129, 0.15);">&#x1F4DA;</div>
+            <h3>Memory Agent</h3>
+            <p>记忆管理Agent对话页面</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon" style="background: rgba(245, 158, 11, 0.15);">&#x2699;&#xFE0F;</div>
+            <h3>Settings</h3>
+            <p>系统设置页面，配置管理</p>
+        </div>
+    </div>
+</section>
+
+<!-- Deployment Section -->
+<section id="deployment">
+    <div class="section-header fade-in">
+        <span class="tag">Deployment</span>
+        <h2>部署方案</h2>
+        <p>支持单节点Docker部署和多节点生产部署</p>
+    </div>
+    <div class="features-grid fade-in">
+        <div class="feature-card">
+            <h3>单节点部署</h3>
+            <p>Docker容器化部署，包含FastAPI服务、WebUI、控制服务、SQLite数据库和Weaviate Embedded向量引擎</p>
+            <div class="code-block" style="margin-top: 1rem;">
+docker build -t cxhms .<br>
+docker run -p 8000:8000 \<br>
+&nbsp;&nbsp;-p 8765:8765 \<br>
+&nbsp;&nbsp;cxhms
+            </div>
+        </div>
+        <div class="feature-card">
+            <h3>多节点部署</h3>
+            <p>负载均衡 + 多CXHMS节点 + 共享存储（PostgreSQL + Qdrant/Weaviate集群），适合高可用生产环境</p>
+            <div class="feature-tags">
+                <span>负载均衡</span>
+                <span>PostgreSQL</span>
+                <span>Qdrant集群</span>
+                <span>水平扩展</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Footer -->
+<footer>
+    <p>CXHMS - 晨曦人格化记忆系统 | CX-O History & Memory Service</p>
+    <p class="license">MIT License &middot; v1.0.0</p>
+</footer>
+
+<!-- Scroll Animation Script -->
+<script>
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('visible');
+            }
+        });
+    }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+
+    document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+</script>
+
+</body>
+</html>

@@ -294,12 +294,14 @@ async def stop_service():
     process = get_backend_process()
 
     if process is None:
-        # 尝试查找并停止 uvicorn 进程
+        # 尝试查找并停止 CXHMS 后端 uvicorn 进程
         stopped = False
         for proc in psutil.process_iter(["pid", "name", "cmdline"]):
             try:
                 cmdline = proc.info.get("cmdline", [])
-                if cmdline and "uvicorn" in " ".join(cmdline):
+                cmdline_str = " ".join(cmdline) if cmdline else ""
+                # 仅停止 CXHMS 后端服务进程（通过 backend.api.app 标识区分）
+                if cmdline_str and "uvicorn" in cmdline_str and "backend.api.app" in cmdline_str:
                     proc.terminate()
                     stopped = True
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -358,6 +360,9 @@ async def restart_service(config: ServiceConfig):
 async def get_service_logs(lines: int = 100):
     """获取服务日志"""
     try:
+        # 限制行数上限，防止过大请求
+        lines = max(1, min(lines, 10000))
+
         # 读取日志文件（如果配置了日志文件）
         log_file = "logs/cxhms.log"
         if os.path.exists(log_file):
@@ -456,6 +461,14 @@ async def get_service_config():
 async def update_service_config(config: dict):
     """更新服务配置（需要重启生效）"""
     try:
+        # 基本配置验证
+        if not config:
+            raise HTTPException(status_code=400, detail="配置不能为空")
+        if "port" in config and not isinstance(config["port"], int):
+            raise HTTPException(status_code=400, detail="port 必须为整数")
+        if "host" in config and not isinstance(config["host"], str):
+            raise HTTPException(status_code=400, detail="host 必须为字符串")
+
         import yaml
 
         config_path = "config/default.yaml"

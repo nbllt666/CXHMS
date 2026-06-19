@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { cn } from '../lib/utils';
@@ -96,6 +96,7 @@ export function SettingsPage() {
     'appearance'
   );
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const saveStatusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [logs, setLogs] = useState('');
   const [isBackendRunning, setIsBackendRunning] = useState(false);
   const [isControlServiceReady, setIsControlServiceReady] = useState(false);
@@ -109,6 +110,10 @@ export function SettingsPage() {
 
   const { theme, setTheme } = useThemeStore();
   const [selectedAccent, setSelectedAccent] = useState('#3b82f6');
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--accent', selectedAccent);
+  }, [selectedAccent]);
 
   const handleThemeChange = (newTheme: 'light' | 'dark' | 'system') => {
     setThemeTransition(true);
@@ -153,6 +158,14 @@ export function SettingsPage() {
     }, 3000);
     return () => clearInterval(interval);
   }, [checkControlService, checkBackendStatus]);
+
+  useEffect(() => {
+    return () => {
+      if (saveStatusTimeoutRef.current) {
+        clearTimeout(saveStatusTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const { data: serviceConfig } = useQuery({
     queryKey: ['serviceConfig'],
@@ -366,7 +379,7 @@ export function SettingsPage() {
     } catch {
       setSaveStatus('error');
     }
-    setTimeout(() => setSaveStatus('idle'), 2000);
+    saveStatusTimeoutRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
   };
 
   return (

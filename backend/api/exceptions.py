@@ -1,10 +1,13 @@
 from typing import Any, Dict, Optional
+import logging
 
 from fastapi import HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from .response import APIResponse, ErrorResponse
+
+logger = logging.getLogger(__name__)
 
 
 class CXHMSError(Exception):
@@ -112,11 +115,11 @@ async def validation_exception_handler(
 
 
 async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled exception processing request to %s", request.url.path)
     return JSONResponse(
         status_code=500,
         content=ErrorResponse(
             error="Internal server error",
             error_code="INTERNAL_ERROR",
-            details={"exception": str(exc)} if str(exc) else None,
         ).model_dump(),
     )

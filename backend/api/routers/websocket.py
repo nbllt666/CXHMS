@@ -26,6 +26,10 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str, timeout:
     Query 参数:
     - timeout: 离线超时时间（秒），默认 60
     """
+    # 验证 timeout 参数，防止 0 或负值
+    if timeout <= 0:
+        timeout = 30
+
     ws_manager = get_websocket_manager()
     chat_handler = get_chat_handler()
 

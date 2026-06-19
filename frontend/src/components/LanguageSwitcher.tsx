@@ -25,7 +25,8 @@ export function LanguageSwitcher() {
   };
 
   const currentLang =
-    supportedLanguages.find((l) => l.code === i18n.language) || supportedLanguages[0];
+    supportedLanguages.find((l) => i18n.language === l.code || i18n.language.startsWith(l.code)) ||
+    supportedLanguages[0];
 
   return (
     <div className="relative" ref={dropdownRef}>

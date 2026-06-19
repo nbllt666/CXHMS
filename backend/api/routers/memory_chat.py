@@ -3,6 +3,7 @@
 提供与记忆管理模型的自然语言交互接口
 """
 
+import asyncio
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -12,6 +13,8 @@ from backend.core.logging_config import get_contextual_logger
 
 router = APIRouter()
 logger = get_contextual_logger(__name__)
+
+_conversation_engine_lock = asyncio.Lock()
 
 
 class MemoryChatRequest(BaseModel):
@@ -53,20 +56,23 @@ async def memory_chat(request: MemoryChatRequest):
             raise HTTPException(status_code=503, detail="记忆服务不可用")
 
         if not hasattr(memory_mgr, "conversation_engine") or memory_mgr.conversation_engine is None:
-            from backend.core.memory.conversation import MemoryConversationEngine
+            async with _conversation_engine_lock:
+                # Double-check after acquiring lock
+                if not hasattr(memory_mgr, "conversation_engine") or memory_mgr.conversation_engine is None:
+                    from backend.core.memory.conversation import MemoryConversationEngine
 
-            llm_client = None
-            try:
-                model_router = get_model_router()
-                if model_router:
-                    llm_client = model_router.get_client("memory")
-            except Exception as e:
-                logger.warning(f"获取模型路由器失败: {e}")
+                    llm_client = None
+                    try:
+                        model_router = get_model_router()
+                        if model_router:
+                            llm_client = model_router.get_client("memory")
+                    except Exception as e:
+                        logger.warning(f"获取模型路由器失败: {e}")
 
-            memory_mgr.conversation_engine = MemoryConversationEngine(
-                memory_manager=memory_mgr, llm_client=llm_client
-            )
-            logger.info("记忆管理对话引擎已初始化")
+                    memory_mgr.conversation_engine = MemoryConversationEngine(
+                        memory_manager=memory_mgr, llm_client=llm_client
+                    )
+                    logger.info("记忆管理对话引擎已初始化")
 
         result = await memory_mgr.conversation_engine.process_message(
             user_message=request.message, session_id=request.session_id

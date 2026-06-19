@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>创意方案 - 晨曦人格化记忆系统 CXHMS</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap');
+
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #111827;
+            --bg-card: rgba(17, 24, 39, 0.7);
+            --accent-cyan: #06b6d4;
+            --accent-purple: #8b5cf6;
+            --accent-pink: #ec4899;
+            --accent-amber: #f59e0b;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border-color: rgba(148, 163, 184, 0.1);
+            --glow-cyan: 0 0 30px rgba(6, 182, 212, 0.3);
+            --glow-purple: 0 0 30px rgba(139, 92, 246, 0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .bg-grid {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-image:
+                linear-gradient(rgba(6, 182, 212, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(6, 182, 212, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px; z-index: 0;
+        }
+
+        .bg-orb {
+            position: fixed; border-radius: 50%; filter: blur(80px); z-index: 0;
+            animation: orbFloat 20s ease-in-out infinite;
+        }
+        .bg-orb-1 { width: 500px; height: 500px; background: radial-gradient(circle, rgba(6,182,212,0.12), transparent 70%); top: -100px; right: -100px; }
+        .bg-orb-2 { width: 600px; height: 600px; background: radial-gradient(circle, rgba(139,92,246,0.1), transparent 70%); bottom: -150px; left: -150px; animation-delay: -7s; }
+        .bg-orb-3 { width: 400px; height: 400px; background: radial-gradient(circle, rgba(236,72,153,0.08), transparent 70%); top: 40%; left: 50%; animation-delay: -14s; }
+
+        @keyframes orbFloat {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(30px, -30px) scale(1.05); }
+            66% { transform: translate(-20px, 20px) scale(0.95); }
+        }
+
+        .container { position: relative; z-index: 1; max-width: 960px; margin: 0 auto; padding: 40px 24px 80px; }
+
+        /* 标签 */
+        .tags-bar { display: flex; gap: 12px; margin-bottom: 32px; flex-wrap: wrap; }
+        .tag {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 16px; border-radius: 100px; font-size: 13px;
+            font-weight: 500; letter-spacing: 0.5px; border: 1px solid;
+            backdrop-filter: blur(10px); transition: all 0.3s ease;
+        }
+        .tag-track { background: rgba(6,182,212,0.1); border-color: rgba(6,182,212,0.3); color: var(--accent-cyan); }
+        .tag-track:hover { background: rgba(6,182,212,0.2); box-shadow: var(--glow-cyan); }
+        .tag-bonus { background: rgba(236,72,153,0.1); border-color: rgba(236,72,153,0.3); color: var(--accent-pink); }
+        .tag-bonus:hover { background: rgba(236,72,153,0.2); box-shadow: 0 0 30px rgba(236,72,153,0.3); }
+
+        /* 标题区 */
+        .hero { text-align: center; margin-bottom: 56px; padding: 48px 0; }
+        .hero-subtitle { font-size: 14px; font-weight: 500; color: var(--accent-cyan); letter-spacing: 4px; text-transform: uppercase; margin-bottom: 16px; }
+        .hero-title {
+            font-size: clamp(32px, 5vw, 52px); font-weight: 900; line-height: 1.2; margin-bottom: 12px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple), var(--accent-pink));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        .hero-track { font-size: 18px; font-weight: 400; color: var(--text-secondary); margin-bottom: 8px; }
+        .hero-track strong { color: var(--accent-cyan); font-weight: 600; }
+        .hero-divider { width: 80px; height: 3px; background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple)); margin: 24px auto 0; border-radius: 2px; }
+
+        /* 卡片 */
+        .section-card {
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            border-radius: 20px; padding: 40px; margin-bottom: 28px;
+            backdrop-filter: blur(20px); position: relative; overflow: hidden;
+            transition: all 0.4s ease;
+        }
+        .section-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 20px 20px 0 0; }
+        .section-card:nth-child(1)::before { background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple)); }
+        .section-card:nth-child(2)::before { background: linear-gradient(90deg, var(--accent-purple), var(--accent-pink)); }
+        .section-card:nth-child(3)::before { background: linear-gradient(90deg, var(--accent-pink), var(--accent-amber)); }
+        .section-card:hover { border-color: rgba(148,163,184,0.2); transform: translateY(-2px); }
+
+        .section-number {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 36px; height: 36px; border-radius: 10px; font-size: 16px; font-weight: 700; margin-bottom: 16px;
+        }
+        .section-card:nth-child(1) .section-number { background: rgba(6,182,212,0.15); color: var(--accent-cyan); }
+        .section-card:nth-child(2) .section-number { background: rgba(139,92,246,0.15); color: var(--accent-purple); }
+        .section-card:nth-child(3) .section-number { background: rgba(245,158,11,0.15); color: var(--accent-amber); }
+
+        .section-title { font-size: 22px; font-weight: 700; margin-bottom: 24px; color: var(--text-primary); }
+        .section-body p { font-size: 15px; line-height: 1.9; color: var(--text-secondary); margin-bottom: 16px; }
+        .section-body p:last-child { margin-bottom: 0; }
+
+        .highlight-cyan { color: var(--accent-cyan); font-weight: 600; }
+        .highlight-purple { color: var(--accent-purple); font-weight: 600; }
+        .highlight-pink { color: var(--accent-pink); font-weight: 600; }
+        .highlight-amber { color: var(--accent-amber); font-weight: 600; }
+        .highlight-green { color: var(--accent-green); font-weight: 600; }
+
+        .sub-heading { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; color: var(--text-primary); margin: 20px 0 10px; }
+        .sub-heading .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+        .dot-cyan { background: var(--accent-cyan); }
+        .dot-purple { background: var(--accent-purple); }
+        .dot-amber { background: var(--accent-amber); }
+        .dot-green { background: var(--accent-green); }
+
+        /* 特性网格 */
+        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 16px; }
+        .feature-item {
+            background: rgba(255,255,255,0.03); border: 1px solid var(--border-color);
+            border-radius: 12px; padding: 16px; transition: all 0.3s ease;
+        }
+        .feature-item:hover { background: rgba(255,255,255,0.06); border-color: rgba(148,163,184,0.2); }
+        .feature-item .emoji { font-size: 24px; margin-bottom: 8px; display: block; }
+        .feature-item .label { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+        .feature-item .desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+
+        /* 公式展示 */
+        .formula-box {
+            background: rgba(6,182,212,0.05); border: 1px solid rgba(6,182,212,0.15);
+            border-radius: 12px; padding: 16px 20px; margin: 12px 0;
+            font-family: 'Courier New', monospace; font-size: 14px; color: var(--accent-cyan);
+            text-align: center; letter-spacing: 0.5px;
+        }
+        .formula-box .formula-label {
+            font-family: 'Noto Sans SC', sans-serif; font-size: 11px;
+            color: var(--text-muted); margin-top: 6px; letter-spacing: 0;
+        }
+
+        /* 痛点对比 */
+        .pain-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+        @media (max-width: 600px) { .pain-compare { grid-template-columns: 1fr; } }
+        .pain-box { border-radius: 12px; padding: 20px; border: 1px solid; }
+        .pain-box.before { background: rgba(239,68,68,0.05); border-color: rgba(239,68,68,0.15); }
+        .pain-box.after { background: rgba(16,185,129,0.05); border-color: rgba(16,185,129,0.15); }
+        .pain-box .box-label { font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px; }
+        .pain-box.before .box-label { color: #ef4444; }
+        .pain-box.after .box-label { color: var(--accent-green); }
+        .pain-box ul { list-style: none; padding: 0; }
+        .pain-box li { font-size: 13px; color: var(--text-secondary); padding: 4px 0; padding-left: 18px; position: relative; line-height: 1.6; }
+        .pain-box.before li::before { content: '\2715'; position: absolute; left: 0; color: #ef4444; font-size: 11px; }
+        .pain-box.after li::before { content: '\2713'; position: absolute; left: 0; color: var(--accent-green); font-size: 12px; }
+
+        /* 价值卡片 */
+        .value-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+        @media (max-width: 600px) { .value-cards { grid-template-columns: 1fr; } }
+        .value-card {
+            background: rgba(255,255,255,0.03); border: 1px solid var(--border-color);
+            border-radius: 14px; padding: 24px; transition: all 0.3s ease;
+        }
+        .value-card:hover { transform: translateY(-2px); }
+        .value-card:nth-child(1) { border-left: 3px solid var(--accent-cyan); }
+        .value-card:nth-child(2) { border-left: 3px solid var(--accent-green); }
+        .value-card .vc-icon { font-size: 28px; margin-bottom: 12px; }
+        .value-card .vc-title { font-size: 15px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
+        .value-card .vc-text { font-size: 13px; color: var(--text-secondary); line-height: 1.7; }
+
+        /* 产品形态标签 */
+        .product-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: rgba(139,92,246,0.12); border: 1px solid rgba(139,92,246,0.3);
+            color: var(--accent-purple); padding: 8px 18px; border-radius: 10px;
+            font-size: 14px; font-weight: 600; margin-top: 16px;
+        }
+
+        /* 技术栈标签 */
+        .tech-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+        .tech-pill { font-size: 11px; padding: 4px 10px; border-radius: 6px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-muted); }
+
+        /* 架构流程图 */
+        .arch-flow {
+            display: flex; flex-direction: column; gap: 8px; margin: 16px 0;
+            padding: 20px; background: rgba(255,255,255,0.02); border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+        .arch-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+        .arch-node {
+            padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600;
+            white-space: nowrap; border: 1px solid;
+        }
+        .arch-node.cyan { background: rgba(6,182,212,0.1); border-color: rgba(6,182,212,0.3); color: var(--accent-cyan); }
+        .arch-node.purple { background: rgba(139,92,246,0.1); border-color: rgba(139,92,246,0.3); color: var(--accent-purple); }
+        .arch-node.pink { background: rgba(236,72,153,0.1); border-color: rgba(236,72,153,0.3); color: var(--accent-pink); }
+        .arch-node.amber { background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.3); color: var(--accent-amber); }
+        .arch-node.green { background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.3); color: var(--accent-green); }
+        .arch-arrow { color: var(--text-muted); font-size: 16px; }
+
+        /* 底部 */
+        .footer { text-align: center; margin-top: 48px; padding-top: 32px; border-top: 1px solid var(--border-color); }
+        .footer-text { font-size: 13px; color: var(--text-muted); line-height: 1.8; }
+        .footer-brand {
+            font-size: 15px; font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            margin-bottom: 6px;
+        }
+
+        /* 动画 */
+        .fade-in { opacity: 0; transform: translateY(20px); animation: fadeInUp 0.6s ease forwards; }
+        .fade-in:nth-child(1) { animation-delay: 0.1s; }
+        .fade-in:nth-child(2) { animation-delay: 0.2s; }
+        .fade-in:nth-child(3) { animation-delay: 0.3s; }
+        @keyframes fadeInUp { to { opacity: 1; transform: translateY(0); } }
+
+        .pulse-dot {
+            display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+            background: var(--accent-cyan); animation: pulse 2s ease-in-out infinite;
+        }
+        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.3); } }
+
+        /* 工具列表 */
+        .tool-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .tool-chip {
+            font-size: 11px; padding: 3px 10px; border-radius: 100px;
+            background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.2);
+            color: var(--accent-purple);
+        }
+        .tool-chip.builtin { background: rgba(6,182,212,0.08); border-color: rgba(6,182,212,0.2); color: var(--accent-cyan); }
+        .tool-chip.memory { background: rgba(16,185,129,0.08); border-color: rgba(16,185,129,0.2); color: var(--accent-green); }
+
+        /* 对比表格 */
+        .compare-table {
+            width: 100%; border-collapse: separate; border-spacing: 0;
+            margin-top: 16px; border-radius: 12px; overflow: hidden;
+            border: 1px solid var(--border-color); font-size: 13px;
+        }
+        .compare-table thead th {
+            background: rgba(255,255,255,0.05); padding: 12px 14px;
+            text-align: center; font-weight: 700; color: var(--text-primary);
+            border-bottom: 1px solid var(--border-color); font-size: 12px;
+        }
+        .compare-table thead th:first-child { text-align: left; }
+        .compare-table thead th.highlight-col {
+            background: rgba(6,182,212,0.1); color: var(--accent-cyan);
+            border-bottom: 2px solid var(--accent-cyan);
+        }
+        .compare-table tbody td {
+            padding: 10px 14px; text-align: center; color: var(--text-secondary);
+            border-bottom: 1px solid rgba(148,163,184,0.06);
+        }
+        .compare-table tbody td:first-child { text-align: left; font-weight: 600; color: var(--text-primary); font-size: 12px; }
+        .compare-table tbody td.highlight-col { background: rgba(6,182,212,0.04); color: var(--accent-cyan); font-weight: 600; }
+        .compare-table tbody tr:last-child td { border-bottom: none; }
+        .compare-table .check { color: var(--accent-green); font-weight: 700; }
+        .compare-table .cross { color: var(--accent-red); font-weight: 700; }
+        .compare-table .partial { color: var(--accent-amber); font-weight: 700; }
+    </style>
+</head>
+<body>
+
+    <div class="bg-grid"></div>
+    <div class="bg-orb bg-orb-1"></div>
+    <div class="bg-orb bg-orb-2"></div>
+    <div class="bg-orb bg-orb-3"></div>
+
+    <div class="container">
+
+        <!-- 标签 -->
+        <div class="tags-bar fade-in">
+            <span class="tag tag-track">&#127991;&#65039; 生活娱乐</span>
+            <span class="tag tag-bonus">&#127991;&#65039; 社会公益</span>
+        </div>
+
+        <!-- 标题区 -->
+        <div class="hero fade-in">
+            <div class="hero-subtitle">Bionic Memory for Personalized Agents</div>
+            <h1 class="hero-title">晨曦仿生人格化记忆系统</h1>
+            <div class="hero-track">赛道：<strong>生活娱乐</strong> + 社会公益（附加赛题）</div>
+            <div class="hero-divider"></div>
+        </div>
+
+        <!-- 第一部分 -->
+        <div class="section-card fade-in">
+            <div class="section-number">1</div>
+            <h2 class="section-title">创意名称 + 创意介绍</h2>
+            <div class="section-body">
+                <p>
+                    <span class="highlight-cyan">CXHMS（晨曦仿生人格化记忆系统）</span>——为 AI Agent 植入仿生记忆，让它像人一样记住你、理解你、陪伴你。
+                </p>
+
+                <div class="sub-heading"><span class="dot dot-cyan"></span>想解决什么问题</div>
+                <p>
+                    当前的人格化 AI Agent 缺乏真正的记忆能力——每次对话从零开始，Agent 无法跨会话持久记住用户信息与情感，人格设定沦为空壳。我们希望解决 <span class="highlight-pink">人格化 Agent 没有仿生记忆支撑、无法形成持续人格认知</span> 这一核心痛点。没有人格化记忆的 Agent 永远只是工具，拥有仿生记忆的 Agent 才能成为真正的数字伙伴。
+                </p>
+
+                <div class="sub-heading"><span class="dot dot-purple"></span>为什么会想到做这个</div>
+                <p>
+                    灵感来源于人脑的记忆机制：我们会遗忘不重要的信息（衰减），会因反复回忆而加深印象（再激活），会被情感强烈的事件牢牢记住（情感增强）。现有人格化 Agent 产品只做了"人格设定"的表面功夫，却没有解决"记忆"这个根本问题。我们相信，<span class="highlight-purple">仿生记忆是人格化 Agent 从"扮演"走向"成为"的关键一步</span>——只有真正记住，人格才有根基。同时，在银发群体辅助场景中，拥有仿生记忆的 Agent 可以像老朋友一样记住用户，显著降低数字鸿沟——这正是"社会公益"标签的出发点。
+                </p>
+
+                <div class="sub-heading"><span class="dot dot-amber"></span>大概是什么产品</div>
+                <p>
+                    一套面向人格化 Agent 的 <span class="highlight-amber">仿生记忆中间件系统</span>，以 Web 应用 + REST API 服务形式提供，可接入 Ollama/vLLM/OpenAI/Anthropic/DeepSeek 等任意 LLM 后端，为 Agent 赋予仿人脑的长期记忆、情感感知与知识图谱能力——让 Agent 拥有"遗忘与铭记"的仿生记忆机制。
+                </p>
+
+                <div class="product-badge">&#129513; 产品形态：面向人格化 Agent 的仿生记忆中间件（Web 应用 + REST API，可私有化部署）</div>
+
+                <!-- 仿生记忆与人脑对比 -->
+                <div style="margin-top: 20px;">
+                    <div class="sub-heading"><span class="dot dot-cyan"></span>仿生对照：人脑 vs CXHMS Agent</div>
+                </div>
+                <div class="pain-compare">
+                    <div class="pain-box after" style="background: rgba(6,182,212,0.05); border-color: rgba(6,182,212,0.15);">
+                        <div class="box-label" style="color: var(--accent-cyan);">&#129504; 人脑记忆机制</div>
+                        <ul>
+                            <li>不重要的事逐渐遗忘（遗忘曲线）</li>
+                            <li>反复回忆会加深印象（再激活增强）</li>
+                            <li>情感强烈的事件记得更牢（情感增强）</li>
+                            <li>重要信念终身不忘（永久记忆）</li>
+                            <li>相关知识互相激活（联想记忆）</li>
+                            <li>旧记忆压缩归档，要点保留（归档压缩）</li>
+                        </ul>
+                    </div>
+                    <div class="pain-box after">
+                        <div class="box-label">&#129302; CXHMS 仿生实现</div>
+                        <ul>
+                            <li>双阶段指数衰减 + 艾宾浩斯遗忘曲线</li>
+                            <li>reactivation_count 再激活计数 + 0.2递增系数</li>
+                            <li>emotion_score 情感分数影响衰减速率</li>
+                            <li>importance&ge;0.95 永久记忆，永不衰减</li>
+                            <li>网络效应增强 0.1&radic;(关联活跃记忆数)</li>
+                            <li>5级智能归档：活跃&rarr;压缩&rarr;摘要&rarr;要点&rarr;元数据</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- 架构流程 -->
+                <div style="margin-top: 20px;">
+                    <div class="sub-heading"><span class="dot dot-purple"></span>Agent 记忆工作流</div>
+                </div>
+                <div class="arch-flow">
+                    <div class="arch-row">
+                        <span class="arch-node cyan">用户对话</span>
+                        <span class="arch-arrow">&rarr;</span>
+                        <span class="arch-node purple">人格化 Agent</span>
+                        <span class="arch-arrow">&rarr;</span>
+                        <span class="arch-node pink">记忆工具调用</span>
+                    </div>
+                    <div class="arch-row" style="margin-top: 4px;">
+                        <span class="arch-node green">写入记忆</span>
+                        <span class="arch-arrow">&rarr;</span>
+                        <span class="arch-node cyan">仿生衰减引擎</span>
+                        <span class="arch-arrow">&rarr;</span>
+                        <span class="arch-node amber">情感分析+去重</span>
+                    </div>
+                    <div class="arch-row" style="margin-top: 4px;">
+                        <span class="arch-node green">召回记忆</span>
+                        <span class="arch-arrow">&rarr;</span>
+                        <span class="arch-node cyan">混合语义搜索</span>
+                        <span class="arch-arrow">&rarr;</span>
+                        <span class="arch-node purple">知识图谱关联</span>
+                    </div>
+                </div>
+
+                <div class="feature-grid">
+                    <div class="feature-item">
+                        <span class="emoji">&#129504;</span>
+                        <div class="label">仿生记忆衰减引擎</div>
+                        <div class="desc">模拟人脑遗忘机制：双阶段指数衰减 + 艾宾浩斯遗忘曲线，6级重要性分层，Agent 的记忆像人一样自然遗忘与铭记</div>
+                    </div>
+                    <div class="feature-item">
+                        <span class="emoji">&#128269;</span>
+                        <div class="label">混合语义搜索</div>
+                        <div class="desc">Agent 召回记忆时的仿生检索：向量检索(60%) + 关键词匹配(40%) 融合排序，三维评分(重要性35%+时间25%+相关性40%)</div>
+                    </div>
+                    <div class="feature-item">
+                        <span class="emoji">&#128376;</span>
+                        <div class="label">知识图谱（联想记忆）</div>
+                        <div class="desc">模拟人脑联想记忆：BFS/DFS遍历、语义搜索、PageRank、社区检测，Agent 可沿知识网络"联想"到相关信息</div>
+                    </div>
+                    <div class="feature-item">
+                        <span class="emoji">&#128172;</span>
+                        <div class="label">情感感知（情感增强记忆）</div>
+                        <div class="desc">模拟情感对记忆的增强效应：中英文情感词典+否定词+程度副词，情感强度影响衰减速率，Agent 对情感事件记得更牢</div>
+                    </div>
+                    <div class="feature-item">
+                        <span class="emoji">&#128279;</span>
+                        <div class="label">ACP 多 Agent 人格互联</div>
+                        <div class="desc">UDP广播自动发现、点对点通信、群组协同，多个人格化 Agent 可跨设备协作，共享记忆上下文</div>
+                    </div>
+                    <div class="feature-item">
+                        <span class="emoji">&#128268;</span>
+                        <div class="label">CXFC 插件生态</div>
+                        <div class="desc">为 Agent 扩展技能：插件发现+技能注册+心跳管理+事件推送，Agent 可动态获得新能力</div>
+                    </div>
+                    <div class="feature-item">
+                        <span class="emoji">&#128230;</span>
+                        <div class="label">5级智能归档（记忆压缩）</div>
+                        <div class="desc">模拟人脑记忆压缩：活跃&rarr;轻度压缩&rarr;摘要&rarr;要点&rarr;元数据，旧记忆渐进压缩，Agent 记忆永不丢失</div>
+                    </div>
+                    <div class="feature-item">
+                        <span class="emoji">&#128256;</span>
+                        <div class="label">去重检测引擎</div>
+                        <div class="desc">Jaccard相似度 + 并查集连通分量，Agent 写入记忆时自动去重，避免重复记忆干扰人格一致性</div>
+                    </div>
+                </div>
+
+                <!-- 与现有方案对比 -->
+                <div style="margin-top: 20px;">
+                    <div class="sub-heading"><span class="dot dot-amber"></span>与现有方案对比</div>
+                    <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 4px;">CXHMS 是唯一实现仿生记忆机制的人格化 Agent 记忆系统</p>
+                    <table class="compare-table">
+                        <thead>
+                            <tr>
+                                <th>能力维度</th>
+                                <th>ChatGPT Memory</th>
+                                <th>Mem0</th>
+                                <th>Letta (MemGPT)</th>
+                                <th>LangChain Memory</th>
+                                <th class="highlight-col">CXHMS</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>仿生记忆衰减</td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td class="highlight-col"><span class="check">&check;</span> 双阶段+艾宾浩斯</td>
+                            </tr>
+                            <tr>
+                                <td>情感增强记忆</td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td class="highlight-col"><span class="check">&check;</span> 中英文情感分析</td>
+                            </tr>
+                            <tr>
+                                <td>再激活增强</td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td class="highlight-col"><span class="check">&check;</span> reactivation_count</td>
+                            </tr>
+                            <tr>
+                                <td>知识图谱（联想记忆）</td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="partial">&sim;</span> 简单图</td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td class="highlight-col"><span class="check">&check;</span> BFS/DFS/PageRank</td>
+                            </tr>
+                            <tr>
+                                <td>记忆去重</td>
+                                <td><span class="partial">&sim;</span> 基础</td>
+                                <td><span class="partial">&sim;</span> 基础</td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td class="highlight-col"><span class="check">&check;</span> Jaccard+并查集</td>
+                            </tr>
+                            <tr>
+                                <td>智能归档压缩</td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="partial">&sim;</span> 溢出淘汰</td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td class="highlight-col"><span class="check">&check;</span> 5级渐进压缩</td>
+                            </tr>
+                            <tr>
+                                <td>多向量后端</td>
+                                <td><span class="cross">&cross;</span> 闭源</td>
+                                <td><span class="partial">&sim;</span> 2-3种</td>
+                                <td><span class="partial">&sim;</span> 2种</td>
+                                <td><span class="partial">&sim;</span> 2种</td>
+                                <td class="highlight-col"><span class="check">&check;</span> 5种后端</td>
+                            </tr>
+                            <tr>
+                                <td>多 Agent 人格互联</td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td class="highlight-col"><span class="check">&check;</span> ACP协议</td>
+                            </tr>
+                            <tr>
+                                <td>插件扩展协议</td>
+                                <td><span class="partial">&sim;</span> GPTs</td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td class="highlight-col"><span class="check">&check;</span> MCP+CXFC双协议</td>
+                            </tr>
+                            <tr>
+                                <td>可私有化部署</td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="check">&check;</span></td>
+                                <td><span class="check">&check;</span></td>
+                                <td><span class="check">&check;</span></td>
+                                <td class="highlight-col"><span class="check">&check;</span></td>
+                            </tr>
+                            <tr>
+                                <td>副模型指令路由</td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td><span class="partial">&sim;</span> 基础</td>
+                                <td><span class="cross">&cross;</span></td>
+                                <td class="highlight-col"><span class="check">&check;</span> 10种指令</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 核心公式展示 -->
+                <div style="margin-top: 20px;">
+                    <div class="sub-heading"><span class="dot dot-cyan"></span>仿生核心：Agent 记忆衰减模型</div>
+                    <div class="formula-box">
+                        T(t) = &alpha; &middot; e<sup>-&lambda;&sub1;&middot;&Delta;t</sup> + (1 - &alpha;) &middot; e<sup>-&lambda;&sub2;&middot;&Delta;t</sup>
+                        <div class="formula-label">双阶段指数衰减 &mdash; &alpha; 近期记忆权重，&lambda;&sub1; 快速衰减系数，&lambda;&sub2; 慢速衰减系数</div>
+                    </div>
+                    <div class="formula-box" style="border-color: rgba(139,92,246,0.15); background: rgba(139,92,246,0.05); color: var(--accent-purple);">
+                        T(t) = 1 / (1 + (&Delta;t / T<sub>50</sub>)<sup>k</sup>)
+                        <div class="formula-label">艾宾浩斯优化版 &mdash; T<sub>50</sub> 衰减到50%所需天数，k 曲线陡峭度</div>
+                    </div>
+                </div>
+
+                <!-- 工具体系 -->
+                <div style="margin-top: 20px;">
+                    <div class="sub-heading"><span class="dot dot-green"></span>Agent 可调用的仿生记忆工具（28+工具）</div>
+                    <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">内置工具（强制开启）：</p>
+                    <div class="tool-list">
+                        <span class="tool-chip builtin">calculator</span>
+                        <span class="tool-chip builtin">datetime</span>
+                        <span class="tool-chip builtin">random</span>
+                        <span class="tool-chip builtin">json_format</span>
+                    </div>
+                    <p style="font-size: 13px; color: var(--text-muted); margin: 8px 0 8px;">主模型工具：</p>
+                    <div class="tool-list">
+                        <span class="tool-chip">write_long_term_memory</span>
+                        <span class="tool-chip">search_all_memories</span>
+                        <span class="tool-chip">call_assistant</span>
+                        <span class="tool-chip">set_alarm / get_alarms / cancel_alarm</span>
+                        <span class="tool-chip">mono</span>
+                        <span class="tool-chip">write_permanent_memory</span>
+                        <span class="tool-chip">acp_list_agents / acp_connect</span>
+                    </div>
+                    <p style="font-size: 13px; color: var(--text-muted); margin: 8px 0 8px;">记忆管理工具（16个）：</p>
+                    <div class="tool-list">
+                        <span class="tool-chip memory">save_memory</span>
+                        <span class="tool-chip memory">search_memories</span>
+                        <span class="tool-chip memory">update_memory</span>
+                        <span class="tool-chip memory">delete_memory</span>
+                        <span class="tool-chip memory">+ 12 more</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 第二部分 -->
+        <div class="section-card fade-in">
+            <div class="section-number">2</div>
+            <h2 class="section-title">目标用户及痛点</h2>
+            <div class="section-body">
+
+                <div class="sub-heading"><span class="dot dot-purple"></span>面向哪些用户</div>
+                <p>
+                    <span class="highlight-purple">核心用户：人格化 Agent 使用者</span>（知识工作者、学生、银发群体）——需要一个"真正记住自己"的 Agent 伙伴。Agent 通过 write_long_term_memory 自动记住用户偏好与上下文，通过 write_permanent_memory 永久铭记核心信息，人格因记忆而持续生长。<br><br>
+                    <span class="highlight-pink">延伸用户：银发群体与残障人士</span>——需要像老朋友一样"记得住自己"的 Agent 陪伴。CXHMS 赋予 Agent 仿生记忆，让它永久记住健康状况与用药习惯，set_alarm 定时提醒吃药，情感分析感知情绪波动——Agent 不再是冰冷的工具，而是有温度的伙伴。<br><br>
+                    <span class="highlight-cyan">开发者用户：Agent 开发者</span>——需要为自研 Agent 接入仿生记忆能力，通过 REST API 让 Agent 拥有遗忘与铭记机制，无需从零构建向量存储与衰减系统。
+                </p>
+
+                <div class="sub-heading"><span class="dot dot-cyan"></span>在什么场景下使用</div>
+                <p>
+                    <span class="highlight-amber">长期项目协作</span>：开发者跨月与人格化 Agent 结对编程，Agent 通过 search_all_memories 自动召回上次的架构决策和代码风格偏好，仿生衰减让近期记忆清晰、远期记忆渐隐——就像一个真正了解你的搭档；<br><br>
+                    <span class="highlight-amber">学习陪伴</span>：学生跨学期与 Agent 互动，Agent 记住学习进度与薄弱环节，mono 工具临时保持关键上下文，情感分析感知学习焦虑并调整语气——Agent 像一位有记忆的私人教师；<br><br>
+                    <span class="highlight-amber">适老陪伴</span>：老年人日常与 Agent 对话，Agent 永久记住健康状况与用药提醒，set_alarm 定时推送吃药提醒，情感分析识别老人情绪波动并给予温暖回应——Agent 像一位记住你一切的老朋友。
+                </p>
+
+                <div class="sub-heading"><span class="dot dot-green"></span>当前痛点</div>
+
+                <div class="pain-compare">
+                    <div class="pain-box before">
+                        <div class="box-label">&#10060; 没有仿生记忆的 Agent</div>
+                        <ul>
+                            <li>每次对话从零开始，人格设定沦为空壳</li>
+                            <li>Agent 无法记住用户偏好，回答千篇一律</li>
+                            <li>跨会话人格断裂，无法形成持续认知</li>
+                            <li>银发/残障用户重复输入成本极高</li>
+                            <li>开发者需自建向量存储+衰减系统</li>
+                            <li>Agent 无法感知用户情绪，回应缺乏温度</li>
+                            <li>多 Agent 之间无法共享记忆，各自为战</li>
+                        </ul>
+                    </div>
+                    <div class="pain-box after">
+                        <div class="box-label">&#9989; 拥有仿生记忆的 Agent</div>
+                        <ul>
+                            <li>仿生衰减让记忆自然遗忘与铭记，人格持续生长</li>
+                            <li>永久记忆 + 长期记忆分层，Agent 个性化回应</li>
+                            <li>知识图谱构建联想记忆，Agent 形成认知网络</li>
+                            <li>一句话触发历史上下文，极低使用门槛</li>
+                            <li>5种向量后端开箱即用，REST API 5分钟接入</li>
+                            <li>情感增强记忆，Agent 对情感事件记得更牢</li>
+                            <li>ACP协议实现多Agent人格互联与记忆共享</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 第三部分 -->
+        <div class="section-card fade-in">
+            <div class="section-number">3</div>
+            <h2 class="section-title">价值与意义</h2>
+            <div class="section-body">
+
+                <div class="value-cards">
+                    <div class="value-card">
+                        <div class="vc-icon">&#128200;</div>
+                        <div class="vc-title">商业价值：人格化 Agent 记忆基础设施</div>
+                        <div class="vc-text">
+                            人格化 Agent 是 AI 行业的下一个浪潮，而记忆是人格的根基。CXHMS 作为<span class="highlight-cyan">面向 Agent 的仿生记忆中间件</span>，填补了"Agent 人格设定"与"仿生持久记忆"之间的空白。系统支持 5 种向量后端、多模型路由、副模型 10 种指令路由、MCP/CXFC 双插件协议——任何 Agent 开发者都可以通过 REST API 为自己的 Agent 植入仿生记忆，让 Agent 从"扮演人格"进化为"拥有人格"。既可面向 C 端提供 Agent 记忆 SaaS 服务，也可面向 B 端提供企业级私有化方案。
+                        </div>
+                    </div>
+                    <div class="value-card">
+                        <div class="vc-icon">&#127758;</div>
+                        <div class="vc-title">社会价值：有记忆的 Agent 缩小数字鸿沟</div>
+                        <div class="vc-text">
+                            对银发群体与残障人士而言，重复输入是使用 AI 的最大障碍。拥有仿生记忆的 Agent 像一位老朋友——<span class="highlight-green">永久记住</span>用药情况（write_permanent_memory），<span class="highlight-green">情感感知</span>用户情绪波动，<span class="highlight-green">定时提醒</span>吃药（set_alarm），<span class="highlight-green">自动召回</span>历史需求（search_all_memories）。Agent 不再是每次都要重新认识的陌生人，而是记住你一切的伙伴。这不仅是效率提升，更是<span class="highlight-green">数字平权</span>的实践：让每个人都能以最低门槛享受有温度的 AI 陪伴。
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 24px;">
+                    <div class="sub-heading"><span class="dot dot-amber"></span>核心技术栈</div>
+                    <div class="tech-pills">
+                        <span class="tech-pill">FastAPI</span>
+                        <span class="tech-pill">Pydantic v2</span>
+                        <span class="tech-pill">React 18</span>
+                        <span class="tech-pill">TypeScript 5</span>
+                        <span class="tech-pill">Vite 6</span>
+                        <span class="tech-pill">Weaviate</span>
+                        <span class="tech-pill">Milvus Lite</span>
+                        <span class="tech-pill">Chroma</span>
+                        <span class="tech-pill">Qdrant</span>
+                        <span class="tech-pill">SQLite</span>
+                        <span class="tech-pill">Ollama</span>
+                        <span class="tech-pill">vLLM</span>
+                        <span class="tech-pill">MCP 协议</span>
+                        <span class="tech-pill">ACP 协议</span>
+                        <span class="tech-pill">CXFC 协议</span>
+                        <span class="tech-pill">WebSocket</span>
+                        <span class="tech-pill">Zustand 5</span>
+                        <span class="tech-pill">React Query 5</span>
+                        <span class="tech-pill">Tailwind CSS 3</span>
+                        <span class="tech-pill">Framer Motion</span>
+                        <span class="tech-pill">Recharts</span>
+                        <span class="tech-pill">i18next</span>
+                    </div>
+                </div>
+
+                <div style="margin-top: 20px;">
+                    <div class="sub-heading"><span class="dot dot-cyan"></span>系统规模</div>
+                    <p style="font-size: 13px; color: var(--text-secondary); line-height: 2;">
+                        后端 17 个 API 路由模块 &middot; 12 个核心子模块 &middot; 5 种向量存储后端 &middot; 28+ AI 工具 &middot; 10 种副模型指令<br>
+                        前端 9 个页面 &middot; 11 个 UI 组件 &middot; 双语言国际化 (zh-CN / en-US) &middot; WebSocket 实时通信<br>
+                        完整 LLM E2E 测试框架 &middot; 18+ 后端测试文件 &middot; 控制服务 (独立端口 8765)
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部 -->
+        <div class="footer fade-in">
+            <div class="footer-brand">CXHMS &middot; 晨曦仿生人格化记忆系统</div>
+            <div class="footer-text">
+                为 Agent 植入仿生记忆，让人格因记忆而生 <span class="pulse-dot"></span>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) entry.target.style.animationPlayState = 'running';
+            });
+        }, { threshold: 0.1 });
+
+        document.querySelectorAll('.fade-in').forEach(el => {
+            el.style.animationPlayState = 'paused';
+            observer.observe(el);
+        });
+
+        setTimeout(() => {
+            document.querySelectorAll('.fade-in').forEach(el => {
+                const rect = el.getBoundingClientRect();
+                if (rect.top < window.innerHeight) el.style.animationPlayState = 'running';
+            });
+        }, 100);
+    </script>
+
+</body>
+</html>

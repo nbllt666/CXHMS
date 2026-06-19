@@ -104,14 +104,14 @@ memory:
   chroma:
     db_path: data/chroma_db
     collection_name: memory_vectors
-    vector_size: 2048
+    vector_size: 768
   milvus_lite:
     db_path: data/milvus_lite.db
-    vector_size: 2048
+    vector_size: 768
   qdrant:
     host: localhost
     port: 6333
-    vector_size: 2048
+    vector_size: 768
   weaviate:
     # 宿主机直连: localhost + 8090
     # Docker 网络访问: weaviate + 8080
@@ -119,7 +119,7 @@ memory:
     port: 8090
     grpc_port: 50061
     embedded: false
-    vector_size: 2048
+    vector_size: 768
     schema_class: CXHMSMemory
     api_key: null
   hybrid_search_enabled: false

@@ -143,7 +143,7 @@ class ChromaVectorStore:
 
                 formatted_results.append(
                     {
-                        "id": int(doc_id),
+                        "memory_id": int(doc_id),
                         "score": similarity,
                         "content": results["documents"][0][i] if results.get("documents") else "",
                         "metadata": results["metadatas"][0][i] if results.get("metadatas") else {},

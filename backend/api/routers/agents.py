@@ -128,7 +128,8 @@ def _load_agents() -> List[dict]:
             agents = json.load(f)
             agent_config_cache.set("all_agents", agents)
             return agents
-    except Exception:
+    except Exception as e:
+        logger.error(f"加载Agent配置失败: {e}", exc_info=True)
         return []
 
 
@@ -257,7 +258,7 @@ async def update_agent(agent_id: str, request: AgentUpdateRequest):
         update_data = request.dict(exclude_unset=True)
         for key, value in update_data.items():
             if value is not None:
-                # 处理空模型字符串 - 空字符串表示使用默认模型
+                # 处理空模型字符串 - 空字符串表示使用默value and 认模型
                 if key == "model" and value and isinstance(value, str) and not value.strip():
                     value = "main"
                 agent[key] = value
@@ -354,14 +355,7 @@ async def get_agent_stats(agent_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"获取Agent统计失败: {e}", exc_info=True)
-        return {
-            "status": "success",
-            "agent_id": agent_id,
-            "session_count": 0,
-            "total_messages": 0,
-            "error": str(e),
-        }
+        raise HTTPException(status_code=500, detail=f"获取Agent统计失败: {str(e)}")
 
 
 @router.get("/agents/{agent_id}/context")
@@ -372,7 +366,7 @@ async def get_agent_context(agent_id: str, limit: int = 20):
         agent_id: Agent唯一标识
         limit: 返回的最大消息数量
     """
-    from backend.core.context.agent_context_manager import AgentContextManager
+    from backend.api.app import get_context_manager
 
     try:
         agents = _load_agents()
@@ -381,7 +375,7 @@ async def get_agent_context(agent_id: str, limit: int = 20):
         if not agent:
             raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' 不存在")
 
-        context_mgr = AgentContextManager()
+        context_mgr = get_context_manager()
         summary = context_mgr.get_context_summary(agent_id)
         messages = context_mgr.get_message_history(agent_id, limit=limit)
 
@@ -411,7 +405,7 @@ async def clear_agent_context(agent_id: str):
     Args:
         agent_id: Agent唯一标识
     """
-    from backend.core.context.agent_context_manager import AgentContextManager
+    from backend.api.app import get_context_manager
 
     try:
         agents = _load_agents()
@@ -420,7 +414,7 @@ async def clear_agent_context(agent_id: str):
         if not agent:
             raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' 不存在")
 
-        context_mgr = AgentContextManager()
+        context_mgr = get_context_manager()
         context_mgr.clear_context(agent_id)
 
         return {"status": "success", "message": f"Agent '{agent_id}' 的上下文已清空"}

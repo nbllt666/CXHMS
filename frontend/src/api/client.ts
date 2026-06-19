@@ -427,11 +427,12 @@ class ApiClient {
     return response.data;
   }
 
-  async createSession(title?: string) {
+  async createSession(title?: string, agentId?: string) {
     this._clearCache('/api/context/sessions');
     const response = await this.client.post('/api/context/sessions', {
       workspace_id: 'default',
       title: title || '新对话',
+      ...(agentId ? { agent_id: agentId } : {}),
     });
     return response.data;
   }
@@ -443,7 +444,7 @@ class ApiClient {
     return response.data;
   }
 
-  async clearSessionMessages(sessionId: string): Promise<any> {
+  async clearSessionMessages(sessionId: string): Promise<{ status: string; message: string }> {
     const response = await this.client.delete(`/api/context/sessions/${sessionId}/messages`);
     return response.data;
   }

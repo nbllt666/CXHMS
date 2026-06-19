@@ -42,8 +42,8 @@ main.py → 初始化日志 → 加载配置 → 启动 Uvicorn → FastAPI 应�
 1. **ModelRouter** - 模型路由器 (最先初始化，其他组件可能依赖它)
 2. **MemoryManager** - 记忆管理器
 3. **ContextManager** - 上下文管理器
-4. **ACPManager** - ACP 管理器
-5. **LLMClient** - LLM 客户端 (通过模型路由器获取主模型客户端，回退到旧方式)
+4. **ACPManager** - ACP 管理器 (含 start())
+5. **LLMClient** - LLM 客户端 (优先从 model_router 获取主模型客户端，回退到 LLMFactory)
 6. **SecondaryModelRouter** - 副模型路由器
 7. **MCPManager** - MCP 管理器
 8. **内置工具注册** - register_builtin_tools()
@@ -53,12 +53,14 @@ main.py → 初始化日志 → 加载配置 → 启动 Uvicorn → FastAPI 应�
 12. **向量搜索启用** - 根据 vector_backend 配置初始化 (chroma/milvus_lite/qdrant/weaviate/weaviate_embedded)
 13. **AlarmManager + WebSocket 离线保存** - AlarmManager + WebSocketManager
 14. **AsyncMemoryManager** - 异步记忆管理器
-15. **GraphDatabase** - 图数据库 (条件启用: settings.config.graph.enabled)
-16. **SQLiteGraphStore** - SQLite 图存储
-17. **CXFCManager** - CXFC 管理器 (条件启用: settings.config.cxfc.enabled)
-18. **图数据库工具注册** - register_graph_tools() (条件注册: graph_database && graph_store)
-19. **ServiceState** - 注入所有组件
-20. **关闭顺序** - CXFCManager → GraphDatabase → AlarmManager → WebSocketManager → ACPManager → MemoryManager → BackupManager → PluginManager → ModelRouter
+15. **GraphDatabase + SQLiteGraphStore** - 图数据库 + SQLite 图存储 (条件启用: settings.config.graph.enabled)
+16. **CXFCManager** - CXFC 管理器 (条件启用: settings.config.cxfc.enabled，含 start())
+17. **图数据库工具注册** - register_graph_tools() (条件注册: graph_database && graph_store)
+18. **ServiceState** - 注入所有组件
+
+**关闭顺序** - CXFCManager → GraphDatabase → AlarmManager → WebSocketManager(stop_cleanup_task) → ACPManager(stop) → MemoryManager → BackupManager → PluginManager → ModelRouter
+
+> **注意**: 控制服务 (Control Service, 端口8765) 独立于 FastAPI lifespan 运行，不在上述初始化序列中。
 
 ### 1.2 全局依赖注入
 
@@ -3056,18 +3058,18 @@ class ToolError(CXHMSException):
 | 页面 | 文件 | 路由 | 功能 |
 |------|------|------|------|
 | 仪表盘 | [DashboardPage.tsx](file:///d:/CXHMS/frontend/src/pages/DashboardPage.tsx) | `/` | 系统概览、统计数据 |
-| 聊天 | [ChatPage.tsx](file:///d:/CXHMS/frontend/src/pages/ChatPage.tsx) | `/chat` | 聊天对话、流式响应 |
-| 记忆管理 | [MemoriesPage.tsx](file:///d:/CXHMS/frontend/src/pages/MemoriesPage.tsx) | `/memories` | 记忆 CRUD、搜索 |
+| 聊天 | [ChatPage.tsx](file:///d:/CXHMS/frontend/src/pages/ChatPage.tsx) | `/chat` | 聊天对话、流式响应、双通信模式(WebSocket+SSE降级)、思考过程展示、工具调用展示、图片上传(多模态)、提醒通知、摘要保存 |
+| 记忆管理 | [MemoriesPage.tsx](file:///d:/CXHMS/frontend/src/pages/MemoriesPage.tsx) | `/memories` | 记忆 CRUD、搜索、图数据库管理(GraphManager) |
 | 归档 | [ArchivePage.tsx](file:///d:/CXHMS/frontend/src/pages/ArchivePage.tsx) | `/archive` | 归档管理、去重合并 |
 | Agent 配置 | [AgentsPage.tsx](file:///d:/CXHMS/frontend/src/pages/AgentsPage.tsx) | `/agents` | Agent 配置管理 |
 | ACP | [AcpPage.tsx](file:///d:/CXHMS/frontend/src/pages/AcpPage.tsx) | `/acp` | ACP 协议、Agent 发现 |
 | 工具 | [ToolsPage.tsx](file:///d:/CXHMS/frontend/src/pages/ToolsPage.tsx) | `/tools` | 工具管理、MCP |
-| 设置 | [SettingsPage.tsx](file:///d:/CXHMS/frontend/src/pages/SettingsPage.tsx) | `/settings` | 系统设置 |
-| 记忆代理 | [MemoryAgentPage.tsx](file:///d:/CXHMS/frontend/src/pages/MemoryAgentPage.tsx) | `/memory-agent` | 记忆管理对话引擎 |
+| 设置 | [SettingsPage.tsx](file:///d:/CXHMS/frontend/src/pages/SettingsPage.tsx) | `/settings` | 系统设置、外观配置、服务管理、向量存储、模型配置、离线超时 |
+| 记忆代理 | [MemoryAgentPage.tsx](file:///d:/CXHMS/frontend/src/pages/MemoryAgentPage.tsx) | `/memory-agent` | 记忆管理对话引擎、思考过程展示、工具调用展示 |
 
 ### 状态管理
 
-- **chatStore** ([chatStore.ts](file:///d:/CXHMS/frontend/src/store/chatStore.ts)): 管理 agents, sessions, currentAgentId, currentSessionId, currentMessages, isChatExpanded, isTyping 等
+- **chatStore** ([chatStore.ts](file:///d:/CXHMS/frontend/src/store/chatStore.ts)): 管理 agents, sessions, currentAgentId, currentSessionId, isChatExpanded, isLoadingAgents, isLoadingSessions 等。仅持久化 currentAgentId、currentSessionId、isChatExpanded 到 localStorage
 - **themeStore** ([themeStore.ts](file:///d:/CXHMS/frontend/src/store/themeStore.ts)): 主题管理，支持 light/dark/system 三种模式
 - **i18next 国际化**: 支持简体中文 (zh-CN) 和英文 (en-US)，配置位于 [i18n/index.ts](file:///d:/CXHMS/frontend/src/i18n/index.ts)
 
@@ -3081,17 +3083,26 @@ Header, Layout, PageHeader, Sidebar (4个布局组件)
 
 ### 功能组件
 
-- **GraphManager**: 图数据库可视化管理
-- **ConnectionCheck**: 连接状态检测
+- **GraphManager**: 图数据库可视化管理（节点/边CRUD、遍历、算法分析、导出）
+- **ConnectionCheck**: 连接状态检测，不可用时显示配置界面，10秒自动重试，支持动态配置后端地址
 - **VirtualList**: 虚拟滚动列表
-- **SummaryModal**: 摘要弹窗
+- **SummaryModal**: 摘要弹窗（自动摘要/自定义摘要，SSE流式生成）
 - **ErrorBoundary**: 错误边界
 - **LanguageSwitcher**: 语言切换
 
 ### Hooks
 
-- **useWebSocket**: WebSocket 连接管理，支持5次重连，30秒心跳
-- **useHotkey**: 快捷键管理（Ctrl+K/N/S等）
+- **useWebSocket**: WebSocket 连接管理，支持5次自动重连（指数退避），30秒心跳ping，支持 alarm 提醒回调，离线超时动态配置
+- **useHotkey**: 快捷键管理（Ctrl+K搜索/Ctrl+N新对话/Ctrl+S保存/Ctrl+Shift+D主题等）
+
+### 17.0 前端核心特性
+
+- **双通信模式**: ChatPage 同时支持 WebSocket（实时）和 SSE 流式（降级）两种通信方式，WebSocket 优先，连接失败时自动降级到 SSE
+- **连接检测与动态配置**: ConnectionCheck 组件实时检测后端可用性，不可用时显示配置界面让用户手动输入地址和端口，10秒自动重试
+- **视觉/多模态支持**: ChatPage 支持 Agent 启用 vision_enabled 时上传图片（最多4张 base64），通过 WebSocket 或 SSE 发送
+- **思考过程展示**: ChatPage 和 MemoryAgentPage 支持展示 AI 的思考过程（thinking）和工具调用详情，可折叠展开
+- **提醒通知**: WebSocket 支持 alarm 类型消息，ChatPage 显示定时提醒通知（5秒自动消失）
+- **离线超时机制**: SettingsPage 可配置离线超时时间，前端断开连接超过此时间后系统自动保存上下文到长期记忆
 
 ### 17.1 API 客户端
 
@@ -3967,7 +3978,7 @@ describe('ChatStore', () => {
 ### 20.1 三层配置体系
 
 ```yaml
-# 第一层：YAML 配置文件 (config.yaml)
+# 第一层：YAML 配置文件 (config/default.yaml)
 server:
   host: "0.0.0.0"
   port: 8001
@@ -3980,6 +3991,10 @@ llm:
   provider: OLLAMA
   model: qwen3-vl:8b
 ```
+
+> **端口不一致注意**: default.yaml 中 `server.port: 8001`，但 SystemConfig 默认值为 `8000`，.env.example 也写 `8000`，Dockerfile 暴露 `8000`。前端 vite.config.ts 代理 `/api` 到 `localhost:8001`。建议本地开发使用 8001，Docker 部署使用 8000。
+
+> **配置孤儿**: default.yaml 中的 `llm_params`、`agent`、`security`、`monitoring`、`tools` 配置节未被 CXHMSConfig 加载到运行时配置对象中。`graph` 和 `cxfc` 配置节存在于 settings.py 的数据类中，但未在 default.yaml 中定义（使用默认值）。
 
 ```bash
 # 第二层：环境变量覆盖（CXHMS_ 前缀）
@@ -4059,12 +4074,16 @@ CXHMS_LLM_PROVIDER=OLLAMA
 | | 配置验证 | ✅ | ConfigValidation |
 | | LLM 提供商 | ✅ | OLLAMA/VLLM/OPENAI/ANTHROPIC/DEEPSEEK/LOCAL |
 | **国际化** | 多语言支持 | ✅ | 简体中文、英文 |
-| **前端界面** | 聊天界面 | ✅ | React 实现 |
-| | 记忆管理 | ✅ | CRUD 界面 |
+| **前端界面** | 聊天界面 | ✅ | React 实现，双通信模式(WebSocket+SSE降级) |
+| | 记忆管理 | ✅ | CRUD 界面，图数据库管理(GraphManager) |
 | | 归档管理 | ✅ | 可视化界面 |
 | | Agent 配置 | ✅ | 配置编辑器 |
 | | 工具管理 | ✅ | 工具列表、测试 |
 | | 记忆代理 | ✅ | 记忆管理对话引擎 |
+| | 连接检测 | ✅ | ConnectionCheck 动态配置后端地址 |
+| | 多模态支持 | ✅ | 图片上传（Agent启用vision_enabled时） |
+| | 提醒通知 | ✅ | WebSocket alarm 消息实时推送 |
+| | 离线超时 | ✅ | 自动保存上下文到长期记忆 |
 
 ### 21.2 技术亮点
 
@@ -4134,7 +4153,7 @@ CXHMS_LLM_PROVIDER=OLLAMA
 
 ## 报告生成时间
 
-2026-06-13
+2026-06-19
 
 ## 版本
 

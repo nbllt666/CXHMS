@@ -6,13 +6,15 @@
     "version": "Version {{version}}"
   },
   "nav": {
+    "dashboard": "Dashboard",
     "chat": "Chat",
     "memories": "Memories",
     "archive": "Archive",
     "agents": "Agents",
     "acp": "ACP",
     "tools": "Tools",
-    "settings": "Settings"
+    "settings": "Settings",
+    "memoryAgent": "Memory Agent"
   },
   "common": {
     "loading": "Loading...",

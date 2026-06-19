@@ -19,6 +19,8 @@ class AsyncConnectionPool:
         self.max_size = max_size
         self._pool: List[aiosqlite.Connection] = []
         self._lock = asyncio.Lock()
+        self._condition = asyncio.Condition(self._lock)
+        self._total_connections = 0
         self._initialized = False
 
     async def initialize(self):
@@ -31,6 +33,7 @@ class AsyncConnectionPool:
             conn = await self._create_connection()
             if conn:
                 self._pool.append(conn)
+                self._total_connections += 1
 
         self._initialized = True
         logger.info(f"连接池初始化完成: {len(self._pool)} 个连接")
@@ -51,16 +54,14 @@ class AsyncConnectionPool:
     @asynccontextmanager
     async def get_connection(self):
         async with self._lock:
+            while not self._pool and self._total_connections >= self.max_size:
+                await self._condition.wait()
             if self._pool:
                 conn = self._pool.pop()
             else:
-                if len(self._pool) < self.max_size:
-                    conn = await self._create_connection()
-                else:
-                    conn = None
-
-        if conn is None:
-            conn = await self._create_connection()
+                conn = await self._create_connection()
+                if conn:
+                    self._total_connections += 1
 
         try:
             yield conn
@@ -72,13 +73,18 @@ class AsyncConnectionPool:
                         if len(self._pool) < self.max_size:
                             self._pool.append(conn)
                         else:
+                            self._total_connections -= 1
                             await conn.close()
+                        self._condition.notify_all()
                 except Exception as e:
                     logger.warning(f"连接回收失败: {e}")
                     try:
                         await conn.close()
                     except Exception:
                         pass
+                    async with self._lock:
+                        self._total_connections -= 1
+                        self._condition.notify_all()
 
     async def close_all(self):
         async with self._lock:
@@ -88,6 +94,8 @@ class AsyncConnectionPool:
                 except Exception as e:
                     logger.warning(f"关闭连接失败: {e}")
             self._pool.clear()
+            self._total_connections = 0
+            self._condition.notify_all()
         self._initialized = False
         logger.info("所有数据库连接已关闭")
 
@@ -131,24 +139,29 @@ class SyncConnectionPool:
 
         thread_id = threading.get_ident()
 
-        if thread_id in self._connections:
-            conn = self._connections[thread_id]
+        with self._lock:
+            conn = self._connections.get(thread_id)
+
+        if conn is not None:
             try:
                 conn.execute("SELECT 1")
-                self._last_used[thread_id] = time.time()
+                with self._lock:
+                    self._last_used[thread_id] = time.time()
                 return conn
             except Exception:
                 try:
                     conn.close()
                 except Exception:
                     pass
-                del self._connections[thread_id]
-                del self._last_used[thread_id]
+                with self._lock:
+                    self._connections.pop(thread_id, None)
+                    self._last_used.pop(thread_id, None)
 
         conn = self._create_connection()
         if conn:
-            self._connections[thread_id] = conn
-            self._last_used[thread_id] = time.time()
+            with self._lock:
+                self._connections[thread_id] = conn
+                self._last_used[thread_id] = time.time()
 
         return conn
 
@@ -157,21 +170,25 @@ class SyncConnectionPool:
 
         thread_id = threading.get_ident()
 
-        if thread_id in self._connections:
-            try:
-                self._connections[thread_id].close()
-            except Exception:
-                pass
-            del self._connections[thread_id]
-            del self._last_used[thread_id]
+        with self._lock:
+            conn = self._connections.pop(thread_id, None)
+            self._last_used.pop(thread_id, None)
 
-    def close_all(self):
-        for conn in self._connections.values():
+        if conn:
             try:
                 conn.close()
             except Exception:
                 pass
-        self._connections.clear()
-        self._last_used.clear()
+
+    def close_all(self):
+        with self._lock:
+            connections = list(self._connections.values())
+            self._connections.clear()
+            self._last_used.clear()
+        for conn in connections:
+            try:
+                conn.close()
+            except Exception:
+                pass
         self._initialized = False
         logger.info("所有同步数据库连接已关闭")

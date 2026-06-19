@@ -1,0 +1,8 @@
+.env
+backups/
+test_reports/
+test_chroma/
+__pycache__/
+.git/
+node_modules/
+frontend/coverage/

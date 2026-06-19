@@ -17,7 +17,6 @@ interface SummaryModalProps {
   onClose: () => void;
   contextText: string;
   agentId: string;
-  sessionId?: string;
   autoStart?: boolean;
 }
 

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { Card, Modal, Button, Badge, EmptyState, EmptyStateIcon } from './ui';
+import type { BadgeVariant } from './ui/Badge';
 import { formatRelativeTime, truncate } from '../lib/utils';
 
 // ========== 类型定义 ==========
@@ -246,7 +247,7 @@ export function GraphManager() {
     try {
       setNeighborsLoading(true);
       const data = await api.getNodeNeighbors(nodeId, { agent_id: selectedAgentId });
-      setNeighbors(data.neighbors || []);
+      setNeighbors(data?.neighbors ?? []);
     } catch (err) {
       console.error('加载邻居节点失败:', err);
     } finally {
@@ -577,7 +578,7 @@ export function GraphManager() {
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 min-w-0">
-                            <Badge variant={TYPE_COLOR_MAP[cat] as any} size="sm">
+                            <Badge variant={TYPE_COLOR_MAP[cat] as BadgeVariant} size="sm">
                               {result.node.type}
                             </Badge>
                             <span className="text-sm font-medium text-[var(--color-text-primary)] truncate">
@@ -635,7 +636,7 @@ export function GraphManager() {
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 min-w-0">
-                          <Badge variant={TYPE_COLOR_MAP[cat] as any} size="sm">
+                          <Badge variant={TYPE_COLOR_MAP[cat] as BadgeVariant} size="sm">
                             {node.type}
                           </Badge>
                           <span className="text-sm font-medium text-[var(--color-text-primary)] truncate">
@@ -722,7 +723,7 @@ export function GraphManager() {
               {/* 基本信息 */}
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  <Badge variant={TYPE_COLOR_MAP[getGraphCategory(selectedNode.type)] as any} size="sm">
+                  <Badge variant={TYPE_COLOR_MAP[getGraphCategory(selectedNode.type)] as BadgeVariant} size="sm">
                     {selectedNode.type}
                   </Badge>
                   <span className="text-sm font-medium text-[var(--color-text-primary)]">
@@ -785,7 +786,7 @@ export function GraphManager() {
                           className="p-2 bg-[var(--color-bg-tertiary)] rounded-[var(--radius-sm)]"
                         >
                           <div className="flex items-center gap-2">
-                            <Badge variant={TYPE_COLOR_MAP[cat] as any} size="sm">
+                            <Badge variant={TYPE_COLOR_MAP[cat] as BadgeVariant} size="sm">
                               {neighborNode.type}
                             </Badge>
                             <span className="text-xs font-medium text-[var(--color-text-primary)] truncate">

@@ -1,3 +1,4 @@
+import hmac
 import os
 from datetime import datetime
 from typing import Dict, Optional
@@ -12,19 +13,17 @@ logger = get_contextual_logger(__name__)
 ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY")
 
 
-def verify_admin_key(x_api_key: Optional[str] = Header(None)) -> bool:
-    """验证管理员 API Key。如果未设置 ADMIN_API_KEY 环境变量，则跳过验证。"""
+def verify_admin_key(x_api_key: Optional[str] = Header(None)) -> None:
+    """验证管理员 API Key。未配置 ADMIN_API_KEY 时拒绝所有请求。"""
     if not ADMIN_API_KEY:
-        return True
-    if not x_api_key:
-        return False
-    return x_api_key == ADMIN_API_KEY
+        raise HTTPException(status_code=403, detail="Admin API key not configured")
+    if not x_api_key or not hmac.compare_digest(x_api_key, ADMIN_API_KEY):
+        raise HTTPException(status_code=401, detail="未授权访问")
 
 
 @router.get("/admin/dashboard")
 async def get_dashboard(x_api_key: Optional[str] = Header(None)):
-    if not verify_admin_key(x_api_key):
-        raise HTTPException(status_code=401, detail="未授权访问")
+    verify_admin_key(x_api_key)
 
     from backend.api.app import get_acp_manager, get_context_manager, get_memory_manager
 
@@ -53,8 +52,7 @@ async def get_dashboard(x_api_key: Optional[str] = Header(None)):
 
 @router.get("/admin/stats")
 async def get_stats(x_api_key: Optional[str] = Header(None)):
-    if not verify_admin_key(x_api_key):
-        raise HTTPException(status_code=401, detail="未授权访问")
+    verify_admin_key(x_api_key)
 
     from backend.api.app import get_context_manager, get_memory_manager
     from backend.core.tools.registry import tool_registry
@@ -114,8 +112,7 @@ async def health_check():
 
 @router.get("/admin/config")
 async def get_config(x_api_key: Optional[str] = Header(None)):
-    if not verify_admin_key(x_api_key):
-        raise HTTPException(status_code=401, detail="未授权访问")
+    verify_admin_key(x_api_key)
 
     from config.settings import settings
 
@@ -135,10 +132,9 @@ async def get_config(x_api_key: Optional[str] = Header(None)):
 
 @router.put("/admin/config")
 async def update_config(config: Dict, x_api_key: Optional[str] = Header(None)):
-    if not verify_admin_key(x_api_key):
-        raise HTTPException(status_code=401, detail="未授权访问")
+    verify_admin_key(x_api_key)
 
-    from config.settings import settings
+    from config.settings import settings, LLMProvider
 
     try:
         if not isinstance(config, dict):
@@ -147,7 +143,8 @@ async def update_config(config: Dict, x_api_key: Optional[str] = Header(None)):
         if "llm" in config:
             if "provider" in config["llm"]:
                 provider = config["llm"]["provider"]
-                if provider not in ["ollama", "vllm"]:
+                valid_providers = [p.value for p in LLMProvider]
+                if provider not in valid_providers:
                     raise HTTPException(status_code=400, detail=f"不支持的LLM提供商: {provider}")
                 settings.config.llm.provider = provider
             if "model" in config["llm"]:
@@ -155,7 +152,7 @@ async def update_config(config: Dict, x_api_key: Optional[str] = Header(None)):
 
         if "vector" in config:
             if "enabled" in config["vector"]:
-                settings.config.vector.enabled = bool(config["vector"]["enabled"])
+                settings.config.memory.vector_enabled = bool(config["vector"]["enabled"])
 
         if "acp" in config:
             if "enabled" in config["acp"]:
@@ -181,8 +178,7 @@ async def update_config(config: Dict, x_api_key: Optional[str] = Header(None)):
 
 @router.get("/admin/logs")
 async def get_logs(level: str = "INFO", lines: int = 50, x_api_key: Optional[str] = Header(None)):
-    if not verify_admin_key(x_api_key):
-        raise HTTPException(status_code=401, detail="未授权访问")
+    verify_admin_key(x_api_key)
 
     import logging
 
@@ -206,8 +202,7 @@ async def get_logs(level: str = "INFO", lines: int = 50, x_api_key: Optional[str
 
 @router.post("/admin/backup")
 async def create_backup(x_api_key: Optional[str] = Header(None)):
-    if not verify_admin_key(x_api_key):
-        raise HTTPException(status_code=401, detail="未授权访问")
+    verify_admin_key(x_api_key)
 
     import os
     import shutil

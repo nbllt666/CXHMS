@@ -55,6 +55,13 @@ class ACPSendMessageRequest(BaseModel):
     msg_type: str = "chat"
 
 
+class ACPGroupMessageRequest(BaseModel):
+    """ACP群组消息请求"""
+
+    group_id: str
+    content: Dict
+
+
 @router.post("/acp/discover")
 async def discover_agents(request: ACPDiscoverRequest = None):
     """发现Agents"""
@@ -276,7 +283,7 @@ async def send_message(request: ACPSendMessageRequest):
 
 
 @router.post("/acp/send/group")
-async def send_group_message(group_id: str, content: Dict):
+async def send_group_message(request: ACPGroupMessageRequest):
     from backend.api.app import get_acp_manager
     from backend.core.acp.group import ACPGroupManager
 
@@ -285,10 +292,10 @@ async def send_group_message(group_id: str, content: Dict):
         group_mgr = ACPGroupManager(acp_mgr)
 
         message = await group_mgr.broadcast_to_group(
-            group_id=group_id,
+            group_id=request.group_id,
             from_agent_id=acp_mgr._local_agent_id,
             from_agent_name=acp_mgr._local_agent_name,
-            content=content,
+            content=request.content,
         )
 
         return {"status": "success", "message_id": message.id, "message": "群消息已发送"}

@@ -126,7 +126,8 @@ class EdgeManager:
         where_clause = " AND ".join(conditions)
 
         count_query = f"SELECT COUNT(*) as cnt FROM edges WHERE {where_clause}"
-        total = self.db.execute_one(count_query, tuple(params))["cnt"]
+        result = self.db.execute_one(count_query, tuple(params))
+        total = result["cnt"] if result else 0
 
         query = f"""
             SELECT * FROM edges
@@ -193,7 +194,8 @@ class EdgeManager:
         where_clause = " AND ".join(conditions)
 
         count_query = f"SELECT COUNT(*) as cnt FROM edges WHERE {where_clause}"
-        total = self.db.execute_one(count_query, tuple(params))["cnt"]
+        result = self.db.execute_one(count_query, tuple(params))
+        total = result["cnt"] if result else 0
 
         query = f"""
             SELECT * FROM edges

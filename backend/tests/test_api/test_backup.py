@@ -9,7 +9,7 @@ class TestBackupEndpoints:
     def test_get_backup_status(self, client: TestClient):
         """Test getting backup status."""
         response = client.get("/api/backups/stats")
-        assert response.status_code in [200, 404, 500]
+        assert response.status_code in [200, 404]
 
     def test_create_backup(self, client: TestClient):
         """Test creating a backup."""

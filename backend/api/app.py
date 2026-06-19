@@ -407,6 +407,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"CXFC管理器启动失败: {e}")
 
+    # 将CXFC管理器注入到cxfc路由器
+    cxfc_router.set_cxfc_manager(cxfc_manager)
+
     # Register graph tools
     try:
         if graph_database and graph_store:
@@ -506,10 +509,13 @@ app = FastAPI(
 app.add_middleware(PerformanceMiddleware)
 
 if getattr(settings.config, "cors", None) and settings.config.cors.enabled:
+    cors_origins = settings.config.cors.origins
+    # CORS 规范禁止 origins=["*"] 与 allow_credentials=True 同时使用
+    allow_creds = cors_origins != ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.config.cors.origins,
-        allow_credentials=settings.config.cors.allow_credentials,
+        allow_origins=cors_origins,
+        allow_credentials=allow_creds,
         allow_methods=["*"],
         allow_headers=["*"],
     )

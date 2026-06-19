@@ -12,7 +12,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend.api.routers.agents import _load_agents
-from backend.core.context.agent_context_manager import AgentContextManager
 from backend.core.llm.tools import parse_text_tool_calls, strip_text_tool_calls
 from backend.core.logging_config import get_contextual_logger
 from backend.core.tools import tool_registry
@@ -148,8 +147,6 @@ def _try_auto_store_memory(
     try:
         memory_content = _auto_extract_memory(user_message, assistant_response)
         if memory_content:
-            tool_registry
-
             result = tool_registry.call_tool(
                 "write_long_term_memory",
                 {"content": memory_content, "importance": 3},
@@ -355,8 +352,8 @@ async def chat(request: ChatRequest):
         # 8. 调用 LLM
         response = await llm.chat(messages=messages, stream=False, tools=tools if tools else None)
 
-        # 9. 循环处理工具调用（最多50轮）
-        max_tool_rounds = 50
+        # 9. 循环处理工具调用（最多10轮，防止无限循环和高成本）
+        max_tool_rounds = 10
         for _ in range(max_tool_rounds):
             if not (hasattr(response, "tool_calls") and response.tool_calls):
                 break
@@ -678,21 +675,21 @@ async def chat_stream(request: ChatRequest):
 
                     # 继续下一轮循环，让 LLM 处理工具结果
 
-                # 流结束，保存完整响应到上下文
-                if full_response:
-                    context_mgr.add_message(
-                        session_id=session_id, role="assistant", content=full_response
-                    )
-
-                    # 当 LLM 不支持 tools 时，自动提取并存储记忆
-                    _try_auto_store_memory(request.message, full_response, llm, session_id)
-
                 # 发送完成事件
                 yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
 
             except Exception as e:
                 logger.error(f"流式聊天错误: {e}", exc_info=True)
                 yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+            finally:
+                # 确保 assistant 消息可靠落库
+                if full_response:
+                    try:
+                        context_mgr.add_message(
+                            session_id=session_id, role="assistant", content=full_response
+                        )
+                    except Exception:
+                        pass
 
         return StreamingResponse(
             generate_stream(),
@@ -721,7 +718,7 @@ async def get_chat_history(session_id: str, limit: int = 50):
         if not session:
             # 如果会话不存在，检查是否为 Agent 会话
             if session_id.startswith("agent-"):
-                agent_id = session_id.replace("agent-", "")
+                agent_id = session_id.removeprefix("agent-")
                 agent_config = get_agent_config(agent_id)
 
                 if agent_config:
@@ -783,7 +780,6 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
         # 2. 获取管理器
         memory_mgr = get_memory_manager()
         context_mgr = get_context_manager()
-        agent_context_mgr = AgentContextManager()
 
         # 3. 获取记忆管理模型客户端
         model_router = get_model_router()
@@ -802,13 +798,11 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
             )
 
         # 5. 加载历史上下文（从数据库，条数可由 history_limit 配置，默认 50）
-        agent_id = "memory-agent"
         history_limit = agent_config.get("history_limit", 50)
-        history_context = agent_context_mgr.get_message_history(agent_id, limit=history_limit)
+        history_context = context_mgr.get_message_history(agent_id="memory-agent", limit=history_limit)
 
         # 6. 添加用户消息到上下文（持久化）
         context_mgr.add_message(session_id=session_id, role="user", content=request.message)
-        agent_context_mgr.append_message(agent_id, "user", request.message)
 
         # 7. 构建消息列表（包含历史上下文）
         messages = []
@@ -995,13 +989,9 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
 
                     # 继续下一轮循环，让 LLM 处理工具结果
 
-                # 流结束，保存完整响应到上下文（兜底再清理一次工具标记）
+                # 流结束，兜底再清理一次工具标记
                 if full_response:
                     full_response = strip_text_tool_calls(full_response)
-                    context_mgr.add_message(
-                        session_id=session_id, role="assistant", content=full_response
-                    )
-                    agent_context_mgr.append_message(agent_id, "assistant", full_response)
 
                 # 发送完成事件
                 yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
@@ -1009,6 +999,15 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
             except Exception as e:
                 logger.error(f"记忆管理模型流式聊天错误: {e}", exc_info=True)
                 yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+            finally:
+                # 确保 assistant 消息可靠落库
+                if full_response:
+                    try:
+                        context_mgr.add_message(
+                            session_id=session_id, role="assistant", content=full_response
+                        )
+                    except Exception:
+                        pass
 
         return StreamingResponse(
             generate_stream(),

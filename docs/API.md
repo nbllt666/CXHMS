@@ -4,7 +4,7 @@
 
 CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用于管理记忆、上下文、ACP互联、工具调用等功能。
 
-**基础URL**: `http://localhost:8000`
+**基础URL**: `http://localhost:8001`
 
 **认证**: 当前版本暂未实现认证机制（生产环境请配置API密钥）
 
@@ -60,6 +60,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 - `tool_start`: 工具开始执行
 - `tool_result`: 工具执行结果
 - `done`: 完成
+- `cancelled`: 取消
 - `error`: 错误
 
 ### 3. 获取聊天历史
@@ -97,7 +98,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-**说明**: 专门用于记忆管理的流式聊天接口，使用 memory-agent 配置，支持16个记忆管理工具。
+**说明**: 专门用于记忆管理的流式聊天接口，使用 memory-agent 配置，支持16个记忆管理工具。该端点定义在 chat.py 中（非 memory_chat.py）。
 
 ---
 
@@ -1784,6 +1785,8 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 7. **CXFC插件协议**: 心跳机制维持在线状态，技能声明与路由
 8. **控制服务**: 独立端口8765，管理后端启停
 9. **副模型路由**: 支持10种指令（SUMMARIZE_MEMORY, ARCHIVE_MEMORY, EXTRACT_KEYWORDS, GENERATE_TAGS, MERGE_MEMORIES, FIND_DUPLICATES, ENRICH_MEMORY, SCORE_MEMORY, CATEGORIZE_MEMORY, CLEANUP_MEMORY）
+10. **默认端口**: API默认端口为8001（依据 default.yaml 配置）
+11. **双通信模式**: ChatPage 同时支持 WebSocket 和 SSE 两种流式通信方式
 
 ---
 
@@ -1797,7 +1800,7 @@ import httpx
 async def create_memory():
     async with httpx.AsyncClient() as client:
         response = await client.post(
-            "http://localhost:8000/api/memories",
+            "http://localhost:8001/api/memories",
             json={
                 "content": "用户喜欢编程",
                 "type": "long_term",
@@ -1815,7 +1818,7 @@ print(result)
 
 ```javascript
 async function createMemory() {
-  const response = await fetch('http://localhost:8000/api/memories', {
+  const response = await fetch('http://localhost:8001/api/memories', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -1831,4 +1834,73 @@ async function createMemory() {
 }
 
 createMemory().then(result => console.log(result));
+```
+
+---
+
+## Control Service API
+
+控制服务运行在独立端口 **8765**，用于管理主后端服务的启停和状态监控。
+
+**基础URL**: `http://localhost:8765`
+
+### 1. 健康检查
+
+**端点**: `GET /health`
+
+**响应示例**:
+```json
+{
+  "status": "ok"
+}
+```
+
+### 2. 主后端状态
+
+**端点**: `GET /control/status`
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "running": true,
+  "pid": 12345,
+  "uptime": 3600
+}
+```
+
+### 3. 启动主后端
+
+**端点**: `POST /control/start`
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "message": "主后端已启动"
+}
+```
+
+### 4. 停止主后端
+
+**端点**: `POST /control/stop`
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "message": "主后端已停止"
+}
+```
+
+### 5. 重启主后端
+
+**端点**: `POST /control/restart`
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "message": "主后端已重启"
+}
 ```

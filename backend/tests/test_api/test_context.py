@@ -40,7 +40,7 @@ class TestContextEndpoints:
             "/api/context/messages",
             json={"session_id": "non-existent-session", "role": "user", "content": "Hello"}
         )
-        assert response.status_code == 200
+        assert response.status_code == 404
 
     def test_get_context_stats(self, client: TestClient):
         """Test getting context statistics."""
@@ -65,4 +65,4 @@ class TestContextValidation:
             "/api/context/messages",
             json={"session_id": "test-session", "role": "invalid", "content": "Hello"}
         )
-        assert response.status_code in [200, 400, 422]
+        assert response.status_code in [200, 400, 404, 422]

@@ -215,7 +215,15 @@ def user_graph_search_related_memories(entity_name: str, memory_query: str, limi
             return {"status": "success", "entity_name": entity_name, "memories": [], "note": "实体未找到"}
         related_entities = _graph_store.find_related_entities(entity_name, None, GraphLibrary.USER, 2)
         all_memory_ids = list(set(entity.memory_ids + [mid for e in related_entities for mid in e.memory_ids]))
-        matched_memory_ids = [mid for mid in all_memory_ids if memory_query.lower() in str(mid).lower()][:limit]
+        # Search memory content (not memory IDs) for the query string
+        from backend.core.tools.master_tools import get_memory_manager
+
+        matched_memory_ids = []
+        mm = get_memory_manager()
+        if mm:
+            results = mm.search_memories(query=memory_query, limit=limit * 5)
+            result_ids = {str(r.get("id")) for r in results}
+            matched_memory_ids = [mid for mid in all_memory_ids if str(mid) in result_ids][:limit]
         return {
             "status": "success",
             "entity_name": entity_name,

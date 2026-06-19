@@ -6,13 +6,15 @@
     "version": "版本 {{version}}"
   },
   "nav": {
+    "dashboard": "仪表盘",
     "chat": "聊天",
     "memories": "记忆",
     "archive": "归档",
     "agents": "代理",
     "acp": "ACP",
     "tools": "工具",
-    "settings": "设置"
+    "settings": "设置",
+    "memoryAgent": "记忆管理助手"
   },
   "common": {
     "loading": "加载中...",

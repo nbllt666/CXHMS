@@ -104,7 +104,9 @@ class Database:
             # 迁移：为已有数据添加 agent_id 字段
             try:
                 cursor.execute("SELECT agent_id FROM nodes LIMIT 1")
-            except:
+            except sqlite3.OperationalError as e:
+                if "no such column" not in str(e):
+                    raise
                 cursor.execute("ALTER TABLE nodes ADD COLUMN agent_id VARCHAR(100) DEFAULT 'default'")
                 cursor.execute("ALTER TABLE edges ADD COLUMN agent_id VARCHAR(100) DEFAULT 'default'")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_nodes_agent_id ON nodes(agent_id)")

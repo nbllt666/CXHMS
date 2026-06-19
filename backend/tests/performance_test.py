@@ -10,7 +10,7 @@ import httpx
 
 
 class PerformanceTester:
-    def __init__(self, base_url: str = "http://localhost:8000"):
+    def __init__(self, base_url: str = "http://localhost:8001"):
         self.base_url = base_url
         self.results = {}
 
@@ -83,6 +83,12 @@ class PerformanceTester:
             if result:
                 self.results["sessions_list"] = result
                 print(f"  Mean: {result['mean']:.2f}ms, Min: {result['min']:.2f}ms, Max: {result['max']:.2f}ms")
+
+        # 性能断言：平均响应时间应小于 5 秒（5000ms）
+        for name, result in self.results.items():
+            assert result["mean"] < 5000, (
+                f"{name} 平均响应时间过长: {result['mean']:.2f}ms (应 < 5000ms)"
+            )
 
     def print_summary(self):
         """打印性能摘要"""

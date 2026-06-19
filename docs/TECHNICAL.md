@@ -1,6 +1,6 @@
 # CXHMS (晨曦人格化记忆系统) 详细技术文档
 
-> **文档版本**: v2.1.0 | **最后更新**: 2026-06-13
+> **文档版本**: v2.2.0 | **最后更新**: 2026-06-19
 
 ## 项目概述
 
@@ -224,20 +224,36 @@ FastAPI 应用包含17个路由模块：
 
 前端采用 React + TypeScript 构建，使用 React Router 进行路由管理。主要页面包括：
 - `DashboardPage`: 仪表盘页面
-- `ChatPage`: 聊天页面（支持Agent选择、流式响应、工具调用展示）
+- `ChatPage`: 聊天页面（支持Agent选择、流式响应、工具调用展示、双通信模式、图片上传、思考过程展示、提醒通知）
 - `MemoriesPage`: 记忆管理页面
 - `ArchivePage`: 归档管理页面
 - `AgentsPage`: Agent 配置页面
 - `AcpPage`: ACP 控制页面
 - `ToolsPage`: 工具管理页面
-- `SettingsPage`: 设置页面
-- `MemoryAgentPage`: 记忆管理 Agent 专用页面
+- `SettingsPage`: 设置页面（支持离线超时时间配置）
+- `MemoryAgentPage`: 记忆管理 Agent 专用页面（支持思考过程展示）
+
+**ConnectionCheck 组件**: 检测后端可用性，不可用时显示配置界面，10秒自动重试，支持动态配置后端地址。
+
+**双通信模式**: ChatPage 同时支持 WebSocket（实时）和 SSE 流式（降级）两种通信方式，优先使用 WebSocket，连接失败时自动降级为 SSE。
+
+**提醒功能**: WebSocket 支持 alarm 类型消息，ChatPage 显示定时提醒通知。
+
+**视觉/多模态支持**: ChatPage 支持图片上传，当 Agent 启用 vision_enabled 时，最多可上传4张图片（base64编码）。
+
+**思考过程展示**: ChatPage 和 MemoryAgentPage 支持展示AI思考过程和工具调用详情。
+
+**离线超时机制**: SettingsPage 可配置离线超时时间，断开连接超过此时间后自动保存上下文到长期记忆。
 
 ### 状态管理
 
 使用 Zustand 进行状态管理，主要 store 包括：
 
-**chatStore**: 管理聊天相关状态，包括 agents（过滤掉 memory-agent）、sessions、currentAgentId、messages 等。状态持久化使用 localStorage。
+**chatStore**: 管理聊天相关状态，包括：
+- agents, currentAgentId, isLoadingAgents, agentsError, isHydrated
+- sessions, currentSessionId, isLoadingSessions, sessionsError
+- isChatExpanded
+- 持久化策略：仅 currentAgentId、currentSessionId、isChatExpanded 持久化到 localStorage
 
 **themeStore**: 管理主题设置，支持 light/dark/system 三种模式。状态持久化使用 localStorage。
 
@@ -277,6 +293,8 @@ FastAPI 应用包含17个路由模块：
 
 系统使用 YAML 格式配置文件 (config/default.yaml)，配置结构包含：server（服务器配置）、cors（CORS配置）、logging（日志配置）、database（数据库配置）、models（多模型配置，含 main/embedding/summary/memory 各自的 provider/host/model/apiKey/enabled/port/temperature/max_tokens/timeout）、model_defaults（模型默认回退）、agent（Agent配置）、memory（记忆配置，包括衰减、向量存储、归档、去重等）、context（上下文配置）、tools（工具配置）、acp（ACP 协议配置）、security（安全配置）、monitoring（监控配置）、llm_params（LLM参数）、graph（图数据库配置）、cxfc（CXFC配置）。
 
+**注意**: default.yaml 中的 llm_params、agent、security、monitoring、tools 配置段不会被 CXHMSConfig 加载，仅作为参考。graph 和 cxfc 是 settings.py 中新增的配置段，用于控制图数据库和 CXFC 的条件启用。
+
 ### 配置加载
 
 Settings 类采用单例模式，使用 PyYAML 解析配置文件。配置类使用 Python dataclass 定义，支持类型检查和默认值设置。配置系统支持环境变量覆盖（CXHMS_前缀），并通过 `config/validation.py` 进行配置验证，`config/repair.py` 提供自动修复功能。
@@ -285,31 +303,29 @@ Settings 类采用单例模式，使用 PyYAML 解析配置文件。配置类使
 
 ### 启动流程
 
-主程序 main.py 加载配置、初始化日志、启动 Uvicorn 服务器。FastAPI 应用使用 lifespan 上下文管理器处理启动和关闭逻辑，启动时依次初始化20个组件：
+主程序 main.py 加载配置、初始化日志、启动 Uvicorn 服务器。FastAPI 应用使用 lifespan 上下文管理器处理启动和关闭逻辑，启动时依次初始化18个组件：
 1. 模型路由器
 2. 记忆管理器
 3. 上下文管理器
-4. ACP 管理器
-5. LLM 客户端
+4. ACP管理器 (含start())
+5. LLM客户端 (优先从model_router获取)
 6. 副模型路由器
-7. MCP 管理器
+7. MCP管理器
 8. 内置工具注册
 9. 主模型工具注册
 10. 摘要模型工具注册
 11. 记忆管理模型工具注册
 12. 向量搜索启用
-13. 提醒管理器 + WebSocket 离线保存
-14. 批量衰减处理器
-15. 异步记忆管理器
-16. 图数据库（条件启用）
-17. CXFC 管理器（条件启用）
-18. 图数据库工具注册（条件注册）
-19. SQLiteGraphStore 初始化
-20. 控制服务启动（独立 FastAPI，端口 8765）
+13. 提醒管理器 + WebSocket离线保存
+14. 异步记忆管理器
+15. 图数据库 + SQLiteGraphStore (条件启用)
+16. CXFC管理器 (条件启用，含start())
+17. 图数据库工具注册 (条件注册)
+18. ServiceState注入
 
 **ServiceState 属性**: memory_manager, async_memory_manager, context_manager, acp_manager, llm_client, secondary_router, mcp_manager, model_router, graph_database, graph_store, cxfc_manager(Optional)
 
-**关闭顺序**: CXFCManager → GraphDatabase → AlarmManager → WebSocketManager → ACPManager → MemoryManager → BackupManager → PluginManager → ModelRouter
+**关闭顺序**: CXFCManager → GraphDatabase → AlarmManager → WebSocketManager(stop_cleanup_task) → ACPManager(stop) → MemoryManager → BackupManager → PluginManager → ModelRouter
 
 ### Docker 部署
 
@@ -349,5 +365,5 @@ run_tests.py 提供统一的测试入口，支持选择性运行前后端测试�
 
 ---
 
-*文档版本: v2.1.0*
-*最后更新: 2026-06-13*
+*文档版本: v2.2.0*
+*最后更新: 2026-06-19*

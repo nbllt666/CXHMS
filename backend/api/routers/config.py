@@ -89,6 +89,9 @@ async def update_unified_config(request: Request):
                 settings.config.memory.vector_backend = section_data["backend"]
             if "vector_size" in section_data:
                 settings.config.memory.weaviate.vector_size = section_data["vector_size"]
+                settings.config.memory.chroma.vector_size = section_data["vector_size"]
+                settings.config.memory.milvus_lite.vector_size = section_data["vector_size"]
+                settings.config.memory.qdrant.vector_size = section_data["vector_size"]
 
             settings.save_config()
             logger.info("向量配置已更新")

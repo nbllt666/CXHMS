@@ -136,8 +136,10 @@ export function MemoryAgentPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -147,6 +149,13 @@ export function MemoryAgentPage() {
     scrollToBottom();
   }, [messages]);
 
+  // 组件卸载时取消正在进行的流式请求
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
   // 页面加载时获取历史消息
   useEffect(() => {
     const loadHistory = async () => {
@@ -154,8 +163,8 @@ export function MemoryAgentPage() {
         const data = await api.getAgentContext('memory-agent');
         if (data.recent_messages && data.recent_messages.length > 0) {
           const formattedMessages = data.recent_messages
-            .filter((msg: any) => msg.role === 'user' || msg.role === 'assistant')
-            .map((msg: any, idx: number) => ({
+            .filter((msg: { role: string; content: string; created_at?: string }) => msg.role === 'user' || msg.role === 'assistant')
+            .map((msg: { role: string; content: string; created_at?: string }, idx: number) => ({
               id: `history-${idx}`,
               role: msg.role,
               content: msg.content,
@@ -194,8 +203,14 @@ export function MemoryAgentPage() {
     setInput('');
     setIsLoading(true);
 
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     try {
       await api.sendMemoryAgentMessageStream(userMessage.content, (chunk) => {
+        if (chunk.session_id) {
+          setSessionId(chunk.session_id);
+        }
         if (chunk.type === 'content' && chunk.content) {
           setMessages((prev) => {
             const lastMsg = prev[prev.length - 1];
@@ -298,7 +313,7 @@ export function MemoryAgentPage() {
         } else if (chunk.type === 'error') {
           throw new Error(chunk.error || '未知错误');
         }
-      });
+      }, abortController.signal);
     } catch (error) {
       console.error('发送消息失败:', error);
       setMessages((prev) => {
@@ -316,6 +331,7 @@ export function MemoryAgentPage() {
       });
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -330,9 +346,14 @@ export function MemoryAgentPage() {
     setMessages([]);
     try {
       // Clear session messages
-      await api.clearSessionMessages('memory-agent-default');
+      await api.clearSessionMessages(sessionId || 'memory-agent');
       // Clear agent context
-      await fetch(`${api.getApiUrl()}/api/agents/memory-agent/context`, { method: 'DELETE' });
+      await fetch(`${api.getApiUrl()}/api/agents/memory-agent/context`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('cxhms-token') || ''}`,
+        },
+      });
     } catch (error) {
       console.error('清空后端对话数据失败:', error);
     }

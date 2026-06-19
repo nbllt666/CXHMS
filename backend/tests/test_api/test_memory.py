@@ -100,7 +100,7 @@ class TestMemoryEndpoints:
     def test_get_memory_stats(self, client: TestClient):
         """Test getting memory statistics."""
         response = client.get("/api/memories/stats")
-        assert response.status_code in [200, 404, 500]
+        assert response.status_code in [200, 404]
 
 
 class TestMemoryBatchEndpoints:

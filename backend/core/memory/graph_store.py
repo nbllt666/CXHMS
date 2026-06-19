@@ -310,11 +310,11 @@ class SQLiteGraphStore(GraphStoreBase):
 
     def get_stats(self, library: GraphLibrary) -> dict:
         node_type_prefix = f"{library.value}_"
-        result = self._db.nodes.search(node_type=node_type_prefix, limit=0)
-        node_count = result.total
+        result = self._db.nodes.search(node_type=None, limit=10000)
+        node_count = sum(1 for n in result.items if n.type.startswith(node_type_prefix))
         edge_type_prefix = f"{library.value}_"
-        edge_result = self._db.edges.search(relation_type=edge_type_prefix, limit=0)
-        edge_count = edge_result.total
+        edge_result = self._db.edges.search(relation_type=None, limit=10000)
+        edge_count = sum(1 for e in edge_result.items if e.relation_type.startswith(edge_type_prefix))
         return {
             "library": library.value,
             "entity_count": node_count,

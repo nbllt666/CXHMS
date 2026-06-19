@@ -132,7 +132,7 @@ export function MemoriesPage() {
         content: editingMemory.content,
         tags: editingMemory.tags,
         importance: editingMemory.importance,
-      });
+      }, currentAgentId);
       setShowEditModal(false);
       setEditingMemory(null);
       refetch();
@@ -165,7 +165,7 @@ export function MemoriesPage() {
   };
 
   const batchDeleteMutation = useMutation({
-    mutationFn: (ids: number[]) => api.batchDeleteMemories(ids),
+    mutationFn: (ids: number[]) => api.batchDeleteMemories(ids, currentAgentId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['memories'] });
       clearSelection();
@@ -173,7 +173,7 @@ export function MemoriesPage() {
   });
 
   const batchArchiveMutation = useMutation({
-    mutationFn: (ids: number[]) => api.batchArchiveMemories(ids),
+    mutationFn: (ids: number[]) => api.batchArchiveMemories(ids, currentAgentId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['memories'] });
       clearSelection();

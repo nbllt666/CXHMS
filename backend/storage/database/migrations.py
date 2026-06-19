@@ -11,7 +11,11 @@ async def run_migrations(db_path: str = "data/memories.db"):
     import aiosqlite
 
     conn = await aiosqlite.connect(db_path)
-    cursor = await conn.cursor()
+    try:
+        cursor = await conn.cursor()
+    except Exception:
+        await conn.close()
+        raise
 
     migrations = [
         """
@@ -190,7 +194,7 @@ async def run_migrations(db_path: str = "data/memories.db"):
             await cursor.execute(migration)
             logger.info(f"迁移 {i+1} 执行成功")
         except Exception as e:
-            logger.warning(f"迁移 {i+1} 失败或已存在: {e}")
+            logger.error(f"迁移 {i+1} 失败: {e}", exc_info=True)
 
     indexes = [
         "CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type)",
@@ -222,7 +226,9 @@ async def run_migrations(db_path: str = "data/memories.db"):
         except Exception as e:
             logger.warning(f"索引创建失败或已存在: {e}")
 
-    await conn.commit()
-    await conn.close()
+    try:
+        await conn.commit()
+    finally:
+        await conn.close()
 
     logger.info("数据库迁移完成")

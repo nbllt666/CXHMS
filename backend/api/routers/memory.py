@@ -71,17 +71,19 @@ async def list_agent_memory_tables():
     try:
         memory_mgr = get_memory_manager()
         conn = memory_mgr._get_connection()
-        cursor = conn.cursor()
+        try:
+            cursor = conn.cursor()
 
-        cursor.execute(
+            cursor.execute(
+                """
+                SELECT agent_id, table_name, created_at 
+                FROM agent_memory_tables 
+                ORDER BY created_at DESC
             """
-            SELECT agent_id, table_name, created_at 
-            FROM agent_memory_tables 
-            ORDER BY created_at DESC
-        """
-        )
-        rows = cursor.fetchall()
-        conn.close()
+            )
+            rows = cursor.fetchall()
+        finally:
+            conn.close()
 
         agents = []
         for row in rows:
@@ -471,10 +473,19 @@ async def batch_write_memories(memories: List[Dict], raise_on_error: bool = Fals
     from backend.api.app import get_memory_manager
 
     try:
+        # 验证请求结构
+        if not memories:
+            raise HTTPException(status_code=400, detail="记忆列表不能为空")
+        for item in memories:
+            if not isinstance(item, dict) or not item.get("content"):
+                raise HTTPException(status_code=400, detail="每个记忆项必须包含 content 字段")
+
         memory_mgr = get_memory_manager()
         result = memory_mgr.batch_write_memories(memories, raise_on_error)
 
         return {"status": "success", "result": result}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -916,11 +927,13 @@ async def get_vector_status():
         }
 
         conn = memory_mgr._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM memories WHERE is_deleted = 0")
-        row = cursor.fetchone()
-        result["sqlite_count"] = row[0] if row else 0
-        conn.close()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM memories WHERE is_deleted = 0")
+            row = cursor.fetchone()
+            result["sqlite_count"] = row[0] if row else 0
+        finally:
+            conn.close()
 
         if enabled:
             vector_store = memory_mgr._vector_store

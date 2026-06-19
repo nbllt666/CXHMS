@@ -31,12 +31,23 @@ skip_gitignore = true
 skip = [".git", ".hg", ".mypy_cache", ".tox", ".venv", "_build", "buck-out", "build", "dist", "__pycache__", "node_modules", "Miniconda3"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+asyncio_mode = "auto"
+testpaths = ["backend/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
-asyncio_mode = "auto"
+addopts = "-v --tb=short --strict-markers -ra"
+markers = [
+    "asyncio: Async test marker",
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "api: API tests",
+    "slow: Slow tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["backend"]

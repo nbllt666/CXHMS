@@ -31,6 +31,8 @@ export function ArchivePage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'duplicates' | 'settings'>('overview');
   const [isProcessing, setIsProcessing] = useState(false);
   const [processResult, setProcessResult] = useState<string | null>(null);
+  const [similarityThreshold, setSimilarityThreshold] = useState(0.85);
+  const [autoArchiveDays, setAutoArchiveDays] = useState(30);
 
   const { data: stats, refetch: refetchStats } = useQuery<ArchiveStats>({
     queryKey: ['archiveStats'],
@@ -320,7 +322,8 @@ export function ArchivePage() {
                 min="0.5"
                 max="1"
                 step="0.05"
-                defaultValue="0.85"
+                value={similarityThreshold}
+                onChange={(e) => setSimilarityThreshold(parseFloat(e.target.value))}
                 className="w-full"
               />
               <div className="flex justify-between text-xs text-muted-foreground mt-1">
@@ -333,18 +336,16 @@ export function ArchivePage() {
             <div>
               <label className="text-sm font-medium mb-2 block">自动归档天数</label>
               <p className="text-xs text-muted-foreground mb-3">超过此天数的未使用记忆将自动归档</p>
-              <select className="w-full px-3 py-2 bg-muted rounded-lg">
+              <select
+                value={autoArchiveDays}
+                onChange={(e) => setAutoArchiveDays(parseInt(e.target.value))}
+                className="w-full px-3 py-2 bg-muted rounded-lg"
+              >
                 <option value="30">30 天</option>
                 <option value="60">60 天</option>
                 <option value="90">90 天</option>
                 <option value="180">180 天</option>
               </select>
-            </div>
-
-            <div className="pt-4 border-t border-border">
-              <button className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors">
-                保存设置
-              </button>
             </div>
           </div>
         </div>

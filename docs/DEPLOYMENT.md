@@ -1,6 +1,6 @@
 # CXHMS 部署指南
 
-> **文档版本**: v2.1.0 | **最后更新**: 2026-06-13
+> **文档版本**: v2.2.0 | **最后更新**: 2026-06-19
 
 ## 目录
 
@@ -87,9 +87,26 @@ mkdir -p logs
 ```yaml
 server:
   host: "0.0.0.0"      # 监听地址，0.0.0.0表示所有接口
-  port: 8000           # API服务端口
+  port: 8001           # API服务端口
   debug: false         # 调试模式（生产环境设为false）
 ```
+
+> ⚠️ **端口配置不一致说明**
+>
+> 当前项目中端口配置存在不一致，部署时需特别注意：
+>
+> | 配置来源 | 端口值 |
+> |----------|--------|
+> | `config/default.yaml` 中 `server.port` | **8001** |
+> | `.env.example` 中 `CXHMS_SERVER_PORT` | 8000 |
+> | `SystemConfig` 代码默认值 | 8000 |
+> | `Dockerfile` 暴露端口 | 8000 |
+> | 前端 `vite.config.ts` 代理 `/api` 目标 | localhost:8001 |
+>
+> **建议**：
+> - **本地开发**：使用 **8001** 端口，与 `default.yaml` 和前端代理配置保持一致
+> - **Docker 部署**：使用 **8000** 端口，与 Dockerfile 和 SystemConfig 默认值一致
+> - 部署前请确认所有配置文件中的端口值统一，避免服务不可达
 
 #### LLM配置
 
@@ -189,11 +206,13 @@ acp:
 
 #### WebUI配置
 
+> ⚠️ **已弃用**：WebUI（Gradio，端口 7860）在当前版本中已弃用，该端口不再有服务实际监听。前端现通过开发服务器（端口 3000）或构建为静态文件方式运行。以下配置保留供参考。
+
 ```yaml
 webui:
-  enabled: true                    # 启用WebUI
+  enabled: false                   # WebUI已弃用，建议设为false
   host: "0.0.0.0"
-  port: 7860                       # WebUI端口
+  port: 7860                       # WebUI端口（已弃用）
   share: false                     # 是否生成公开链接
 ```
 
@@ -244,15 +263,18 @@ monitoring:
 
 ### 环境变量
 
-系统支持通过环境变量覆盖配置，所有环境变量使用 `CXHMS_` 前缀。环境变量分为8大类：
+系统支持通过环境变量覆盖配置，所有环境变量使用 `CXHMS_` 前缀。环境变量分为11大类：
 
 | 类别 | 环境变量示例 | 说明 |
 |------|-------------|------|
 | 服务器 | `CXHMS_SERVER_HOST`, `CXHMS_SERVER_PORT`, `CXHMS_SERVER_DEBUG` | 服务基础配置 |
 | 模型 | `CXHMS_MODELS_MAIN_PROVIDER`, `CXHMS_MODELS_MAIN_MODEL` | LLM模型配置 |
+| 嵌入模型 | `CXHMS_MODELS_EMBEDDING_PROVIDER`, `CXHMS_MODELS_EMBEDDING_MODEL` | 嵌入模型配置（用于向量化） |
 | 记忆 | `CXHMS_MEMORY_ENABLED`, `CXHMS_MEMORY_VECTOR_BACKEND` | 记忆系统配置 |
 | 上下文 | `CXHMS_CONTEXT_ENABLED`, `CXHMS_CONTEXT_MAX_CONTEXT_LENGTH` | 上下文管理配置 |
 | ACP | `CXHMS_ACP_ENABLED`, `CXHMS_ACP_LOCAL_AGENT_ID` | ACP协议配置 |
+| Graph | `CXHMS_GRAPH_ENABLED`, `CXHMS_GRAPH_MAX_NODES`, `CXHMS_GRAPH_MAX_EDGES` | 知识图谱配置 |
+| CXFC | `CXHMS_CXFC_ENABLED`, `CXHMS_CXFC_AUTO_START`, `CXHMS_CXFC_PORT` | CXFC功能配置 |
 | 安全 | `CXHMS_SECURITY_API_KEY_ENABLED`, `CXHMS_SECURITY_API_KEY` | 安全配置 |
 | 监控 | `CXHMS_MONITORING_ENABLED`, `CXHMS_MONITORING_HEALTH_CHECK_ENABLED` | 监控配置 |
 | 工具 | `CXHMS_TOOLS_ENABLED`, `CXHMS_TOOLS_MCP_ENABLED` | 工具系统配置 |
@@ -270,17 +292,25 @@ python main.py
 ```
 
 服务启动后访问:
-- API文档: http://localhost:8000/docs
-- WebUI: http://localhost:7860
+- API文档: http://localhost:8001/docs
+- 健康检查: http://localhost:8001/health
 - 控制服务: http://localhost:8765
-- 健康检查: http://localhost:8000/health
+
+### 控制服务
+
+控制服务（Control Service）作为独立服务运行在端口 **8765**，提供系统控制和管理接口。该服务随主服务自动启动，也可独立部署。
+
+控制服务功能：
+- 系统状态监控与管理
+- 运行时配置调整
+- 前端 `/control` 路径的请求由该服务处理
 
 ### 生产环境
 
 使用Gunicorn + Uvicorn:
 
 ```bash
-gunicorn backend.api.app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+gunicorn backend.api.app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8001
 ```
 
 参数说明:
@@ -331,15 +361,27 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 复制代码
 COPY . .
 
-# 创建数据目录
-RUN mkdir -p data logs
+# 创建非root用户
+RUN useradd -m appuser && mkdir -p data logs && chown -R appuser:appuser /app
+
+# 切换到非root用户
+USER appuser
 
 # 暴露端口
 EXPOSE 8000 7860
 
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD curl -f http://localhost:8000/health || exit 1
+
 # 启动命令
 CMD ["python", "main.py"]
 ```
+
+> **注意**：
+> - Dockerfile 暴露了端口 **7860**，但该端口在当前代码库中未被任何服务实际使用。WebUI（Gradio）功能已弃用，前端通过开发服务器（端口 3000）或静态文件方式运行
+> - Dockerfile 以非 root 用户 `appuser` 运行，增强安全性
+> - 健康检查使用 `curl -f http://localhost:8000/health`，确保 API 服务正常运行
 
 ### Docker Compose配置
 
@@ -492,6 +534,12 @@ server {
     listen 80;
     server_name yourdomain.com;
     
+    # 前端静态文件
+    location / {
+        root /opt/cxhms/frontend/dist;
+        try_files $uri $uri/ /index.html;
+    }
+    
     # API服务（主后端）
     location /api {
         proxy_pass http://localhost:8001;
@@ -509,17 +557,13 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
-    
-    # WebUI
-    location /webui/ {
-        proxy_pass http://localhost:7860/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
 }
 ```
 
-> **前端代理配置**: 前端开发服务器默认将 `/api` 代理到 `localhost:8001`，`/control` 代理到 `localhost:8765`。
+> **注意**：
+> - WebUI（端口 7860）在当前版本中已弃用，不再有服务实际监听该端口。前端通过开发服务器（端口 3000）或构建为静态文件部署
+> - Nginx 中 `/api` 代理到端口 **8001**，与 `default.yaml` 中 `server.port` 保持一致；如果使用 Docker 部署且端口设为 8000，请相应修改
+> - 前端开发服务器默认将 `/api` 代理到 `localhost:8001`，`/control` 代理到 `localhost:8765`
 
 ### 5. 系统服务配置
 
@@ -644,6 +688,8 @@ chmod 755 data
    docker-compose --profile weaviate up -d
    ```
    Weaviate 默认端口：8090（HTTP）、50051（gRPC）
+
+   如果使用 Weaviate Embedded 模式（`memory.weaviate.embedded: true`），无需启动独立服务，Weaviate 将在应用内自动启动。
 
 5. 如果使用Chroma或Milvus Lite，无需额外服务，检查数据目录权限
 
@@ -781,7 +827,7 @@ sudo systemctl start cxhms
 
 ### 版本兼容性
 
-- v2.1.0: 当前版本
+- v2.2.0: 当前版本
 - 升级前请查看CHANGELOG.md了解破坏性变更
 
 ---
@@ -818,5 +864,5 @@ MIT License
 
 ---
 
-*文档版本: v2.1.0*
-*最后更新: 2026-06-13*
+*文档版本: v2.2.0*
+*最后更新: 2026-06-19*

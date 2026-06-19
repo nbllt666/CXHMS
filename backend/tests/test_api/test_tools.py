@@ -14,7 +14,7 @@ class TestToolsEndpoints:
     def test_get_tool_by_name_not_found(self, client: TestClient):
         """Test getting a non-existent tool."""
         response = client.get("/api/tools/non-existent-tool")
-        assert response.status_code in [400, 404, 500]
+        assert response.status_code in [400, 404]
 
     def test_call_tool_not_found(self, client: TestClient):
         """Test calling a non-existent tool."""
@@ -22,7 +22,7 @@ class TestToolsEndpoints:
             "/api/tools/call",
             json={"name": "non-existent-tool", "arguments": {}}
         )
-        assert response.status_code in [400, 404, 500]
+        assert response.status_code in [400, 404]
 
     def test_get_tool_stats(self, client: TestClient):
         """Test getting tool statistics."""
@@ -35,7 +35,7 @@ class TestToolsEndpoints:
             "/api/tools/call",
             json={"name": "non-existent-tool", "arguments": {}}
         )
-        assert response.status_code in [400, 404, 500]
+        assert response.status_code in [400, 404]
 
 
 class TestToolsValidation:

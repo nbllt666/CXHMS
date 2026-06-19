@@ -17,6 +17,17 @@ from backend.core.memory.manager import MemoryManager
 class TestThreadSafety:
     """测试线程安全性和并发"""
 
+    def setup_method(self):
+        """每个测试前清理全局数据
+
+        注意：ContextManager.__init__ 忽略 db_path 参数，始终使用全局
+        "data/context" 目录。因此传入 tmp_path 的 db_path 实际未生效，
+        测试隔离依赖此处的 clear_all_sessions() 清理全局目录。
+        """
+        manager = ContextManager()
+        manager.clear_all_sessions()
+        manager.shutdown()
+
     def test_concurrent_session_creation(self, tmp_path):
         """测试并发创建会话"""
         db_path = tmp_path / "test_concurrent.db"
@@ -107,8 +118,8 @@ class TestThreadSafety:
         for t in threads:
             t.join()
 
-        assert len(errors) <= 1, f"写入记忆时发生错误: {errors}（允许少量数据库锁定错误）"
-        assert len(memory_ids) >= 4, f"应该写入至少4条记忆（实际: {len(memory_ids)}）"
+        assert len(errors) == 0, f"写入记忆时发生错误: {errors}"
+        assert len(memory_ids) == 5, f"应该写入5条记忆（实际: {len(memory_ids)}）"
 
         for memory_id in memory_ids:
             memory = manager.get_memory(memory_id)
@@ -175,23 +186,26 @@ class TestThreadSafety:
         manager.shutdown()
 
     def test_multiple_managers_same_db(self, tmp_path):
-        """测试多个管理器访问同一数据库"""
-        db_path = tmp_path / "test_multiple_managers.db"
-
-        manager1 = ContextManager(str(db_path))
-        manager2 = ContextManager(str(db_path))
+        """测试多个管理器访问同一数据目录"""
+        manager1 = ContextManager()
+        manager1.clear_all_sessions()
 
         session_id1 = manager1.create_session(workspace_id="default")
-        session_id2 = manager2.create_session(workspace_id="default")
-
         manager1.add_message(session_id1, "user", "管理器1的消息")
+
+        # manager2 创建时从磁盘加载 manager1 的会话
+        manager2 = ContextManager()
+        session_id2 = manager2.create_session(workspace_id="default")
         manager2.add_message(session_id2, "user", "管理器2的消息")
 
-        sessions1 = manager1.get_sessions(workspace_id="default")
+        # manager2 内存中有两个会话（从磁盘加载的 + 自己创建的）
         sessions2 = manager2.get_sessions(workspace_id="default")
-
-        assert len(sessions1) == 2, "管理器1应该看到2个会话"
         assert len(sessions2) == 2, "管理器2应该看到2个会话"
+
+        # manager1 需要重新加载磁盘数据才能看到 manager2 的会话
+        manager1._load_from_disk()
+        sessions1 = manager1.get_sessions(workspace_id="default")
+        assert len(sessions1) == 2, "管理器1应该看到2个会话"
 
         manager1.shutdown()
         manager2.shutdown()

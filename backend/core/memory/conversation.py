@@ -3,6 +3,7 @@
 支持通过自然语言与记忆管理模型交互
 """
 
+import asyncio
 import json
 import re
 from dataclasses import dataclass, field
@@ -260,12 +261,22 @@ class MemoryConversationEngine:
         try:
             if query:
                 # 语义搜索
-                results = self.memory_manager.search_memories(
-                    query=query, memory_type=memory_type, limit=limit
-                )
+                if asyncio.iscoroutinefunction(self.memory_manager.search_memories):
+                    results = await self.memory_manager.search_memories(
+                        keywords=query, memory_type=memory_type, limit=limit
+                    )
+                else:
+                    results = self.memory_manager.search_memories(
+                        query=query, memory_type=memory_type, limit=limit
+                    )
             else:
                 # 列出所有记忆
-                results = self.memory_manager.search_memories(memory_type=memory_type, limit=limit)
+                if asyncio.iscoroutinefunction(self.memory_manager.search_memories):
+                    results = await self.memory_manager.search_memories(
+                        memory_type=memory_type, limit=limit
+                    )
+                else:
+                    results = self.memory_manager.search_memories(memory_type=memory_type, limit=limit)
 
             # 保存搜索结果到上下文
             context.last_memory_search = [r["id"] for r in results]
@@ -464,9 +475,14 @@ class MemoryConversationEngine:
         """处理统计命令"""
         try:
             # 获取记忆统计
-            all_memories = self.memory_manager.search_memories(
-                memory_type=None, limit=10000, include_deleted=False
-            )
+            if asyncio.iscoroutinefunction(self.memory_manager.search_memories):
+                all_memories = await self.memory_manager.search_memories(
+                    memory_type=None, limit=10000, include_deleted=False
+                )
+            else:
+                all_memories = self.memory_manager.search_memories(
+                    memory_type=None, limit=10000, include_deleted=False
+                )
 
             total = len(all_memories)
             permanent = sum(1 for m in all_memories if m.get("permanent", False))

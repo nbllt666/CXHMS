@@ -3,6 +3,7 @@
 """
 
 import json
+import os
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
@@ -485,12 +486,24 @@ async def export_json(agent_id: str = Query("default"), graph: GraphDatabase = D
     return {"format": "json", "data": json.loads(json_str)}
 
 
+# 允许导出文件的基础目录（当前工作目录），防止路径遍历
+_ALLOWED_EXPORT_DIR = os.path.abspath(".")
+
+
+def _is_safe_export_path(file_path: str) -> bool:
+    """验证导出路径是否位于允许的目录内，防止路径遍历攻击。"""
+    abs_path = os.path.abspath(file_path)
+    return abs_path == _ALLOWED_EXPORT_DIR or abs_path.startswith(_ALLOWED_EXPORT_DIR + os.sep)
+
+
 @router.get("/export/graphml")
 async def export_graphml(
     graph: GraphDatabase = Depends(_get_graph_database),
     file_path: str = Query(default="graph_export.graphml"),
     agent_id: str = Query("default"),
 ):
+    if not _is_safe_export_path(file_path):
+        return {"success": False, "error": "Invalid file path"}
     exporter = GraphExporter(graph.db)
     exporter.export_graphml(file_path, agent_id=agent_id)
     return {"format": "graphml", "file_path": file_path, "status": "exported"}
@@ -502,6 +515,8 @@ async def export_dot(
     file_path: str = Query(default="graph_export.dot"),
     agent_id: str = Query("default"),
 ):
+    if not _is_safe_export_path(file_path):
+        return {"success": False, "error": "Invalid file path"}
     exporter = GraphExporter(graph.db)
     exporter.export_dot(file_path, agent_id=agent_id)
     return {"format": "dot", "file_path": file_path, "status": "exported"}

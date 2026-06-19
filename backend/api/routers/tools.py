@@ -262,8 +262,17 @@ async def import_tools(tools: List[Dict]):
     from backend.core.tools.registry import tool_registry
 
     try:
+        # 验证导入数据
+        if not tools:
+            raise HTTPException(status_code=400, detail="工具列表不能为空")
+        for item in tools:
+            if not isinstance(item, dict) or not item.get("name"):
+                raise HTTPException(status_code=400, detail="每个工具项必须包含 name 字段")
+
         count = tool_registry.import_tools(tools)
         return {"status": "success", "message": f"成功导入 {count} 个工具", "count": count}
+    except HTTPException:
+        raise
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

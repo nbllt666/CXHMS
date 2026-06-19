@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../api/client';
 
 export function ConnectionCheck({ children }: { children: React.ReactNode }) {
@@ -8,6 +8,13 @@ export function ConnectionCheck({ children }: { children: React.ReactNode }) {
   const [port, setPort] = useState('8000');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<'success' | 'fail' | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // 从当前 API URL 解析 host/port
   useEffect(() => {
@@ -24,6 +31,7 @@ export function ConnectionCheck({ children }: { children: React.ReactNode }) {
 
   const checkConnection = useCallback(async () => {
     const ok = await api.checkHealth();
+    if (!isMountedRef.current) return;
     setConnected(ok);
     if (!ok) {
       setShowConfig(true);
@@ -36,7 +44,7 @@ export function ConnectionCheck({ children }: { children: React.ReactNode }) {
     const interval = setInterval(async () => {
       if (!connected) {
         const ok = await api.checkHealth();
-        if (ok) {
+        if (ok && isMountedRef.current) {
           setConnected(true);
           setShowConfig(false);
         }
@@ -50,6 +58,7 @@ export function ConnectionCheck({ children }: { children: React.ReactNode }) {
     setTestResult(null);
     const url = `http://${host}:${port}`;
     const ok = await api.checkHealth(url);
+    if (!isMountedRef.current) return;
     setTestResult(ok ? 'success' : 'fail');
     setTesting(false);
   };
@@ -60,6 +69,7 @@ export function ConnectionCheck({ children }: { children: React.ReactNode }) {
     setConnected(null);
     // 重新检查
     api.checkHealth().then((ok) => {
+      if (!isMountedRef.current) return;
       setConnected(ok);
       if (ok) {
         setShowConfig(false);

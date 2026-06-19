@@ -166,7 +166,10 @@ class VectorizationQueue:
                     continue
                 
                 self._update_task_status(task.memory_id, TaskStatus.PROCESSING)
-                
+                with self._stats_lock:
+                    self._stats["processing_tasks"] += 1
+                    self._stats["pending_tasks"] -= 1
+
                 try:
                     if self._on_complete_callback:
                         self._on_complete_callback(task.memory_id, task.content)

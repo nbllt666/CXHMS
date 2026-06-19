@@ -1,6 +1,6 @@
 import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -75,7 +75,7 @@ class DecayCalculator:
     }
 
     def __init__(self):
-        self.current_time = datetime.now()
+        self.current_time = datetime.now(timezone.utc)
 
     def set_current_time(self, time: datetime):
         self.current_time = time
