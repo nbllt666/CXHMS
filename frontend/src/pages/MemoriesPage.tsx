@@ -22,7 +22,7 @@ type ViewMode = 'card' | 'list';
 
 export function MemoriesPage() {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'memories' | 'graph'>('memories');
+  const [activeTab, setActiveTab] = useState<'memories' | 'graph' | 'diary'>('memories');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'long_term' | 'short_term' | 'permanent'>(
     'all'
@@ -75,6 +75,27 @@ export function MemoriesPage() {
     },
     refetchInterval: 5000,
   });
+
+  const [expandedDiaryDates, setExpandedDiaryDates] = useState<Set<string>>(new Set());
+
+  const { data: diaryData, isLoading: isDiaryLoading } = useQuery({
+    queryKey: ['diaryEntries', currentAgentId],
+    queryFn: () => api.getDiaryEntries({ limit: 200, agent_id: currentAgentId }),
+    enabled: activeTab === 'diary',
+    staleTime: 30000,
+  });
+
+  const toggleDiaryDate = (date: string) => {
+    setExpandedDiaryDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(date)) {
+        next.delete(date);
+      } else {
+        next.add(date);
+      }
+      return next;
+    });
+  };
 
   const handleCreateMemory = async () => {
     try {
@@ -259,6 +280,16 @@ export function MemoriesPage() {
               记忆
             </button>
             <button
+              onClick={() => setActiveTab('diary')}
+              className={`px-4 py-1.5 text-sm rounded-[var(--radius-sm)] transition-colors ${
+                activeTab === 'diary'
+                  ? 'bg-[var(--color-accent)] text-white'
+                  : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
+              }`}
+            >
+              日记
+            </button>
+            <button
               onClick={() => setActiveTab('graph')}
               className={`px-4 py-1.5 text-sm rounded-[var(--radius-sm)] transition-colors ${
                 activeTab === 'graph'
@@ -287,6 +318,13 @@ export function MemoriesPage() {
 
       {activeTab === 'graph' ? (
         <GraphManager />
+      ) : activeTab === 'diary' ? (
+        <DiaryView
+          diaryData={diaryData}
+          isLoading={isDiaryLoading}
+          expandedDates={expandedDiaryDates}
+          onToggleDate={toggleDiaryDate}
+        />
       ) : (
       <>
       <div className="flex items-center gap-4 mb-6">
@@ -932,6 +970,154 @@ export function MemoriesPage() {
       </Modal>
       </>
       )}
+    </div>
+  );
+}
+
+// ========== 日记视图组件 ==========
+
+interface DiaryEntry {
+  id: number;
+  content: string;
+  metadata?: {
+    date?: string;
+    title?: string;
+    mood?: string;
+    body?: string;
+    summarized_message_range?: string;
+    source?: string;
+  };
+  created_at: string;
+}
+
+interface DiaryGroup {
+  date: string;
+  entries: DiaryEntry[];
+}
+
+interface DiaryViewProps {
+  diaryData?: { diary_groups?: DiaryGroup[]; count?: number };
+  isLoading: boolean;
+  expandedDates: Set<string>;
+  onToggleDate: (date: string) => void;
+}
+
+function DiaryView({ diaryData, isLoading, expandedDates, onToggleDate }: DiaryViewProps) {
+  const groups = diaryData?.diary_groups || [];
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin w-8 h-8 border-2 border-[var(--color-accent)] border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  if (groups.length === 0) {
+    return (
+      <Card className="py-12 text-center">
+        <div className="text-[var(--color-text-tertiary)]">
+          <svg
+            className="w-16 h-16 mx-auto mb-4 opacity-50"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+              d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+            />
+          </svg>
+          <h3 className="text-lg font-medium mb-2">暂无日记</h3>
+          <p className="text-sm">对话摘要后会自动生成日记条目</p>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {groups.map((group) => {
+        const isExpanded = expandedDates.has(group.date);
+        return (
+          <Card key={group.date}>
+            <button
+              onClick={() => onToggleDate(group.date)}
+              className="w-full flex items-center justify-between p-4 hover:bg-[var(--color-bg-hover)] transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <svg
+                  className="w-5 h-5 text-[var(--color-accent)]"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  />
+                </svg>
+                <h3 className="text-lg font-semibold text-[var(--color-text-primary)]">
+                  {group.date}
+                </h3>
+                <Badge variant="secondary" size="sm">
+                  {group.entries.length} 篇
+                </Badge>
+              </div>
+              <svg
+                className={`w-5 h-5 text-[var(--color-text-secondary)] transition-transform ${
+                  isExpanded ? 'rotate-180' : ''
+                }`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {isExpanded && (
+              <div className="border-t border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+                {group.entries.map((entry) => {
+                  const meta = entry.metadata || {};
+                  return (
+                    <div key={entry.id} className="p-4 space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {meta.title && (
+                          <span className="font-medium text-[var(--color-text-primary)]">
+                            {meta.title}
+                          </span>
+                        )}
+                        {meta.mood && (
+                          <Badge variant="primary" size="sm">
+                            {meta.mood}
+                          </Badge>
+                        )}
+                        {meta.summarized_message_range && (
+                          <span className="text-xs text-[var(--color-text-tertiary)]">
+                            消息范围: {meta.summarized_message_range}
+                          </span>
+                        )}
+                      </div>
+                      {meta.body && (
+                        <p className="text-sm text-[var(--color-text-primary)] whitespace-pre-wrap leading-relaxed">
+                          {meta.body}
+                        </p>
+                      )}
+                      <div className="text-xs text-[var(--color-text-tertiary)]">
+                        {formatDate(entry.created_at)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        );
+      })}
     </div>
   );
 }

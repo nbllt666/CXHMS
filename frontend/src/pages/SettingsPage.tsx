@@ -30,21 +30,6 @@ const sections: SettingSection[] = [
     description: '主题、颜色和界面设置',
   },
   {
-    id: 'service',
-    title: '服务管理',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"
-        />
-      </svg>
-    ),
-    description: '启动/停止后端服务',
-  },
-  {
     id: 'vector',
     title: '向量存储',
     icon: (
@@ -92,21 +77,14 @@ const accentColors = [
 ];
 
 export function SettingsPage() {
-  const [activeSection, setActiveSection] = useState<'appearance' | 'service' | 'vector' | 'llm'>(
-    'appearance'
-  );
+  const [activeSection, setActiveSection] = useState<'appearance' | 'vector' | 'llm'>('appearance');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const saveStatusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [logs, setLogs] = useState('');
   const [isBackendRunning, setIsBackendRunning] = useState(false);
-  const [isControlServiceReady, setIsControlServiceReady] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [backendStatus, setBackendStatus] = useState<{
-    pid?: number;
-    uptime?: number;
-    port?: number;
-  }>({});
   const [themeTransition, setThemeTransition] = useState(false);
+  const [envManagedSections, setEnvManagedSections] = useState<{ vector: boolean; models: boolean }>(
+    { vector: false, models: false }
+  );
 
   const { theme, setTheme } = useThemeStore();
   const [selectedAccent, setSelectedAccent] = useState('#3b82f6');
@@ -121,43 +99,24 @@ export function SettingsPage() {
     setTimeout(() => setThemeTransition(false), 300);
   };
 
-  const checkControlService = useCallback(async () => {
-    try {
-      await api.getControlServiceHealth();
-      setIsControlServiceReady(true);
-      return true;
-    } catch {
-      setIsControlServiceReady(false);
-      return false;
-    }
-  }, []);
-
   const checkBackendStatus = useCallback(async () => {
     try {
       const status = await api.getMainBackendStatus();
       setIsBackendRunning(status.running);
-      setBackendStatus({
-        pid: status.pid,
-        uptime: status.uptime,
-        port: status.port,
-      });
       return status.running;
     } catch {
       setIsBackendRunning(false);
-      setBackendStatus({});
       return false;
     }
   }, []);
 
   useEffect(() => {
-    checkControlService();
     checkBackendStatus();
     const interval = setInterval(() => {
-      checkControlService();
       checkBackendStatus();
     }, 3000);
     return () => clearInterval(interval);
-  }, [checkControlService, checkBackendStatus]);
+  }, [checkBackendStatus]);
 
   useEffect(() => {
     return () => {
@@ -218,6 +177,12 @@ export function SettingsPage() {
 
   useEffect(() => {
     if (serviceConfig?.config) {
+      if (serviceConfig.config.env_managed_sections) {
+        setEnvManagedSections({
+          vector: !!serviceConfig.config.env_managed_sections.vector,
+          models: !!serviceConfig.config.env_managed_sections.models,
+        });
+      }
       if (serviceConfig.config.vector) {
         const vec = serviceConfig.config.vector;
         setVectorConfig({
@@ -258,86 +223,25 @@ export function SettingsPage() {
     }
   }, [serviceConfig]);
 
-  const loadLogs = useCallback(async () => {
-    if (!isBackendRunning) {
-      setLogs('后端服务未运行，启动服务后查看日志');
-      return;
-    }
-    if (!isControlServiceReady) {
-      setLogs('控制服务未就绪，请稍等...');
-      return;
-    }
-    try {
-      const data = await api.getServiceLogs(50);
-      setLogs(data.logs || '暂无日志');
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      setLogs(`加载日志失败: ${errorMessage}\n请检查后端服务是否正常运行`);
-    }
-  }, [isBackendRunning, isControlServiceReady]);
-
   useEffect(() => {
-    if (activeSection === 'service') {
-      loadLogs();
-      const interval = setInterval(loadLogs, 3000);
-      return () => clearInterval(interval);
+    if (activeSection === 'vector' && envManagedSections.vector) {
+      setActiveSection('appearance');
+    } else if (activeSection === 'llm' && envManagedSections.models) {
+      setActiveSection('appearance');
     }
-  }, [activeSection, loadLogs]);
-
-  const handleStartBackend = async () => {
-    if (!isControlServiceReady) {
-      alert('控制服务未就绪，请稍后再试');
-      return;
-    }
-    setIsProcessing(true);
-    try {
-      await api.startMainBackend();
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      await checkBackendStatus();
-    } catch {
-      alert('启动后端服务失败，请检查控制台日志');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleStopBackend = async () => {
-    if (!isControlServiceReady) {
-      alert('控制服务未就绪');
-      return;
-    }
-    setIsProcessing(true);
-    try {
-      await api.stopMainBackend();
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      await checkBackendStatus();
-    } catch {
-      alert('停止后端服务失败');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleRestartBackend = async () => {
-    if (!isControlServiceReady) {
-      alert('控制服务未就绪');
-      return;
-    }
-    setIsProcessing(true);
-    try {
-      await api.restartMainBackend();
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-      await checkBackendStatus();
-    } catch {
-      alert('重启后端服务失败');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+  }, [activeSection, envManagedSections]);
 
   const handleSave = async () => {
     if (!isBackendRunning) {
       alert('后端服务未运行，无法保存配置');
+      return;
+    }
+    if (activeSection === 'vector' && envManagedSections.vector) {
+      alert('向量存储由环境变量管理，无法在界面修改');
+      return;
+    }
+    if (activeSection === 'llm' && envManagedSections.models) {
+      alert('模型设置由环境变量管理，无法在界面修改');
       return;
     }
     setSaveStatus('saving');
@@ -382,13 +286,19 @@ export function SettingsPage() {
     saveStatusTimeoutRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
   };
 
+  const visibleSections = sections.filter((section) => {
+    if (section.id === 'vector' && envManagedSections.vector) return false;
+    if (section.id === 'llm' && envManagedSections.models) return false;
+    return true;
+  });
+
   return (
     <div className={`max-w-6xl mx-auto ${themeTransition ? 'transition-colors duration-300' : ''}`}>
       <PageHeader title="系统设置" description="配置系统外观、服务和行为" />
 
       <div className="flex gap-6">
         <nav className="w-56 flex-shrink-0 space-y-1">
-          {sections.map((section) => (
+          {visibleSections.map((section) => (
             <button
               key={section.id}
               onClick={() => setActiveSection(section.id as typeof activeSection)}
@@ -523,81 +433,18 @@ export function SettingsPage() {
             </div>
           )}
 
-          {activeSection === 'service' && (
-            <div className="space-y-6">
-              <Card>
-                <CardBody>
-                  <div className="flex items-center justify-between mb-6">
-                    <div>
-                      <h3 className="text-lg font-semibold">服务管理</h3>
-                      <p className="text-sm text-[var(--color-text-secondary)]">
-                        管理 CXHMS 后端服务
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {isBackendRunning ? (
-                        <>
-                          <Button
-                            variant="secondary"
-                            onClick={handleRestartBackend}
-                            loading={isProcessing}
-                          >
-                            重启
-                          </Button>
-                          <Button
-                            variant="danger"
-                            onClick={handleStopBackend}
-                            loading={isProcessing}
-                          >
-                            停止
-                          </Button>
-                        </>
-                      ) : (
-                        <Button
-                          onClick={handleStartBackend}
-                          loading={isProcessing}
-                          disabled={!isControlServiceReady}
-                        >
-                          启动服务
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4 p-4 bg-[var(--color-bg-tertiary)] rounded-[var(--radius-lg)]">
-                    <div>
-                      <span className="text-xs text-[var(--color-text-tertiary)]">状态</span>
-                      <p className="font-medium flex items-center gap-2">
-                        <span
-                          className={`w-2 h-2 rounded-full ${isBackendRunning ? 'bg-green-500' : 'bg-red-500'}`}
-                        />
-                        {isBackendRunning ? '运行中' : '已停止'}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-xs text-[var(--color-text-tertiary)]">端口</span>
-                      <p className="font-medium">{backendStatus.port || 8000}</p>
-                    </div>
-                    <div>
-                      <span className="text-xs text-[var(--color-text-tertiary)]">进程 ID</span>
-                      <p className="font-medium">{backendStatus.pid || '-'}</p>
-                    </div>
-                  </div>
-                </CardBody>
-              </Card>
-
-              <Card>
-                <CardBody>
-                  <h4 className="font-semibold mb-4">服务日志</h4>
-                  <div className="bg-[var(--color-bg-tertiary)] rounded-[var(--radius-lg)] p-4 font-mono text-sm text-[var(--color-success)] h-64 overflow-auto whitespace-pre-wrap">
-                    {logs}
-                  </div>
-                </CardBody>
-              </Card>
-            </div>
+          {activeSection === 'vector' && envManagedSections.vector && (
+            <Card>
+              <CardBody>
+                <h3 className="text-lg font-semibold mb-2">向量存储配置</h3>
+                <p className="text-sm text-[var(--color-text-secondary)]">
+                  向量存储由环境变量管理，无法在界面修改。
+                </p>
+              </CardBody>
+            </Card>
           )}
 
-          {activeSection === 'vector' && (
+          {activeSection === 'vector' && !envManagedSections.vector && (
             <div className="space-y-6">
               <Card>
                 <CardBody>
@@ -726,7 +573,18 @@ export function SettingsPage() {
             </div>
           )}
 
-          {activeSection === 'llm' && (
+          {activeSection === 'llm' && envManagedSections.models && (
+            <Card>
+              <CardBody>
+                <h3 className="text-lg font-semibold mb-2">模型配置</h3>
+                <p className="text-sm text-[var(--color-text-secondary)]">
+                  模型设置由环境变量管理，无法在界面修改。
+                </p>
+              </CardBody>
+            </Card>
+          )}
+
+          {activeSection === 'llm' && !envManagedSections.models && (
             <div className="space-y-6">
               <Card>
                 <CardBody>

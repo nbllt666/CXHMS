@@ -17,9 +17,17 @@ from backend.core.graph.models import (
 from backend.core.graph.visualization import GraphExporter
 from backend.core.graph.semantic_query import SemanticQueryManager
 from backend.core.graph.monitoring import GraphMonitor
-from backend.dependencies import get_graph_database as _get_graph_database
+from backend.dependencies import get_graph_database_if_exists
 
 router = APIRouter(tags=["graph"])
+
+
+def _get_graph_database(agent_id: str = Query("default")) -> GraphDatabase:
+    """按 agent_id 解析对应图数据库实例；未启用时返回 404。"""
+    graph = get_graph_database_if_exists(agent_id)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="该助手尚未启用图数据库")
+    return graph
 
 
 

@@ -480,7 +480,7 @@ class CORSConfig:
 @dataclass
 class SystemConfig:
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = 8001
     debug: bool = False
     log_level: str = "INFO"
     workers: int = 1
@@ -489,7 +489,7 @@ class SystemConfig:
     def from_dict(cls, data: Dict[str, Any]) -> "SystemConfig":
         return cls(
             host=data.get("host", "0.0.0.0"),
-            port=data.get("port", 8000),
+            port=data.get("port", 8001),
             debug=data.get("debug", False),
             log_level=data.get("log_level", "INFO"),
             workers=data.get("workers", 1),

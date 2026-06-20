@@ -3,8 +3,9 @@
 """
 
 import os
+import re
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional, Dict, Any
 
 
@@ -41,40 +42,54 @@ _config: Optional[GraphConfig] = None
 logger = logging.getLogger(__name__)
 
 
-def get_graph_config() -> GraphConfig:
+def get_graph_config(agent_id: Optional[str] = None) -> GraphConfig:
+    """获取图数据库配置。
+
+    当 ``agent_id`` 为 None 或 ``'default'`` 时返回全局单例配置；
+    否则基于默认配置生成按助手的配置，db_path 形如
+    ``data/graph_{agent_id}.db``。
+    """
     global _config
-    if _config is not None:
+    # 默认情况：使用单例
+    if agent_id is None or agent_id == 'default':
+        if _config is not None:
+            return _config
+        try:
+            from config.settings import settings
+            unified = settings.config
+            if hasattr(unified, 'graph') and unified.graph.enabled:
+                gc = unified.graph
+                _config = GraphConfig(
+                    database_path=gc.database_path,
+                    auto_create_schema=gc.auto_create_schema,
+                    pool_size=gc.pool_size,
+                    timeout=gc.timeout,
+                    weaviate=WeaviateConfig(
+                        url=gc.weaviate.url,
+                        api_key=gc.weaviate.api_key,
+                        vector_dim=gc.weaviate.vector_dim,
+                        batch_size=gc.weaviate.batch_size,
+                        ef_construction=gc.weaviate.ef_construction,
+                        max_connections=gc.weaviate.max_connections,
+                    ),
+                    embedding=EmbeddingConfig(
+                        model=gc.embedding.model,
+                        batch_size=gc.embedding.batch_size,
+                        device=gc.embedding.device,
+                        cache_folder=gc.embedding.cache_folder,
+                    ),
+                )
+        except Exception as e:
+            logger.error(f"Failed to load graph config from settings: {e}")
+        if _config is None:
+            _config = _load_config_from_env()
         return _config
-    try:
-        from config.settings import settings
-        unified = settings.config
-        if hasattr(unified, 'graph') and unified.graph.enabled:
-            gc = unified.graph
-            _config = GraphConfig(
-                database_path=gc.database_path,
-                auto_create_schema=gc.auto_create_schema,
-                pool_size=gc.pool_size,
-                timeout=gc.timeout,
-                weaviate=WeaviateConfig(
-                    url=gc.weaviate.url,
-                    api_key=gc.weaviate.api_key,
-                    vector_dim=gc.weaviate.vector_dim,
-                    batch_size=gc.weaviate.batch_size,
-                    ef_construction=gc.weaviate.ef_construction,
-                    max_connections=gc.weaviate.max_connections,
-                ),
-                embedding=EmbeddingConfig(
-                    model=gc.embedding.model,
-                    batch_size=gc.embedding.batch_size,
-                    device=gc.embedding.device,
-                    cache_folder=gc.embedding.cache_folder,
-                ),
-            )
-    except Exception as e:
-        logger.error(f"Failed to load graph config from settings: {e}")
-    if _config is None:
-        _config = _load_config_from_env()
-    return _config
+
+    # 按助手情况：基于默认配置生成 per-agent db_path
+    base = get_graph_config()
+    safe_id = re.sub(r'[\\/:*?"<>|]', '_', agent_id)
+    per_agent_path = f"data/graph_{safe_id}.db"
+    return replace(base, database_path=per_agent_path)
 
 
 def _load_config_from_env() -> GraphConfig:

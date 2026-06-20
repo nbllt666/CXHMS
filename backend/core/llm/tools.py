@@ -65,6 +65,8 @@ def parse_text_tool_calls(text: str, available_tool_names: set = None) -> List[D
             logger.info(f"文本工具调用解析(模式3): {tool_name}({args})")
 
     # 模式4: 独立行的 tool_name(key="value", key2=123) - 仅匹配已知工具名
+    # 注意：此模式是启发式匹配，容易误匹配 LLM 解释性文本中提到的工具名。
+    # 因此要求参数非空，过滤掉 tool_name() 这种空参数的假调用。
     if available_tool_names:
         pattern4 = r'^\s*(\w+)\s*\((.*?)\)\s*$'
         for line in text.split('\n'):
@@ -73,7 +75,16 @@ def parse_text_tool_calls(text: str, available_tool_names: set = None) -> List[D
             if match:
                 tool_name, args_str = match.group(1), match.group(2).strip()
                 if tool_name in available_tool_names:
+                    # 跳过空参数调用：tool_name() 通常是 LLM 在解释性文本中
+                    # 提到工具名，而非真正的工具调用，容易产生假的空工具调用
+                    if not args_str:
+                        logger.debug(f"文本工具调用解析(模式4)跳过空参数调用: {tool_name}()")
+                        continue
                     args = _parse_args_string(args_str)
+                    # 解析后参数仍为空，也跳过（无法提取有效参数）
+                    if not args:
+                        logger.debug(f"文本工具调用解析(模式4)跳过无法解析参数的调用: {tool_name}({args_str})")
+                        continue
                     # 检查是否已被前面的模式匹配过（避免重复）
                     if not any(c["function"]["name"] == tool_name for c in parsed_calls):
                         parsed_calls.append(_make_tool_call(tool_name, args))
@@ -145,6 +156,29 @@ def _make_tool_call(tool_name: str, args: Dict[str, Any]) -> Dict:
             "arguments": json.dumps(args, ensure_ascii=False) if args else "{}",
         },
     }
+
+
+def is_empty_tool_args(tool_call: Dict) -> bool:
+    """判断工具调用的参数是否为空。
+
+    兼容两种 arguments 格式：
+    - 字符串（vLLM/OpenAI 标准）："{}" 或 "" 视为空
+    - 对象（Ollama 格式）：{} 视为空
+
+    Args:
+        tool_call: 工具调用对象，格式为 {"function": {"name": ..., "arguments": ...}}
+
+    Returns:
+        True 如果参数为空，False 否则
+    """
+    args = tool_call.get("function", {}).get("arguments")
+    if args is None:
+        return True
+    if isinstance(args, str):
+        return args.strip() in ("", "{}")
+    if isinstance(args, dict):
+        return len(args) == 0
+    return False
 
 
 def strip_text_tool_calls(text: str) -> str:

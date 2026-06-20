@@ -69,18 +69,15 @@ class ChatWebSocketHandler:
         context_mgr = get_context_manager()
         llm = get_llm_client_for_agent(agent_config)
 
-        # 获取/创建会话
-        if session_id:
-            try:
-                context_mgr.get_session(session_id)
-            except Exception:
-                await self.ws_manager.send_to_client(
-                    client_id, {"type": "error", "error": f"会话 '{session_id}' 不存在"}
-                )
-                return None
-        else:
-            session_id = context_mgr.create_session(
-                workspace_id="default", title=f"与 {agent_config['name']} 的对话"
+        # 获取/创建 Agent 专属会话（每个 Agent 只有一个会话，与 HTTP 端点一致）
+        session_id = session_id or f"agent-{agent_id}"
+        existing_session = context_mgr.get_session(session_id)
+        if not existing_session:
+            context_mgr.create_session(
+                workspace_id="default",
+                title=f"与 {agent_config['name']} 的对话",
+                session_id=session_id,
+                metadata={"agent_id": agent_id},
             )
 
         # 检索记忆
@@ -170,6 +167,7 @@ class ChatWebSocketHandler:
 
         full_response = ""
         full_thinking = ""
+        all_tool_calls: List[Dict] = []
 
         # 发送会话ID作为第一个消息
         await self.ws_manager.send_to_client(
@@ -183,7 +181,7 @@ class ChatWebSocketHandler:
 
             max_tool_rounds = 50
             for round_idx in range(max_tool_rounds):
-                full_response = ""
+                round_response = ""
                 tool_calls_buffer: List[Dict] = []
 
                 # 调用 LLM 流式接口
@@ -198,6 +196,10 @@ class ChatWebSocketHandler:
                         await self.ws_manager.send_to_client(
                             client_id, {"type": "cancelled", "timestamp": datetime.now().isoformat()}
                         )
+                        # 保存已生成的部分响应
+                        self._save_assistant_message(
+                            context_mgr, session_id, full_response, full_thinking, all_tool_calls
+                        )
                         return
 
                     if chunk:
@@ -211,6 +213,7 @@ class ChatWebSocketHandler:
                                 )
                             elif chunk_type == "content":
                                 content = chunk.get("content", "")
+                                round_response += content
                                 full_response += content
                                 await self.ws_manager.send_to_client(
                                     client_id, {"type": "content", "content": content}
@@ -249,7 +252,7 @@ class ChatWebSocketHandler:
 
                 messages.append({
                     "role": "assistant",
-                    "content": full_response or None,
+                    "content": round_response or None,
                     "tool_calls": assistant_tool_calls,
                 })
 
@@ -292,6 +295,15 @@ class ChatWebSocketHandler:
                         {"type": "tool_result", "tool_name": tool_name, "result": tool_result},
                     )
 
+                    # 记录工具调用信息（用于持久化）
+                    all_tool_calls.append({
+                        "id": tool_call.get("id", ""),
+                        "name": tool_name,
+                        "arguments": tool_args,
+                        "result": tool_result,
+                        "status": "completed",
+                    })
+
                     # 添加工具结果到消息
                     messages.append(
                         {
@@ -303,11 +315,10 @@ class ChatWebSocketHandler:
                     )
                 # 继续下一轮循环，让 LLM 处理工具结果
 
-            # 保存完整响应到上下文
-            if full_response:
-                context_mgr.add_message(
-                    session_id=session_id, role="assistant", content=full_response
-                )
+            # 保存完整响应到上下文（包括工具调用信息）
+            self._save_assistant_message(
+                context_mgr, session_id, full_response, full_thinking, all_tool_calls
+            )
 
             # 发送完成消息
             await self.ws_manager.send_to_client(
@@ -316,9 +327,37 @@ class ChatWebSocketHandler:
 
         except Exception as e:
             logger.error(f"流式聊天错误: {e}", exc_info=True)
-            await self.ws_manager.send_to_client(
-                client_id, {"type": "error", "error": str(e)}
+            # 保存已生成的部分响应（避免刷新或断连时丢失）
+            self._save_assistant_message(
+                context_mgr, session_id, full_response, full_thinking, all_tool_calls
             )
+            try:
+                await self.ws_manager.send_to_client(
+                    client_id, {"type": "error", "error": str(e)}
+                )
+            except Exception:
+                pass
+
+    def _save_assistant_message(
+        self, context_mgr, session_id: str, content: str, thinking: str, tool_calls: List[Dict]
+    ):
+        """保存助手消息到上下文（包括 thinking 和工具调用信息）"""
+        if not content and not tool_calls:
+            return
+        metadata = {}
+        if thinking:
+            metadata["thinking"] = thinking
+        if tool_calls:
+            metadata["tool_calls"] = tool_calls
+        try:
+            context_mgr.add_message(
+                session_id=session_id,
+                role="assistant",
+                content=content,
+                metadata=metadata,
+            )
+        except Exception as e:
+            logger.warning(f"保存助手消息失败: {e}")
 
     async def _handle_chat(self, client_id: str, message: Dict[str, Any]):
         """处理普通聊天消息（使用流式响应）"""

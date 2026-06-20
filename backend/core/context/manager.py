@@ -539,3 +539,114 @@ class ContextManager:
             )
             entry["session"]["updated_at"] = datetime.now().isoformat()
             self._persist(agent_id)
+
+    # ─── 日记式摘要与上下文替换 ──────────────────────────────────
+
+    def get_summarizable_range(self, session_id: str) -> Dict[str, Any]:
+        """返回可摘要的消息范围
+
+        从已摘要位置到末尾，排除当前未完成话题（若最后一条是 user 消息且无 assistant 回复）。
+
+        Returns:
+            {"start": int, "end": int, "total": int, "has_unfinished_topic": bool}
+        """
+        entry = self._store.get(session_id)
+        if not entry:
+            return {"start": 0, "end": 0, "total": 0, "has_unfinished_topic": False}
+
+        messages = entry["messages"]
+        active = [m for m in messages if not m.get("is_deleted", False)]
+
+        if not active:
+            return {"start": 0, "end": 0, "total": 0, "has_unfinished_topic": False}
+
+        # 优先通过 diary_summary 标记确定起始位置（替换后插入的摘要消息）
+        start = 0
+        for i, m in enumerate(active):
+            meta = m.get("metadata") or {}
+            if m.get("content_type") == "diary_summary" or meta.get("is_diary_summary"):
+                start = i + 1
+                break
+
+        # 若未找到 diary_summary 标记，回退到 summarized_up_to
+        if start == 0:
+            summarized_up_to = entry["session"].get("summarized_up_to", 0)
+            start = min(summarized_up_to, len(active))
+
+        # 话题完成度判定：最后一条是 user 消息 → 当前话题未完成
+        has_unfinished_topic = active[-1].get("role") == "user"
+
+        if has_unfinished_topic and len(active) > 1:
+            end = len(active) - 1  # 排除最后一条未回复的 user 消息
+        else:
+            end = len(active)
+
+        if start > end:
+            start = end
+
+        return {
+            "start": start,
+            "end": end,
+            "total": len(active),
+            "has_unfinished_topic": has_unfinished_topic,
+        }
+
+    def replace_messages_with_summary(
+        self, session_id: str, summary_text: str, summarized_up_to_index: int
+    ) -> bool:
+        """将被摘要的原始消息替换为摘要内容
+
+        - 标记 [0, summarized_up_to_index) 范围内的活跃消息为已删除
+        - 在消息列表头部插入一条 diary_summary 标记的摘要消息
+        - 更新 session["summarized_up_to"] 记录已摘要范围，避免重复摘要
+        - 持久化 session JSON 文件
+
+        Args:
+            session_id: 会话ID
+            summary_text: 摘要文本（日记正文）
+            summarized_up_to_index: 被摘要的消息数量（活跃消息索引，不含）
+
+        Returns:
+            是否成功
+        """
+        with self._lock:
+            entry = self._store.get(session_id)
+            if not entry:
+                return False
+
+            messages = entry["messages"]
+            active_indices = [
+                i for i, m in enumerate(messages) if not m.get("is_deleted", False)
+            ]
+
+            # 标记前 summarized_up_to_index 条活跃消息为已删除
+            to_delete = min(summarized_up_to_index, len(active_indices))
+            for i in range(to_delete):
+                messages[active_indices[i]]["is_deleted"] = True
+
+            # 在列表头部插入摘要消息
+            now = datetime.now().isoformat()
+            summary_message = {
+                "id": str(uuid.uuid4()),
+                "role": "system",
+                "content": summary_text,
+                "content_type": "diary_summary",
+                "metadata": {"is_diary_summary": True, "summarized_up_to": summarized_up_to_index},
+                "tokens": 0,
+                "created_at": now,
+                "is_deleted": False,
+            }
+            messages.insert(0, summary_message)
+
+            # 更新 session 元数据
+            entry["session"]["summarized_up_to"] = summarized_up_to_index
+            entry["session"]["message_count"] = sum(
+                1 for m in messages if not m.get("is_deleted", False)
+            )
+            entry["session"]["updated_at"] = now
+            self._persist(session_id)
+
+        logger.info(
+            f"上下文已替换为日记摘要: session={session_id}, 已摘要 {to_delete} 条消息"
+        )
+        return True

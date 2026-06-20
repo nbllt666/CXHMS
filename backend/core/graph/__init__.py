@@ -3,7 +3,7 @@
 轻量级图数据库，支持语义检索
 """
 
-from backend.core.graph.database import Database, get_database
+from backend.core.graph.database import Database, get_database, get_database_if_exists, remove_database
 from backend.core.graph.models import GraphNode, GraphEdge, NodeCreate, EdgeCreate
 from backend.core.graph.nodes import NodeManager
 from backend.core.graph.edges import EdgeManager
@@ -20,6 +20,8 @@ from backend.core.graph.config import GraphConfig, get_graph_config
 __all__ = [
     "Database",
     "get_database",
+    "get_database_if_exists",
+    "remove_database",
     "GraphNode",
     "GraphEdge",
     "NodeCreate",
@@ -43,9 +45,10 @@ __all__ = [
 class GraphDatabase:
     """语义图数据库主入口"""
 
-    def __init__(self, config: GraphConfig = None):
-        self.config = config or get_graph_config()
-        self.db = get_database(self.config)
+    def __init__(self, config: GraphConfig = None, agent_id: str = "default"):
+        self.agent_id = agent_id
+        self.config = config or get_graph_config(agent_id=agent_id)
+        self.db = get_database(self.config, agent_id=agent_id)
         self.nodes = NodeManager(self.db, self.config)
         self.edges = EdgeManager(self.db, self.config)
         self.traversal = TraversalManager(self.db, self.config)

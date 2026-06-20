@@ -381,20 +381,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"异步记忆管理器启动失败: {e}")
 
-    # Initialize GraphDatabase
-    graph_database = None
-    graph_store = None
-    try:
-        if getattr(settings.config, 'graph', None) and settings.config.graph.enabled:
-            from backend.core.graph.database import GraphDatabase
-            graph_database = GraphDatabase(db_path=settings.config.graph.db_path)
-            logger.info("图数据库已启动")
-            
-            from backend.core.memory.graph_store import SQLiteGraphStore
-            graph_store = SQLiteGraphStore(graph_database)
-            logger.info("图存储已启动")
-    except Exception as e:
-        logger.warning(f"图数据库启动失败: {e}")
+    # 图数据库改为按助手按需创建，启动时不再全局初始化
 
     # Initialize CXFCManager
     cxfc_manager = None
@@ -407,15 +394,27 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"CXFC管理器启动失败: {e}")
 
+    # 启动自动日记摘要任务
+    try:
+        if context_manager and model_router:
+            from backend.core.session.auto_summary import start_auto_summary
+            await start_auto_summary(
+                context_manager=context_manager,
+                model_router=model_router,
+                check_interval_minutes=10,
+                summary_threshold=20,
+            )
+    except Exception as e:
+        logger.warning(f"自动摘要任务启动失败: {e}")
+
     # 将CXFC管理器注入到cxfc路由器
     cxfc_router.set_cxfc_manager(cxfc_manager)
 
-    # Register graph tools
+    # Register graph tools (图数据库实例按需创建，工具调用时解析)
     try:
-        if graph_database and graph_store:
-            from backend.core.tools.graph_tools import register_graph_tools
-            register_graph_tools()
-            logger.info("图数据库工具已注册")
+        from backend.core.tools.graph_tools import register_graph_tools
+        register_graph_tools()
+        logger.info("图数据库工具已注册")
     except Exception as e:
         logger.warning(f"图数据库工具注册失败: {e}")
 
@@ -429,14 +428,19 @@ async def lifespan(app: FastAPI):
     service_state.secondary_router = secondary_router
     service_state.mcp_manager = mcp_manager
     service_state.model_router = model_router
-    service_state.graph_database = graph_database
-    service_state.graph_store = graph_store
     service_state.cxfc_manager = cxfc_manager
     app.state.services = service_state
 
     yield
 
     logger.info("正在关闭CXHMS服务...")
+
+    # 停止自动摘要任务
+    try:
+        from backend.core.session.auto_summary import stop_auto_summary
+        await stop_auto_summary()
+    except Exception:
+        pass
 
     # Shutdown CXFC manager
     if cxfc_manager:
@@ -445,12 +449,17 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
-    # Close graph database
-    if graph_database:
-        try:
-            graph_database.close()
-        except Exception:
-            pass
+    # Close all per-agent graph databases
+    try:
+        from backend.dependencies import _graph_databases
+        for _aid, _gdb in list(_graph_databases.items()):
+            try:
+                _gdb.close()
+            except Exception:
+                pass
+        _graph_databases.clear()
+    except Exception:
+        pass
 
     try:
         from backend.core.alarm import get_alarm_manager

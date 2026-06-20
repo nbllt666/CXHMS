@@ -12,10 +12,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend.api.routers.agents import _load_agents
-from backend.core.llm.tools import parse_text_tool_calls, strip_text_tool_calls
+from backend.core.llm.tools import is_empty_tool_args, parse_text_tool_calls, strip_text_tool_calls
 from backend.core.logging_config import get_contextual_logger
 from backend.core.tools import tool_registry
 from backend.core.tools.builtin import BUILTIN_TOOL_NAMES, call_builtin_tool, get_builtin_tools
+from backend.core.tools.graph_tools import set_current_agent_id
 
 logger = get_contextual_logger(__name__)
 
@@ -62,6 +63,29 @@ MEMORY_AGENT_HIDDEN_SYSTEM_PROMPT = """<role>
 5. 如果用户请求的操作超出你的能力范围，如实告知
 6. 不要编造不存在的工具或功能
 7. 绝对不要在回复文本中输出 <execute_tool> 或类似标记，必须通过 function calling 调用工具
+</rules>"""
+
+
+SUMMARY_AGENT_HIDDEN_SYSTEM_PROMPT = """<role>
+你是 CXHMS 摘要助手，专门负责将对话内容整理为日记式条目并保存。
+</role>
+
+<instruction>
+你必须使用 save_diary_entry 工具来保存日记条目。该工具已通过 API 自动注册，无需向用户确认即可直接调用。
+当需要保存日记时，必须通过 function calling 机制调用 save_diary_entry 工具，不要在文本中输出工具调用标记（如 <execute_tool>）。
+直接调用对应的函数即可，系统会自动执行并返回结果。
+</instruction>
+
+<rules>
+1. 用中文回答用户问题
+2. 以日记体裁（第一人称叙述）整理对话内容，包含：日期、主要事件、情绪/感受、反思
+3. 识别已完成话题与当前未完成话题：只对已完成的话题进行摘要，保留当前未完成的话题不摘要
+4. 每次摘要只生成一篇 consolidated 日记条目，不要生成多条零散的记忆点
+5. 日记正文（body）应为连贯的第一人称叙述，而非要点列表
+6. 调用 save_diary_entry 工具时需提供：date(YYYY-MM-DD)、title、mood、body、summarized_message_range(如 "0-15")
+7. 不要编造不存在的工具或功能，不要使用 save_summary_memory 或 write_long_term_memory 等其他记忆工具
+8. 绝对不要在回复文本中输出 <execute_tool> 或类似标记，必须通过 function calling 调用工具
+9. 完成日记保存后，简要报告保存结果
 </rules>"""
 
 
@@ -282,6 +306,7 @@ async def chat(request: ChatRequest):
     try:
         # 1. 获取 Agent 配置
         agent_config = get_agent_config(request.agent_id)
+        set_current_agent_id(request.agent_id)
         if not agent_config:
             raise HTTPException(status_code=404, detail=f"Agent '{request.agent_id}' 不存在")
 
@@ -452,6 +477,7 @@ async def chat_stream(request: ChatRequest):
     try:
         # 1. 获取 Agent 配置
         agent_config = get_agent_config(request.agent_id)
+        set_current_agent_id(request.agent_id)
         if not agent_config:
             raise HTTPException(status_code=404, detail=f"Agent '{request.agent_id}' 不存在")
 
@@ -774,6 +800,7 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
     try:
         # 1. 获取记忆管理Agent配置
         agent_config = get_agent_config("memory-agent")
+        set_current_agent_id("memory-agent")
         if not agent_config:
             raise HTTPException(status_code=404, detail="记忆管理Agent未配置")
 
@@ -909,6 +936,13 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
                         } if tools else set()
                         tool_name_set |= {"calculator", "datetime", "random", "json_format"}
                         text_tool_calls = parse_text_tool_calls(full_response, tool_name_set)
+                        # 防御性过滤：剔除空参数的工具调用（arguments 为 "{}" 或空字符串）。
+                        # 这些通常是 LLM 在解释性文本中提到工具名而被误解析为工具调用，
+                        # 执行时必然失败（缺少必填参数），只会污染 UI 展示。
+                        text_tool_calls = [
+                            tc for tc in text_tool_calls
+                            if tc.get("function", {}).get("arguments", "{}") not in ("{}", "", None)
+                        ]
                         if text_tool_calls:
                             logger.info(
                                 f"文本工具调用兜底解析(第{round_idx+1}轮): "
@@ -1008,6 +1042,364 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
                         )
                     except Exception:
                         pass
+
+        return StreamingResponse(
+            generate_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== 摘要助手专用路由 ==========
+
+
+class SummaryAgentChatRequest(BaseModel):
+    """摘要助手聊天请求"""
+
+    message: str  # 用户最新消息
+    target_session_id: Optional[str] = None  # 待摘要的目标会话ID（用于上下文替换）
+
+
+@router.post("/summary-agent/chat/stream")
+async def summary_agent_chat_stream(request: SummaryAgentChatRequest):
+    """
+    摘要助手流式聊天 - 支持上下文持久化
+    使用 summary 模型，仅提供 summary 类别工具（save_summary_memory 等）
+    摘要助手只有一个固定会话
+    """
+    from backend.api.app import get_context_manager, get_model_router
+
+    try:
+        # 1. 获取摘要Agent配置（复用 memory-agent 配置结构，但使用 summary 模型）
+        agent_config = {
+            "id": "summary-agent",
+            "name": "摘要助手",
+            "system_prompt": "你是摘要助手，专门负责将对话内容整理为日记式条目并保存。请使用 save_diary_entry 工具保存一篇 consolidated 日记，包含日期、标题、情绪和第一人称正文叙述。",
+            "temperature": 0.3,
+            "max_tokens": 4096,
+        }
+        set_current_agent_id("summary-agent")
+
+        # 2. 获取管理器
+        context_mgr = get_context_manager()
+
+        # 3. 获取摘要模型客户端
+        model_router = get_model_router()
+        llm = model_router.get_client("summary")
+        if not llm:
+            # 摘要模型未配置时回退到主模型
+            logger.warning("摘要模型不可用，回退到主模型")
+            llm = model_router.get_client("main")
+        if not llm:
+            raise HTTPException(status_code=503, detail="摘要模型与主模型均不可用")
+
+        # 4. 获取/创建固定会话（摘要助手只有一个会话）
+        session_id = "summary-agent-default"
+        existing_session = context_mgr.get_session(session_id)
+        if not existing_session:
+            context_mgr.create_session(
+                session_id=session_id,
+                workspace_id="summary-agent",
+                title="摘要助手对话",
+            )
+
+        # 5. 加载历史上下文（从数据库）- 使用 session_id 而非 agent_id，确保与存储一致
+        history_limit = agent_config.get("history_limit", 50)
+        history_context = context_mgr.get_messages(session_id=session_id, limit=history_limit)
+
+        # 6. 添加用户消息到上下文（持久化）
+        context_mgr.add_message(session_id=session_id, role="user", content=request.message)
+
+        # 7. 构建消息列表（包含历史上下文）
+        messages = []
+
+        # 系统提示词
+        system_prompt = agent_config.get("system_prompt", "")
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
+        # 隐藏系统提示词（防呆：摘要工具使用指南，用户不可修改）
+        messages.append({"role": "system", "content": SUMMARY_AGENT_HIDDEN_SYSTEM_PROMPT})
+
+        # 历史上下文（从数据库加载）
+        for msg in history_context:
+            if msg.get("role") in ["user", "assistant", "system"]:
+                messages.append({"role": msg["role"], "content": msg.get("content", "")})
+
+        # 当前用户消息（history_context 在持久化之前加载，不含本条，需显式追加）
+        messages.append({"role": "user", "content": request.message})
+
+        # 8. 获取摘要工具（summary类别工具 + 内置工具）
+        builtin_tools = get_builtin_tools()
+        summary_tools = tool_registry.list_openai_functions(include_builtin=False, category="summary")
+        tools = builtin_tools + summary_tools
+
+        logger.info(
+            f"摘要助手配置了 {len(tools)} 个工具: {[t['function']['name'] for t in tools]}"
+        )
+
+        # 预计算目标会话的可摘要范围（用于上下文替换）
+        target_summarizable_range = None
+        if request.target_session_id:
+            try:
+                target_summarizable_range = context_mgr.get_summarizable_range(
+                    request.target_session_id
+                )
+                logger.info(
+                    f"目标会话 {request.target_session_id} 可摘要范围: {target_summarizable_range}"
+                )
+            except Exception as e:
+                logger.warning(f"获取目标会话可摘要范围失败: {e}")
+
+        # 用于捕获 save_diary_entry 工具调用的参数
+        captured_diary_entry = {"body": None, "summarized_message_range": None}
+
+        async def generate_stream():
+            """生成流式响应（支持多轮工具调用循环）"""
+            full_response = ""
+            full_thinking = ""
+
+            # 发送会话ID作为第一个事件
+            yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
+
+            try:
+                logger.info(
+                    f"开始摘要助手流式聊天，消息数: {len(messages)}, 工具数: {len(tools)}"
+                )
+
+                max_tool_rounds = 50
+                for round_idx in range(max_tool_rounds):
+                    full_response = ""
+                    tool_calls_buffer = []
+                    stream_error = None
+
+                    # 调用LLM流式接口
+                    async for chunk in llm.stream_chat(
+                        messages=messages,
+                        temperature=agent_config.get("temperature", 0.3),
+                        max_tokens=(agent_config.get("max_tokens") if agent_config.get("max_tokens") is not None else 4096),
+                        tools=tools if tools else None,
+                    ):
+                        if chunk:
+                            if isinstance(chunk, dict):
+                                chunk_type = chunk.get("type")
+                                if chunk_type == "thinking":
+                                    thinking_content = chunk.get("content", "")
+                                    full_thinking += thinking_content
+                                    yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_content})}\n\n"
+                                elif chunk_type == "content":
+                                    content = chunk.get("content", "")
+                                    full_response += content
+                                    yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+                                elif chunk_type == "tool_calls":
+                                    new_tool_calls = chunk.get("tool_calls", [])
+                                    # 过滤掉空参数的工具调用：LLM（尤其是 Ollama）有时会
+                                    # 生成空 arguments 的假调用，执行必然失败且污染 UI。
+                                    empty_names = [tc.get('function', {}).get('name', '') for tc in new_tool_calls if is_empty_tool_args(tc)]
+                                    if empty_names:
+                                        logger.warning(f"摘要助手过滤空参数工具调用: {empty_names}")
+                                    new_tool_calls = [tc for tc in new_tool_calls if not is_empty_tool_args(tc)]
+                                    if new_tool_calls:
+                                        logger.info(f"摘要助手检测到工具调用(第{round_idx+1}轮): {[tc.get('function',{}).get('name','') for tc in new_tool_calls]}")
+                                        tool_calls_buffer.extend(new_tool_calls)
+                                        for tool_call in new_tool_calls:
+                                            yield f"data: {json.dumps({'type': 'tool_call', 'tool_call': tool_call})}\n\n"
+                                elif chunk_type == "error":
+                                    stream_error = chunk.get("content", "")
+                                    logger.warning(f"摘要助手流式聊天收到错误事件: {stream_error}")
+                            elif isinstance(chunk, str):
+                                full_response += chunk
+                                yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
+
+                    # 如果流式调用失败，回退到非流式聊天
+                    if not full_response and not tool_calls_buffer and stream_error:
+                        logger.warning(f"摘要助手流式聊天失败，回退到非流式模式: {stream_error}")
+                        try:
+                            response = await llm.chat(
+                                messages=messages,
+                                stream=False,
+                                temperature=agent_config.get("temperature", 0.3),
+                                max_tokens=(agent_config.get("max_tokens") if agent_config.get("max_tokens") is not None else 4096),
+                                tools=tools if tools else None,
+                            )
+                            if hasattr(response, "tool_calls") and response.tool_calls:
+                                # 非流式回退同样过滤空参数工具调用
+                                filtered = [tc for tc in response.tool_calls if not is_empty_tool_args(tc)]
+                                if len(filtered) < len(response.tool_calls):
+                                    logger.warning(f"摘要助手非流式回退过滤空参数工具调用: {len(response.tool_calls) - len(filtered)} 个")
+                                tool_calls_buffer = filtered
+                                for tool_call in filtered:
+                                    yield f"data: {json.dumps({'type': 'tool_call', 'tool_call': tool_call})}\n\n"
+                            elif response.content:
+                                full_response = response.content
+                                yield f"data: {json.dumps({'type': 'content', 'content': full_response})}\n\n"
+                        except Exception as fallback_err:
+                            logger.error(f"摘要助手非流式回退也失败: {fallback_err}")
+
+                    # 文本工具调用兜底：模型未走标准 function calling，
+                    # 而是以文本形式（如 <execute_tool>tool()</execute_tool>）表达调用意图
+                    if not tool_calls_buffer and full_response:
+                        tool_name_set = {
+                            t["function"]["name"] for t in tools
+                        } if tools else set()
+                        tool_name_set |= {"calculator", "datetime", "random", "json_format"}
+                        text_tool_calls = parse_text_tool_calls(full_response, tool_name_set)
+                        # 防御性过滤：剔除空参数的工具调用（arguments 为 "{}" 或空字符串）。
+                        # 这些通常是 LLM 在解释性文本中提到工具名而被误解析为工具调用，
+                        # 执行时必然失败（缺少必填参数），只会污染 UI 展示。
+                        text_tool_calls = [
+                            tc for tc in text_tool_calls
+                            if not is_empty_tool_args(tc)
+                        ]
+                        if text_tool_calls:
+                            logger.info(
+                                f"摘要助手文本工具调用兜底解析(第{round_idx+1}轮): "
+                                f"{[tc.get('function',{}).get('name','') for tc in text_tool_calls]}"
+                            )
+                            tool_calls_buffer = text_tool_calls
+                            # 文本兜底解析出的工具调用也需要发送 tool_call 事件给前端，
+                            # 否则前端只能收到 tool_start/tool_result，无法显示参数详情
+                            for tool_call in text_tool_calls:
+                                yield f"data: {json.dumps({'type': 'tool_call', 'tool_call': tool_call})}\n\n"
+                            # 清理展示文本中的工具标记，仅保留纯文本
+                            full_response = strip_text_tool_calls(full_response)
+
+                    # 没有工具调用，退出循环
+                    if not tool_calls_buffer:
+                        break
+
+                    # 处理工具调用
+                    # BUILTIN_TOOL_NAMES 已在文件顶部导入
+
+                    # 构建标准的 assistant tool_calls 消息
+                    assistant_tool_calls = []
+                    for tool_call in tool_calls_buffer:
+                        func = tool_call.get("function", {})
+                        tc_entry = {
+                            "id": tool_call.get("id", ""),
+                            "type": "function",
+                            "function": {
+                                "name": func.get("name", tool_call.get("name", "")),
+                                "arguments": func.get("arguments", tool_call.get("arguments", "{}")),
+                            },
+                        }
+                        assistant_tool_calls.append(tc_entry)
+
+                    messages.append({
+                        "role": "assistant",
+                        "content": full_response or None,
+                        "tool_calls": assistant_tool_calls,
+                    })
+
+                    for tool_call in tool_calls_buffer:
+                        func = tool_call.get("function", {})
+                        tool_name = func.get("name", tool_call.get("name", ""))
+                        tool_args = func.get("arguments", tool_call.get("arguments", "{}"))
+
+                        if isinstance(tool_args, str):
+                            try:
+                                tool_args = json.loads(tool_args)
+                            except json.JSONDecodeError as e:
+                                logger.warning(f"工具参数 JSON 解析失败: {e}, 原始参数: {tool_args}")
+                                try:
+                                    import ast
+                                    tool_args = ast.literal_eval(tool_args)
+                                    if not isinstance(tool_args, dict):
+                                        tool_args = {}
+                                except Exception:
+                                    tool_args = {}
+
+                        # 捕获 save_diary_entry 工具调用参数（用于上下文替换）
+                        if tool_name == "save_diary_entry" and isinstance(tool_args, dict):
+                            if tool_args.get("body"):
+                                captured_diary_entry["body"] = tool_args.get("body")
+                            if tool_args.get("summarized_message_range"):
+                                captured_diary_entry["summarized_message_range"] = tool_args.get(
+                                    "summarized_message_range"
+                                )
+
+                        # 发送工具执行开始事件
+                        yield f"data: {json.dumps({'type': 'tool_start', 'tool_name': tool_name})}\n\n"
+
+                        # 执行工具
+                        try:
+                            if tool_name in BUILTIN_TOOL_NAMES:
+                                tool_result = call_builtin_tool(tool_name, tool_args or {})
+                            else:
+                                tool_result = tool_registry.call_tool(tool_name, tool_args)
+                        except Exception as e:
+                            logger.warning(f"工具 {tool_name} 执行失败: {e}")
+                            tool_result = {"success": False, "error": str(e)}
+
+                        # 发送工具执行结果事件
+                        yield f"data: {json.dumps({'type': 'tool_result', 'tool_name': tool_name, 'result': tool_result})}\n\n"
+
+                        # 添加工具结果到消息
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.get("id", ""),
+                            "name": tool_name,
+                            "content": json.dumps(tool_result, ensure_ascii=False),
+                        })
+
+                    # 继续下一轮循环，让 LLM 处理工具结果
+
+                # 流结束，兜底再清理一次工具标记
+                if full_response:
+                    full_response = strip_text_tool_calls(full_response)
+
+                # 发送完成事件
+                yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
+
+            except Exception as e:
+                logger.error(f"摘要助手流式聊天错误: {e}", exc_info=True)
+                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+            finally:
+                # 确保 assistant 消息可靠落库
+                if full_response:
+                    try:
+                        context_mgr.add_message(
+                            session_id=session_id, role="assistant", content=full_response
+                        )
+                    except Exception:
+                        pass
+
+                # 上下文替换：将目标会话中被摘要的原始消息替换为日记摘要
+                if (
+                    request.target_session_id
+                    and target_summarizable_range
+                    and captured_diary_entry.get("body")
+                ):
+                    try:
+                        summary_text = captured_diary_entry["body"]
+                        # 优先使用工具调用中声明的范围，否则使用预计算的可摘要范围
+                        range_str = captured_diary_entry.get("summarized_message_range")
+                        if range_str and "-" in range_str:
+                            parts = range_str.split("-")
+                            up_to_index = int(parts[-1])
+                        else:
+                            up_to_index = target_summarizable_range.get("end", 0)
+
+                        if up_to_index > target_summarizable_range.get("start", 0):
+                            context_mgr.replace_messages_with_summary(
+                                session_id=request.target_session_id,
+                                summary_text=summary_text,
+                                summarized_up_to_index=up_to_index,
+                            )
+                            yield f"data: {json.dumps({'type': 'context_replaced', 'target_session_id': request.target_session_id, 'summarized_up_to': up_to_index})}\n\n"
+                            logger.info(
+                                f"目标会话上下文已替换: session={request.target_session_id}, up_to={up_to_index}"
+                            )
+                    except Exception as e:
+                        logger.warning(f"上下文替换失败: {e}")
 
         return StreamingResponse(
             generate_stream(),

@@ -129,6 +129,44 @@ def register_summary_tools():
         examples=["清空当前会话的上下文", "重置对话历史"],
     )
 
+    # 5. save_diary_entry - 保存日记条目
+    tool_registry.register(
+        name="save_diary_entry",
+        description="将对话内容整理为一篇日记并保存为日记类型记忆。每次摘要只生成一篇 consolidated 日记，包含日期、标题、情绪和正文叙述。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "日记日期，格式 YYYY-MM-DD，如 2026-06-20",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "日记标题，概括当天的主要话题",
+                },
+                "mood": {
+                    "type": "string",
+                    "description": "情绪/感受描述，如 愉快、平静、焦虑",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "日记正文，第一人称叙述，包含主要事件和反思",
+                },
+                "summarized_message_range": {
+                    "type": "string",
+                    "description": "被摘要的消息索引范围，格式 '起-止'（不含止），如 '0-15'",
+                },
+            },
+            "required": ["date", "title", "mood", "body", "summarized_message_range"],
+        },
+        function=save_diary_entry,
+        category="summary",
+        tags=["summary", "diary", "save", "store"],
+        examples=[
+            "保存日记：2026-06-20，标题'讨论项目方案'，情绪'积极'",
+        ],
+    )
+
 
 async def summarize_content(content: str, max_length: int = 200) -> Dict[str, Any]:
     """生成摘要"""
@@ -206,14 +244,14 @@ async def save_summary_memory(
         except ValueError:
             return {"error": "时间戳格式错误，应为 yyyymmddhhmm 或 yyyymmdd"}
 
-        # 将重要性转换为 0-1 范围
-        importance_normalized = importance / 10.0
+        # write_memory 期望 importance 为整数（1-5），将 1-10 映射到 1-5
+        importance_int = max(1, min(5, round(importance / 2)))
 
-        # 保存记忆
-        memory_id = await _MEMORY_MANAGER.add_memory(
+        # 保存记忆（write_memory 是同步方法）
+        memory_id = _MEMORY_MANAGER.write_memory(
             content=content,
             memory_type="long_term",
-            importance=importance_normalized,
+            importance=importance_int,
             tags=tags or ["summary"],
             metadata={
                 "source": "summary",
@@ -233,6 +271,73 @@ async def save_summary_memory(
 
     except Exception as e:
         return {"error": f"保存记忆失败: {str(e)}"}
+
+
+async def save_diary_entry(
+    date: str,
+    title: str,
+    mood: str,
+    body: str,
+    summarized_message_range: str,
+) -> Dict[str, Any]:
+    """保存日记条目
+
+    Args:
+        date: 日记日期 (格式: YYYY-MM-DD, 如 2026-06-20)
+        title: 日记标题
+        mood: 情绪/感受
+        body: 日记正文（第一人称叙述）
+        summarized_message_range: 被摘要的消息索引范围 (如 "0-15")
+
+    Returns:
+        保存结果
+    """
+    if not _MEMORY_MANAGER:
+        return {"error": "记忆管理器未初始化"}
+
+    try:
+        # 验证参数
+        if not body or len(body.strip()) == 0:
+            return {"error": "日记正文不能为空"}
+        if not date or len(date.strip()) == 0:
+            return {"error": "日记日期不能为空"}
+
+        # 验证日期格式
+        from datetime import datetime
+
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            return {"error": "日期格式错误，应为 YYYY-MM-DD，如 2026-06-20"}
+
+        # 保存日记记忆（write_memory 是同步方法）
+        memory_id = _MEMORY_MANAGER.write_memory(
+            content=body,
+            memory_type="diary",
+            importance=3,
+            tags=["diary"],
+            metadata={
+                "date": date,
+                "title": title,
+                "mood": mood,
+                "body": body,
+                "summarized_message_range": summarized_message_range,
+                "source": "diary_summary",
+            },
+        )
+
+        return {
+            "status": "success",
+            "memory_id": memory_id,
+            "date": date,
+            "title": title,
+            "mood": mood,
+            "summarized_message_range": summarized_message_range,
+            "message": f"日记已保存 (ID: {memory_id})",
+        }
+
+    except Exception as e:
+        return {"error": f"保存日记失败: {str(e)}"}
 
 
 def get_session_messages(session_id: str, limit: int = 50) -> Dict[str, Any]:

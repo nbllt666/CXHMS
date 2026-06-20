@@ -5,12 +5,14 @@ export function ConnectionCheck({ children }: { children: React.ReactNode }) {
   const [connected, setConnected] = useState<boolean | null>(null); // null = checking
   const [showConfig, setShowConfig] = useState(false);
   const [host, setHost] = useState('localhost');
-  const [port, setPort] = useState('8000');
+  const [port, setPort] = useState('8001');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<'success' | 'fail' | null>(null);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
+    // 在 effect 体中重置为 true，确保 React StrictMode 重新挂载时 ref 状态正确
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
     };
@@ -25,7 +27,7 @@ export function ConnectionCheck({ children }: { children: React.ReactNode }) {
       setPort(url.port || (url.protocol === 'https:' ? '443' : '80'));
     } catch {
       setHost('localhost');
-      setPort('8000');
+      setPort('8001');
     }
   }, []);
 
@@ -68,6 +70,21 @@ export function ConnectionCheck({ children }: { children: React.ReactNode }) {
     api.setBaseUrls(url);
     setConnected(null);
     // 重新检查
+    api.checkHealth().then((ok) => {
+      if (!isMountedRef.current) return;
+      setConnected(ok);
+      if (ok) {
+        setShowConfig(false);
+        window.location.reload();
+      }
+    });
+  };
+
+  const handleUseProxy = () => {
+    // 清除自定义地址，使用 Vite 代理
+    api.setBaseUrls('');
+    localStorage.removeItem('cxhms-api-url');
+    setConnected(null);
     api.checkHealth().then((ok) => {
       if (!isMountedRef.current) return;
       setConnected(ok);
@@ -137,7 +154,7 @@ export function ConnectionCheck({ children }: { children: React.ReactNode }) {
                   type="text"
                   value={port}
                   onChange={(e) => setPort(e.target.value)}
-                  placeholder="8000"
+                  placeholder="8001"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                 />
               </div>
@@ -171,6 +188,12 @@ export function ConnectionCheck({ children }: { children: React.ReactNode }) {
                 连接
               </button>
             </div>
+            <button
+              onClick={handleUseProxy}
+              className="w-full px-4 py-2 border border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors text-sm"
+            >
+              使用代理连接（推荐）
+            </button>
           </div>
 
           {/* 自动重连提示 */}

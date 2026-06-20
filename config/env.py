@@ -59,6 +59,15 @@ class EnvConfig:
         return os.environ.get(env_key)
 
     @classmethod
+    def get_active_env_overrides(cls) -> Dict[str, str]:
+        """返回实际已设置的环境变量及其值（仅包含 os.environ 中存在的）"""
+        return {
+            key: cls.get_env_value(key)
+            for key in cls.ENV_MAPPINGS
+            if cls.get_env_value(key) is not None
+        }
+
+    @classmethod
     def set_nested_value(cls, config_dict: Dict, path: str, value: Any) -> None:
         keys = path.split(".")
         current = config_dict

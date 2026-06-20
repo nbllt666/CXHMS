@@ -2,6 +2,7 @@
 图数据库工具函数 - 供主模型、摘要模型和记忆管理模型调用的图工具
 """
 
+import contextvars
 from typing import Any, Dict, List, Optional
 
 from backend.core.memory.graph_store import (
@@ -14,20 +15,61 @@ from backend.core.memory.graph_store import (
 # Neo4jGraphStore 已移除，使用新的语义图数据库替代
 # from backend.core.memory.graph_store import Neo4jGraphStore
 
-_graph_store: Optional[GraphStoreBase] = None
+# 按助手注册的图存储实例（本地缓存，向后兼容）
+_graph_stores: Dict[str, GraphStoreBase] = {}
+
+# 当前工具调用上下文的 agent_id（使用 contextvars 保证 async/并发安全）
+_current_agent_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "graph_current_agent_id", default="default"
+)
 
 
-def set_graph_dependencies(graph_store: GraphStoreBase):
-    """设置图存储依赖"""
-    global _graph_store
-    _graph_store = graph_store
+def set_graph_dependencies(graph_store: GraphStoreBase, agent_id: str = "default"):
+    """设置指定助手的图存储依赖"""
+    _graph_stores[agent_id] = graph_store
+    # 同步到 dependencies 注册表，保证 REST API 与工具使用同一实例
+    try:
+        from backend.dependencies import _graph_stores as dep_stores
+        dep_stores[agent_id] = graph_store
+    except Exception:
+        pass
+
+
+def set_current_agent_id(agent_id: str) -> None:
+    """设置当前工具调用上下文的 agent_id（由 chat 路由在调用工具前设置）"""
+    _current_agent_id.set(agent_id)
+
+
+def get_current_agent_id() -> str:
+    """获取当前工具调用上下文的 agent_id"""
+    return _current_agent_id.get()
+
+
+def get_graph_store_for_agent(agent_id: str) -> Optional[GraphStoreBase]:
+    """获取指定助手的图存储实例（不存在时返回 None）。"""
+    return _graph_stores.get(agent_id)
+
+
+def _get_store() -> Optional[GraphStoreBase]:
+    """获取当前 agent_id 对应的图存储实例（按需创建）。"""
+    agent_id = _current_agent_id.get()
+    # 先查本地缓存
+    store = _graph_stores.get(agent_id)
+    if store is not None:
+        return store
+    # 按需创建（通过 dependencies 注册表）
+    try:
+        from backend.dependencies import _get_or_create_graph_store
+        store = _get_or_create_graph_store(agent_id)
+        _graph_stores[agent_id] = store
+        return store
+    except Exception:
+        return None
 
 
 def _check_graph_store():
-    """检查图存储是否初始化"""
-    if _graph_store is None:
-        return False
-    return True
+    """检查当前 agent_id 的图存储是否初始化"""
+    return _get_store() is not None
 
 
 def _get_library(lib_name: str) -> GraphLibrary:
@@ -103,7 +145,7 @@ def user_graph_create_entity(
             properties=properties or {},
             memory_ids=memory_ids or [],
         )
-        result = _graph_store.create_entity(entity, GraphLibrary.USER)
+        result = _get_store().create_entity(entity, GraphLibrary.USER)
         return {"status": "success", "entity": _entity_to_dict(result)}
     except Exception as e:
         return {"error": f"创建用户图实体失败: {str(e)}"}
@@ -138,7 +180,7 @@ def user_graph_create_relation(
             strength=strength,
             evidence_memory_ids=evidence_memory_ids or [],
         )
-        result = _graph_store.create_relation(relation, GraphLibrary.USER)
+        result = _get_store().create_relation(relation, GraphLibrary.USER)
         return {"status": "success", "relation": _relation_to_dict(result)}
     except Exception as e:
         return {"error": f"创建用户图关系失败: {str(e)}"}
@@ -157,7 +199,7 @@ def user_graph_query_entities(entity_name_or_id: str, depth: int = 1) -> Dict[st
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        entities = _graph_store.find_related_entities(entity_name_or_id, None, GraphLibrary.USER, depth)
+        entities = _get_store().find_related_entities(entity_name_or_id, None, GraphLibrary.USER, depth)
         return {
             "status": "success",
             "entity_name_or_id": entity_name_or_id,
@@ -183,7 +225,7 @@ def user_graph_find_paths(from_entity: str, to_entity: str, max_depth: int = 3) 
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        paths = _graph_store.find_paths(from_entity, to_entity, GraphLibrary.USER, max_depth)
+        paths = _get_store().find_paths(from_entity, to_entity, GraphLibrary.USER, max_depth)
         return {
             "status": "success",
             "from_entity": from_entity,
@@ -210,10 +252,10 @@ def user_graph_search_related_memories(entity_name: str, memory_query: str, limi
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        entity = _graph_store.get_entity(entity_name, GraphLibrary.USER)
+        entity = _get_store().get_entity(entity_name, GraphLibrary.USER)
         if not entity:
             return {"status": "success", "entity_name": entity_name, "memories": [], "note": "实体未找到"}
-        related_entities = _graph_store.find_related_entities(entity_name, None, GraphLibrary.USER, 2)
+        related_entities = _get_store().find_related_entities(entity_name, None, GraphLibrary.USER, 2)
         all_memory_ids = list(set(entity.memory_ids + [mid for e in related_entities for mid in e.memory_ids]))
         # Search memory content (not memory IDs) for the query string
         from backend.core.tools.master_tools import get_memory_manager
@@ -275,16 +317,16 @@ def user_graph_merge_entities(entity1_id: str, entity2_id: str) -> Dict[str, Any
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        entity1 = _graph_store.get_entity(entity1_id, GraphLibrary.USER)
-        entity2 = _graph_store.get_entity(entity2_id, GraphLibrary.USER)
+        entity1 = _get_store().get_entity(entity1_id, GraphLibrary.USER)
+        entity2 = _get_store().get_entity(entity2_id, GraphLibrary.USER)
         if not entity1:
             return {"error": f"实体 {entity1_id} 不存在"}
         if not entity2:
             return {"error": f"实体 {entity2_id} 不存在"}
         merged_memory_ids = list(set(entity1.memory_ids + entity2.memory_ids))
         merged_properties = {**entity1.properties, **entity2.properties}
-        _graph_store.update_entity(entity1_id, {"memory_ids": merged_memory_ids, **merged_properties}, GraphLibrary.USER)
-        _graph_store.delete_entity(entity2_id, GraphLibrary.USER, hard=False)
+        _get_store().update_entity(entity1_id, {"memory_ids": merged_memory_ids, **merged_properties}, GraphLibrary.USER)
+        _get_store().delete_entity(entity2_id, GraphLibrary.USER, hard=False)
         return {
             "status": "success",
             "merged_to": entity1_id,
@@ -307,10 +349,10 @@ def user_graph_get_entity_summary(entity_name_or_id: str) -> Dict[str, Any]:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        entity = _graph_store.get_entity(entity_name_or_id, GraphLibrary.USER)
+        entity = _get_store().get_entity(entity_name_or_id, GraphLibrary.USER)
         if not entity:
             return {"error": f"实体 {entity_name_or_id} 不存在"}
-        related = _graph_store.find_related_entities(entity_name_or_id, None, GraphLibrary.USER, 1)
+        related = _get_store().find_related_entities(entity_name_or_id, None, GraphLibrary.USER, 1)
         return {
             "status": "success",
             "entity": _entity_to_dict(entity),
@@ -334,7 +376,7 @@ def user_graph_update_entity(entity_id: str, properties: Dict[str, Any]) -> Dict
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        result = _graph_store.update_entity(entity_id, properties, GraphLibrary.USER)
+        result = _get_store().update_entity(entity_id, properties, GraphLibrary.USER)
         if result is None:
             return {"error": f"实体 {entity_id} 不存在或更新失败"}
         return {"status": "success", "entity": _entity_to_dict(result)}
@@ -354,7 +396,7 @@ def user_graph_delete_entity(entity_id: str) -> Dict[str, Any]:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        success = _graph_store.delete_entity(entity_id, GraphLibrary.USER, hard=False)
+        success = _get_store().delete_entity(entity_id, GraphLibrary.USER, hard=False)
         return {"status": "success" if success else "failed", "entity_id": entity_id, "soft_delete": True}
     except Exception as e:
         return {"error": f"删除用户图实体失败: {str(e)}"}
@@ -378,7 +420,7 @@ def user_graph_update_relation(
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
         updates = {"strength": strength}
-        result = _graph_store.update_relation(from_entity, to_entity, relation_type, updates, GraphLibrary.USER)
+        result = _get_store().update_relation(from_entity, to_entity, relation_type, updates, GraphLibrary.USER)
         if result is None:
             return {"error": f"关系不存在或更新失败"}
         return {"status": "success", "relation": _relation_to_dict(result)}
@@ -400,7 +442,7 @@ def user_graph_delete_relation(from_entity: str, to_entity: str, relation_type: 
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        success = _graph_store.delete_relation(from_entity, to_entity, relation_type, GraphLibrary.USER, hard=False)
+        success = _get_store().delete_relation(from_entity, to_entity, relation_type, GraphLibrary.USER, hard=False)
         return {"status": "success" if success else "failed", "from_entity": from_entity, "to_entity": to_entity, "relation_type": relation_type, "soft_delete": True}
     except Exception as e:
         return {"error": f"删除用户图关系失败: {str(e)}"}
@@ -415,7 +457,7 @@ def user_graph_get_stats() -> Dict[str, Any]:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        stats = _graph_store.get_stats(GraphLibrary.USER)
+        stats = _get_store().get_stats(GraphLibrary.USER)
         return {"status": "success", **stats}
     except Exception as e:
         return {"error": f"获取用户图统计失败: {str(e)}"}
@@ -433,7 +475,7 @@ def user_graph_export(format: str) -> Dict[str, Any]:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        data = _graph_store.export(GraphLibrary.USER)
+        data = _get_store().export(GraphLibrary.USER)
         return {"status": "success", "format": format, "data": data, "entity_count": len(data.get("entities", [])), "relation_count": len(data.get("relations", []))}
     except Exception as e:
         return {"error": f"导出用户图数据失败: {str(e)}"}
@@ -463,7 +505,7 @@ def thing_graph_create_entity(
             properties=properties or {},
             memory_ids=memory_ids or [],
         )
-        result = _graph_store.create_entity(entity, GraphLibrary.THING)
+        result = _get_store().create_entity(entity, GraphLibrary.THING)
         return {"status": "success", "entity": _entity_to_dict(result)}
     except Exception as e:
         return {"error": f"创建物品图实体失败: {str(e)}"}
@@ -498,7 +540,7 @@ def thing_graph_create_relation(
             strength=strength,
             evidence_memory_ids=evidence_memory_ids or [],
         )
-        result = _graph_store.create_relation(relation, GraphLibrary.THING)
+        result = _get_store().create_relation(relation, GraphLibrary.THING)
         return {"status": "success", "relation": _relation_to_dict(result)}
     except Exception as e:
         return {"error": f"创建物品图关系失败: {str(e)}"}
@@ -517,7 +559,7 @@ def thing_graph_query_entities(entity_name_or_id: str, depth: int = 1) -> Dict[s
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        entities = _graph_store.find_related_entities(entity_name_or_id, None, GraphLibrary.THING, depth)
+        entities = _get_store().find_related_entities(entity_name_or_id, None, GraphLibrary.THING, depth)
         return {
             "status": "success",
             "entity_name_or_id": entity_name_or_id,
@@ -543,7 +585,7 @@ def thing_graph_find_paths(from_entity: str, to_entity: str, max_depth: int = 3)
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        paths = _graph_store.find_paths(from_entity, to_entity, GraphLibrary.THING, max_depth)
+        paths = _get_store().find_paths(from_entity, to_entity, GraphLibrary.THING, max_depth)
         return {
             "status": "success",
             "from_entity": from_entity,
@@ -570,10 +612,10 @@ def thing_graph_search_related_memories(entity_name: str, memory_query: str, lim
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        entity = _graph_store.get_entity(entity_name, GraphLibrary.THING)
+        entity = _get_store().get_entity(entity_name, GraphLibrary.THING)
         if not entity:
             return {"status": "success", "entity_name": entity_name, "memories": [], "note": "实体未找到"}
-        related_entities = _graph_store.find_related_entities(entity_name, None, GraphLibrary.THING, 2)
+        related_entities = _get_store().find_related_entities(entity_name, None, GraphLibrary.THING, 2)
         all_memory_ids = list(set(entity.memory_ids + [mid for e in related_entities for mid in e.memory_ids]))
         matched_memory_ids = [mid for mid in all_memory_ids if memory_query.lower() in str(mid).lower()][:limit]
         return {
@@ -628,16 +670,16 @@ def thing_graph_merge_entities(entity1_id: str, entity2_id: str) -> Dict[str, An
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        entity1 = _graph_store.get_entity(entity1_id, GraphLibrary.THING)
-        entity2 = _graph_store.get_entity(entity2_id, GraphLibrary.THING)
+        entity1 = _get_store().get_entity(entity1_id, GraphLibrary.THING)
+        entity2 = _get_store().get_entity(entity2_id, GraphLibrary.THING)
         if not entity1:
             return {"error": f"实体 {entity1_id} 不存在"}
         if not entity2:
             return {"error": f"实体 {entity2_id} 不存在"}
         merged_memory_ids = list(set(entity1.memory_ids + entity2.memory_ids))
         merged_properties = {**entity1.properties, **entity2.properties}
-        _graph_store.update_entity(entity1_id, {"memory_ids": merged_memory_ids, **merged_properties}, GraphLibrary.THING)
-        _graph_store.delete_entity(entity2_id, GraphLibrary.THING, hard=False)
+        _get_store().update_entity(entity1_id, {"memory_ids": merged_memory_ids, **merged_properties}, GraphLibrary.THING)
+        _get_store().delete_entity(entity2_id, GraphLibrary.THING, hard=False)
         return {
             "status": "success",
             "merged_to": entity1_id,
@@ -660,10 +702,10 @@ def thing_graph_get_entity_summary(entity_name_or_id: str) -> Dict[str, Any]:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        entity = _graph_store.get_entity(entity_name_or_id, GraphLibrary.THING)
+        entity = _get_store().get_entity(entity_name_or_id, GraphLibrary.THING)
         if not entity:
             return {"error": f"实体 {entity_name_or_id} 不存在"}
-        related = _graph_store.find_related_entities(entity_name_or_id, None, GraphLibrary.THING, 1)
+        related = _get_store().find_related_entities(entity_name_or_id, None, GraphLibrary.THING, 1)
         return {
             "status": "success",
             "entity": _entity_to_dict(entity),
@@ -687,7 +729,7 @@ def thing_graph_update_entity(entity_id: str, properties: Dict[str, Any]) -> Dic
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        result = _graph_store.update_entity(entity_id, properties, GraphLibrary.THING)
+        result = _get_store().update_entity(entity_id, properties, GraphLibrary.THING)
         if result is None:
             return {"error": f"实体 {entity_id} 不存在或更新失败"}
         return {"status": "success", "entity": _entity_to_dict(result)}
@@ -707,7 +749,7 @@ def thing_graph_delete_entity(entity_id: str) -> Dict[str, Any]:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        success = _graph_store.delete_entity(entity_id, GraphLibrary.THING, hard=False)
+        success = _get_store().delete_entity(entity_id, GraphLibrary.THING, hard=False)
         return {"status": "success" if success else "failed", "entity_id": entity_id, "soft_delete": True}
     except Exception as e:
         return {"error": f"删除物品图实体失败: {str(e)}"}
@@ -731,7 +773,7 @@ def thing_graph_update_relation(
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
         updates = {"strength": strength}
-        result = _graph_store.update_relation(from_entity, to_entity, relation_type, updates, GraphLibrary.THING)
+        result = _get_store().update_relation(from_entity, to_entity, relation_type, updates, GraphLibrary.THING)
         if result is None:
             return {"error": f"关系不存在或更新失败"}
         return {"status": "success", "relation": _relation_to_dict(result)}
@@ -753,7 +795,7 @@ def thing_graph_delete_relation(from_entity: str, to_entity: str, relation_type:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        success = _graph_store.delete_relation(from_entity, to_entity, relation_type, GraphLibrary.THING, hard=False)
+        success = _get_store().delete_relation(from_entity, to_entity, relation_type, GraphLibrary.THING, hard=False)
         return {"status": "success" if success else "failed", "from_entity": from_entity, "to_entity": to_entity, "relation_type": relation_type, "soft_delete": True}
     except Exception as e:
         return {"error": f"删除物品图关系失败: {str(e)}"}
@@ -768,7 +810,7 @@ def thing_graph_get_stats() -> Dict[str, Any]:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        stats = _graph_store.get_stats(GraphLibrary.THING)
+        stats = _get_store().get_stats(GraphLibrary.THING)
         return {"status": "success", **stats}
     except Exception as e:
         return {"error": f"获取物品图统计失败: {str(e)}"}
@@ -786,7 +828,7 @@ def thing_graph_export(format: str) -> Dict[str, Any]:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        data = _graph_store.export(GraphLibrary.THING)
+        data = _get_store().export(GraphLibrary.THING)
         return {"status": "success", "format": format, "data": data, "entity_count": len(data.get("entities", [])), "relation_count": len(data.get("relations", []))}
     except Exception as e:
         return {"error": f"导出物品图数据失败: {str(e)}"}
@@ -816,7 +858,7 @@ def concept_graph_create_entity(
             properties=properties or {},
             memory_ids=memory_ids or [],
         )
-        result = _graph_store.create_entity(entity, GraphLibrary.CONCEPT)
+        result = _get_store().create_entity(entity, GraphLibrary.CONCEPT)
         return {"status": "success", "entity": _entity_to_dict(result)}
     except Exception as e:
         return {"error": f"创建概念图实体失败: {str(e)}"}
@@ -851,7 +893,7 @@ def concept_graph_create_relation(
             strength=strength,
             evidence_memory_ids=evidence_memory_ids or [],
         )
-        result = _graph_store.create_relation(relation, GraphLibrary.CONCEPT)
+        result = _get_store().create_relation(relation, GraphLibrary.CONCEPT)
         return {"status": "success", "relation": _relation_to_dict(result)}
     except Exception as e:
         return {"error": f"创建概念图关系失败: {str(e)}"}
@@ -870,7 +912,7 @@ def concept_graph_query_entities(entity_name_or_id: str, depth: int = 1) -> Dict
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        entities = _graph_store.find_related_entities(entity_name_or_id, None, GraphLibrary.CONCEPT, depth)
+        entities = _get_store().find_related_entities(entity_name_or_id, None, GraphLibrary.CONCEPT, depth)
         return {
             "status": "success",
             "entity_name_or_id": entity_name_or_id,
@@ -896,7 +938,7 @@ def concept_graph_find_paths(from_entity: str, to_entity: str, max_depth: int = 
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        paths = _graph_store.find_paths(from_entity, to_entity, GraphLibrary.CONCEPT, max_depth)
+        paths = _get_store().find_paths(from_entity, to_entity, GraphLibrary.CONCEPT, max_depth)
         return {
             "status": "success",
             "from_entity": from_entity,
@@ -923,10 +965,10 @@ def concept_graph_search_related_memories(entity_name: str, memory_query: str, l
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        entity = _graph_store.get_entity(entity_name, GraphLibrary.CONCEPT)
+        entity = _get_store().get_entity(entity_name, GraphLibrary.CONCEPT)
         if not entity:
             return {"status": "success", "entity_name": entity_name, "memories": [], "note": "实体未找到"}
-        related_entities = _graph_store.find_related_entities(entity_name, None, GraphLibrary.CONCEPT, 2)
+        related_entities = _get_store().find_related_entities(entity_name, None, GraphLibrary.CONCEPT, 2)
         all_memory_ids = list(set(entity.memory_ids + [mid for e in related_entities for mid in e.memory_ids]))
         matched_memory_ids = [mid for mid in all_memory_ids if memory_query.lower() in str(mid).lower()][:limit]
         return {
@@ -980,16 +1022,16 @@ def concept_graph_merge_entities(entity1_id: str, entity2_id: str) -> Dict[str, 
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        entity1 = _graph_store.get_entity(entity1_id, GraphLibrary.CONCEPT)
-        entity2 = _graph_store.get_entity(entity2_id, GraphLibrary.CONCEPT)
+        entity1 = _get_store().get_entity(entity1_id, GraphLibrary.CONCEPT)
+        entity2 = _get_store().get_entity(entity2_id, GraphLibrary.CONCEPT)
         if not entity1:
             return {"error": f"实体 {entity1_id} 不存在"}
         if not entity2:
             return {"error": f"实体 {entity2_id} 不存在"}
         merged_memory_ids = list(set(entity1.memory_ids + entity2.memory_ids))
         merged_properties = {**entity1.properties, **entity2.properties}
-        _graph_store.update_entity(entity1_id, {"memory_ids": merged_memory_ids, **merged_properties}, GraphLibrary.CONCEPT)
-        _graph_store.delete_entity(entity2_id, GraphLibrary.CONCEPT, hard=False)
+        _get_store().update_entity(entity1_id, {"memory_ids": merged_memory_ids, **merged_properties}, GraphLibrary.CONCEPT)
+        _get_store().delete_entity(entity2_id, GraphLibrary.CONCEPT, hard=False)
         return {
             "status": "success",
             "merged_to": entity1_id,
@@ -1012,10 +1054,10 @@ def concept_graph_get_entity_summary(entity_name_or_id: str) -> Dict[str, Any]:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        entity = _graph_store.get_entity(entity_name_or_id, GraphLibrary.CONCEPT)
+        entity = _get_store().get_entity(entity_name_or_id, GraphLibrary.CONCEPT)
         if not entity:
             return {"error": f"实体 {entity_name_or_id} 不存在"}
-        related = _graph_store.find_related_entities(entity_name_or_id, None, GraphLibrary.CONCEPT, 1)
+        related = _get_store().find_related_entities(entity_name_or_id, None, GraphLibrary.CONCEPT, 1)
         return {
             "status": "success",
             "entity": _entity_to_dict(entity),
@@ -1039,7 +1081,7 @@ def concept_graph_update_entity(entity_id: str, properties: Dict[str, Any]) -> D
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        result = _graph_store.update_entity(entity_id, properties, GraphLibrary.CONCEPT)
+        result = _get_store().update_entity(entity_id, properties, GraphLibrary.CONCEPT)
         if result is None:
             return {"error": f"实体 {entity_id} 不存在或更新失败"}
         return {"status": "success", "entity": _entity_to_dict(result)}
@@ -1059,7 +1101,7 @@ def concept_graph_delete_entity(entity_id: str) -> Dict[str, Any]:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        success = _graph_store.delete_entity(entity_id, GraphLibrary.CONCEPT, hard=False)
+        success = _get_store().delete_entity(entity_id, GraphLibrary.CONCEPT, hard=False)
         return {"status": "success" if success else "failed", "entity_id": entity_id, "soft_delete": True}
     except Exception as e:
         return {"error": f"删除概念图实体失败: {str(e)}"}
@@ -1083,7 +1125,7 @@ def concept_graph_update_relation(
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
         updates = {"strength": strength}
-        result = _graph_store.update_relation(from_entity, to_entity, relation_type, updates, GraphLibrary.CONCEPT)
+        result = _get_store().update_relation(from_entity, to_entity, relation_type, updates, GraphLibrary.CONCEPT)
         if result is None:
             return {"error": f"关系不存在或更新失败"}
         return {"status": "success", "relation": _relation_to_dict(result)}
@@ -1105,7 +1147,7 @@ def concept_graph_delete_relation(from_entity: str, to_entity: str, relation_typ
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        success = _graph_store.delete_relation(from_entity, to_entity, relation_type, GraphLibrary.CONCEPT, hard=False)
+        success = _get_store().delete_relation(from_entity, to_entity, relation_type, GraphLibrary.CONCEPT, hard=False)
         return {"status": "success" if success else "failed", "from_entity": from_entity, "to_entity": to_entity, "relation_type": relation_type, "soft_delete": True}
     except Exception as e:
         return {"error": f"删除概念图关系失败: {str(e)}"}
@@ -1120,7 +1162,7 @@ def concept_graph_get_stats() -> Dict[str, Any]:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        stats = _graph_store.get_stats(GraphLibrary.CONCEPT)
+        stats = _get_store().get_stats(GraphLibrary.CONCEPT)
         return {"status": "success", **stats}
     except Exception as e:
         return {"error": f"获取概念图统计失败: {str(e)}"}
@@ -1138,7 +1180,7 @@ def concept_graph_export(format: str) -> Dict[str, Any]:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        data = _graph_store.export(GraphLibrary.CONCEPT)
+        data = _get_store().export(GraphLibrary.CONCEPT)
         return {"status": "success", "format": format, "data": data, "entity_count": len(data.get("entities", [])), "relation_count": len(data.get("relations", []))}
     except Exception as e:
         return {"error": f"导出概念图数据失败: {str(e)}"}
@@ -1168,7 +1210,7 @@ def event_graph_create_entity(
             properties=properties or {},
             memory_ids=memory_ids or [],
         )
-        result = _graph_store.create_entity(entity, GraphLibrary.EVENT)
+        result = _get_store().create_entity(entity, GraphLibrary.EVENT)
         return {"status": "success", "entity": _entity_to_dict(result)}
     except Exception as e:
         return {"error": f"创建事件图实体失败: {str(e)}"}
@@ -1203,7 +1245,7 @@ def event_graph_create_relation(
             strength=strength,
             evidence_memory_ids=evidence_memory_ids or [],
         )
-        result = _graph_store.create_relation(relation, GraphLibrary.EVENT)
+        result = _get_store().create_relation(relation, GraphLibrary.EVENT)
         return {"status": "success", "relation": _relation_to_dict(result)}
     except Exception as e:
         return {"error": f"创建事件图关系失败: {str(e)}"}
@@ -1222,7 +1264,7 @@ def event_graph_query_entities(entity_name_or_id: str, depth: int = 1) -> Dict[s
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        entities = _graph_store.find_related_entities(entity_name_or_id, None, GraphLibrary.EVENT, depth)
+        entities = _get_store().find_related_entities(entity_name_or_id, None, GraphLibrary.EVENT, depth)
         return {
             "status": "success",
             "entity_name_or_id": entity_name_or_id,
@@ -1248,7 +1290,7 @@ def event_graph_find_paths(from_entity: str, to_entity: str, max_depth: int = 3)
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        paths = _graph_store.find_paths(from_entity, to_entity, GraphLibrary.EVENT, max_depth)
+        paths = _get_store().find_paths(from_entity, to_entity, GraphLibrary.EVENT, max_depth)
         return {
             "status": "success",
             "from_entity": from_entity,
@@ -1275,10 +1317,10 @@ def event_graph_search_related_memories(entity_name: str, memory_query: str, lim
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        entity = _graph_store.get_entity(entity_name, GraphLibrary.EVENT)
+        entity = _get_store().get_entity(entity_name, GraphLibrary.EVENT)
         if not entity:
             return {"status": "success", "entity_name": entity_name, "memories": [], "note": "实体未找到"}
-        related_entities = _graph_store.find_related_entities(entity_name, None, GraphLibrary.EVENT, 2)
+        related_entities = _get_store().find_related_entities(entity_name, None, GraphLibrary.EVENT, 2)
         all_memory_ids = list(set(entity.memory_ids + [mid for e in related_entities for mid in e.memory_ids]))
         matched_memory_ids = [mid for mid in all_memory_ids if memory_query.lower() in str(mid).lower()][:limit]
         return {
@@ -1334,16 +1376,16 @@ def event_graph_merge_entities(entity1_id: str, entity2_id: str) -> Dict[str, An
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        entity1 = _graph_store.get_entity(entity1_id, GraphLibrary.EVENT)
-        entity2 = _graph_store.get_entity(entity2_id, GraphLibrary.EVENT)
+        entity1 = _get_store().get_entity(entity1_id, GraphLibrary.EVENT)
+        entity2 = _get_store().get_entity(entity2_id, GraphLibrary.EVENT)
         if not entity1:
             return {"error": f"实体 {entity1_id} 不存在"}
         if not entity2:
             return {"error": f"实体 {entity2_id} 不存在"}
         merged_memory_ids = list(set(entity1.memory_ids + entity2.memory_ids))
         merged_properties = {**entity1.properties, **entity2.properties}
-        _graph_store.update_entity(entity1_id, {"memory_ids": merged_memory_ids, **merged_properties}, GraphLibrary.EVENT)
-        _graph_store.delete_entity(entity2_id, GraphLibrary.EVENT, hard=False)
+        _get_store().update_entity(entity1_id, {"memory_ids": merged_memory_ids, **merged_properties}, GraphLibrary.EVENT)
+        _get_store().delete_entity(entity2_id, GraphLibrary.EVENT, hard=False)
         return {
             "status": "success",
             "merged_to": entity1_id,
@@ -1366,10 +1408,10 @@ def event_graph_get_entity_summary(entity_name_or_id: str) -> Dict[str, Any]:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        entity = _graph_store.get_entity(entity_name_or_id, GraphLibrary.EVENT)
+        entity = _get_store().get_entity(entity_name_or_id, GraphLibrary.EVENT)
         if not entity:
             return {"error": f"实体 {entity_name_or_id} 不存在"}
-        related = _graph_store.find_related_entities(entity_name_or_id, None, GraphLibrary.EVENT, 1)
+        related = _get_store().find_related_entities(entity_name_or_id, None, GraphLibrary.EVENT, 1)
         return {
             "status": "success",
             "entity": _entity_to_dict(entity),
@@ -1393,7 +1435,7 @@ def event_graph_update_entity(entity_id: str, properties: Dict[str, Any]) -> Dic
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        result = _graph_store.update_entity(entity_id, properties, GraphLibrary.EVENT)
+        result = _get_store().update_entity(entity_id, properties, GraphLibrary.EVENT)
         if result is None:
             return {"error": f"实体 {entity_id} 不存在或更新失败"}
         return {"status": "success", "entity": _entity_to_dict(result)}
@@ -1413,7 +1455,7 @@ def event_graph_delete_entity(entity_id: str) -> Dict[str, Any]:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        success = _graph_store.delete_entity(entity_id, GraphLibrary.EVENT, hard=False)
+        success = _get_store().delete_entity(entity_id, GraphLibrary.EVENT, hard=False)
         return {"status": "success" if success else "failed", "entity_id": entity_id, "soft_delete": True}
     except Exception as e:
         return {"error": f"删除事件图实体失败: {str(e)}"}
@@ -1437,7 +1479,7 @@ def event_graph_update_relation(
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
         updates = {"strength": strength}
-        result = _graph_store.update_relation(from_entity, to_entity, relation_type, updates, GraphLibrary.EVENT)
+        result = _get_store().update_relation(from_entity, to_entity, relation_type, updates, GraphLibrary.EVENT)
         if result is None:
             return {"error": f"关系不存在或更新失败"}
         return {"status": "success", "relation": _relation_to_dict(result)}
@@ -1459,7 +1501,7 @@ def event_graph_delete_relation(from_entity: str, to_entity: str, relation_type:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        success = _graph_store.delete_relation(from_entity, to_entity, relation_type, GraphLibrary.EVENT, hard=False)
+        success = _get_store().delete_relation(from_entity, to_entity, relation_type, GraphLibrary.EVENT, hard=False)
         return {"status": "success" if success else "failed", "from_entity": from_entity, "to_entity": to_entity, "relation_type": relation_type, "soft_delete": True}
     except Exception as e:
         return {"error": f"删除事件图关系失败: {str(e)}"}
@@ -1474,7 +1516,7 @@ def event_graph_get_stats() -> Dict[str, Any]:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        stats = _graph_store.get_stats(GraphLibrary.EVENT)
+        stats = _get_store().get_stats(GraphLibrary.EVENT)
         return {"status": "success", **stats}
     except Exception as e:
         return {"error": f"获取事件图统计失败: {str(e)}"}
@@ -1492,7 +1534,7 @@ def event_graph_export(format: str) -> Dict[str, Any]:
     if not _check_graph_store():
         return {"error": "图存储未初始化，请先调用 set_graph_dependencies()"}
     try:
-        data = _graph_store.export(GraphLibrary.EVENT)
+        data = _get_store().export(GraphLibrary.EVENT)
         return {"status": "success", "format": format, "data": data, "entity_count": len(data.get("entities", [])), "relation_count": len(data.get("relations", []))}
     except Exception as e:
         return {"error": f"导出事件图数据失败: {str(e)}"}

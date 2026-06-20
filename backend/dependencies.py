@@ -1,4 +1,5 @@
-from typing import Optional, Any
+import threading
+from typing import Optional, Any, Dict
 
 from fastapi import HTTPException, Request
 from fastapi import Depends
@@ -14,8 +15,6 @@ class ServiceState:
         self.secondary_router = None
         self.mcp_manager = None
         self.model_router = None
-        self.graph_database = None
-        self.graph_store = None
         self.cxfc_manager: Optional[Any] = None
 
 
@@ -95,18 +94,74 @@ def get_model_router(state: ServiceState = Depends(get_service_state)):
     return state.model_router
 
 
-def get_graph_database(state: ServiceState = Depends(get_service_state)):
-    state = _resolve_state(state)
-    if state.graph_database is None:
-        raise HTTPException(status_code=503, detail="图数据库服务不可用")
-    return state.graph_database
+def get_graph_database(agent_id: str = "default", state: ServiceState = Depends(get_service_state)):
+    """按 agent_id 获取图数据库实例（按需创建）。"""
+    _resolve_state(state)
+    return _get_or_create_graph_database(agent_id)
 
 
-def get_graph_store(state: ServiceState = Depends(get_service_state)):
-    state = _resolve_state(state)
-    if state.graph_store is None:
-        raise HTTPException(status_code=503, detail="图存储服务不可用")
-    return state.graph_store
+def get_graph_store(agent_id: str = "default", state: ServiceState = Depends(get_service_state)):
+    """按 agent_id 获取图存储实例（按需创建）。"""
+    _resolve_state(state)
+    return _get_or_create_graph_store(agent_id)
+
+
+# ---- 按助手的图数据库/图存储注册表 ----
+_graph_databases: Dict[str, Any] = {}
+_graph_stores: Dict[str, Any] = {}
+_graph_registry_lock = threading.Lock()
+
+
+def _get_or_create_graph_database(agent_id: str = "default"):
+    """按 agent_id 获取或按需创建 GraphDatabase 实例。"""
+    if agent_id not in _graph_databases:
+        with _graph_registry_lock:
+            if agent_id not in _graph_databases:
+                from backend.core.graph import GraphDatabase
+                gdb = GraphDatabase(agent_id=agent_id)
+                gdb.initialize()
+                _graph_databases[agent_id] = gdb
+    return _graph_databases[agent_id]
+
+
+def _get_or_create_graph_store(agent_id: str = "default"):
+    """按 agent_id 获取或按需创建 GraphStore 实例。"""
+    if agent_id not in _graph_stores:
+        with _graph_registry_lock:
+            if agent_id not in _graph_stores:
+                from backend.core.memory.graph_store import SQLiteGraphStore
+                gdb = _get_or_create_graph_database(agent_id)
+                _graph_stores[agent_id] = SQLiteGraphStore(gdb)
+    return _graph_stores[agent_id]
+
+
+def get_graph_database_if_exists(agent_id: str = "default"):
+    """返回已注册的 GraphDatabase 实例，不存在时返回 None（不创建）。"""
+    return _graph_databases.get(agent_id)
+
+
+def get_graph_store_if_exists(agent_id: str = "default"):
+    """返回已注册的 GraphStore 实例，不存在时返回 None（不创建）。"""
+    return _graph_stores.get(agent_id)
+
+
+def remove_graph_database(agent_id: str) -> None:
+    """从注册表移除并关闭对应 agent 的图数据库及图存储实例。"""
+    with _graph_registry_lock:
+        store = _graph_stores.pop(agent_id, None)
+        gdb = _graph_databases.pop(agent_id, None)
+    # 关闭 GraphDatabase（底层 Database 由 database.py 注册表管理）
+    if gdb is not None:
+        try:
+            gdb.close()
+        except Exception:
+            pass
+    # 同步移除底层 Database 注册表项
+    try:
+        from backend.core.graph.database import remove_database
+        remove_database(agent_id)
+    except Exception:
+        pass
 
 
 def get_cxfc_manager(state: ServiceState = Depends(get_service_state)) -> Optional[Any]:

@@ -16,8 +16,8 @@ echo.
 SET KMP_DUPLICATE_LIB_OK=TRUE
 
 echo Starting backend with system Python...
-echo Access: http://localhost:8000
-echo API Docs: http://localhost:8000/docs
+echo Access: http://localhost:8001
+echo API Docs: http://localhost:8001/docs
 echo.
 
 python main.py

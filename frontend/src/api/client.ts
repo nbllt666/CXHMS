@@ -185,44 +185,7 @@ class ApiClient {
 
   // ========== Main Backend APIs (Port 8000) ==========
 
-  // Service Management (via main backend when running)
-  async getServiceStatus() {
-    const response = await this.client.get('/api/service/status');
-    return response.data;
-  }
-
-  async startService(config: {
-    host?: string;
-    port?: number;
-    log_level?: string;
-    reload?: boolean;
-    use_conda?: boolean;
-  }) {
-    const response = await this.client.post('/api/service/start', config);
-    return response.data;
-  }
-
-  async stopService() {
-    const response = await this.client.post('/api/service/stop');
-    return response.data;
-  }
-
-  async restartService(config: {
-    host?: string;
-    port?: number;
-    log_level?: string;
-    reload?: boolean;
-    use_conda?: boolean;
-  }) {
-    const response = await this.client.post('/api/service/restart', config);
-    return response.data;
-  }
-
-  async getServiceLogs(lines: number = 100) {
-    const response = await this.client.get('/api/service/logs', { params: { lines } });
-    return response.data;
-  }
-
+  // Service Config (used by vector/llm settings sections)
   async getServiceConfig() {
     const response = await this.client.get('/api/service/config');
     return response.data;
@@ -230,11 +193,6 @@ class ApiClient {
 
   async updateServiceConfig(config: Record<string, unknown>) {
     const response = await this.client.post('/api/service/config', config);
-    return response.data;
-  }
-
-  async getEnvironmentInfo() {
-    const response = await this.client.get('/api/service/environment');
     return response.data;
   }
 
@@ -934,6 +892,117 @@ class ApiClient {
         error: `Fetch error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`,
       });
     }
+  }
+
+  // ========== Summary Agent Streaming API ==========
+
+  async sendSummaryAgentMessageStream(
+    message: string,
+    onChunk: (chunk: {
+      type: string;
+      content?: string;
+      done?: boolean;
+      error?: string;
+      session_id?: string;
+      tool_call?: Record<string, unknown>;
+      tool_name?: string;
+      result?: unknown;
+      target_session_id?: string;
+      summarized_up_to?: number;
+    }) => void,
+    signal?: AbortSignal,
+    options?: { targetSessionId?: string }
+  ) {
+    try {
+      const response = await fetch(`${this.client.defaults.baseURL}/api/summary-agent/chat/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('cxhms-token') || ''}`,
+        },
+        body: JSON.stringify({
+          message,
+          target_session_id: options?.targetSessionId,
+        }),
+        signal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        onChunk({ type: 'error', error: `HTTP ${response.status}: ${errorText}` });
+        return;
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        onChunk({ type: 'error', error: 'No response body' });
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (value) {
+            buffer += decoder.decode(value, { stream: true });
+          }
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.trim().startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.trim().slice(6));
+                onChunk(data);
+              } catch (e) {
+                console.error('Failed to parse SSE data:', e);
+              }
+            }
+          }
+
+          if (done) {
+            if (buffer.trim().startsWith('data: ')) {
+              try {
+                const data = JSON.parse(buffer.trim().slice(6));
+                onChunk(data);
+              } catch (e) {
+                console.error('Failed to parse remaining buffer:', e);
+              }
+            }
+            break;
+          }
+        }
+      } catch (streamError) {
+        onChunk({
+          type: 'error',
+          error: `Stream error: ${streamError instanceof Error ? streamError.message : 'Unknown error'}`,
+        });
+      } finally {
+        reader.releaseLock();
+      }
+    } catch (fetchError) {
+      onChunk({
+        type: 'error',
+        error: `Fetch error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`,
+      });
+    }
+  }
+
+  // ========== Diary API ==========
+
+  async getDiaryEntries(params?: { limit?: number; agent_id?: string; workspace_id?: string }) {
+    const response = await this.client.get('/api/memories/diary', {
+      params: {
+        limit: params?.limit ?? 100,
+        agent_id: params?.agent_id ?? 'default',
+        workspace_id: params?.workspace_id ?? 'default',
+      },
+    });
+    return response.data;
   }
 
   // ========== Models API ==========

@@ -384,16 +384,19 @@ export function ChatPage() {
             created_at?: string;
             thinking?: string;
             images?: string[];
+            metadata?: { tool_calls?: ToolCall[]; thinking?: string };
           }) => ({
             id: msg.id || Math.random().toString(),
             role: msg.role,
             content: msg.content,
             timestamp: msg.created_at || new Date().toISOString(),
-            thinking: msg.thinking,
+            thinking: msg.thinking || msg.metadata?.thinking,
             images: msg.images,
+            tool_calls: msg.metadata?.tool_calls,
           })
         );
         setMessages(formattedMessages);
+        setShouldAutoScroll(true);
       }
     } catch (error) {
       console.error('加载历史消息失败:', error);
@@ -681,10 +684,11 @@ export function ChatPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto h-full flex flex-col">
+    <div className="w-full h-[calc(100vh-var(--header-height)-3rem)] flex flex-col">
       <PageHeader
         title={currentAgent?.name || '对话'}
         description={currentAgent?.description}
+        className="flex-shrink-0"
         actions={
           <div className="flex gap-2">
             <Button
@@ -877,7 +881,7 @@ export function ChatPage() {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="border-t border-[var(--color-border)] pt-4">
+      <div className="border-t border-[var(--color-border)] pt-4 flex-shrink-0">
         {/* 图片预览 */}
         {selectedImages.length > 0 && (
           <div className="flex gap-2 mb-2 flex-wrap">
@@ -1033,6 +1037,7 @@ export function ChatPage() {
         contextText={getContextText()}
         agentId={currentAgentId || 'default'}
         autoStart={autoStartSummary}
+        targetSessionId={currentSessionId || currentAgentId || 'default'}
       />
     </div>
   );

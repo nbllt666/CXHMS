@@ -274,6 +274,26 @@ async def update_agent(agent_id: str, request: AgentUpdateRequest):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
+def _cleanup_agent_graph_db(agent_id: str) -> None:
+    """清理指定助手的图数据库实例及 db 文件。"""
+    # 从注册表移除并关闭实例
+    try:
+        from backend.dependencies import remove_graph_database
+        remove_graph_database(agent_id)
+    except Exception as e:
+        logger.warning(f"清理图数据库实例失败 (agent_id={agent_id}): {e}")
+
+    # 删除 per-agent db 文件
+    try:
+        from backend.core.graph.config import get_graph_config
+        db_path = get_graph_config(agent_id=agent_id).database_path
+        if db_path and os.path.exists(db_path):
+            os.remove(db_path)
+            logger.info(f"已删除图数据库文件: {db_path}")
+    except Exception as e:
+        logger.warning(f"删除图数据库文件失败 (agent_id={agent_id}): {e}")
+
+
 @router.delete("/agents/{agent_id}")
 async def delete_agent(agent_id: str):
     """删除 Agent"""
@@ -289,6 +309,9 @@ async def delete_agent(agent_id: str):
 
         agents = [a for a in agents if a["id"] != agent_id]
         _save_agents(agents)
+
+        # 清理该助手的图数据库实例及文件
+        _cleanup_agent_graph_db(agent_id)
 
         return {"status": "success", "message": f"Agent '{agent_id}' 已删除"}
     except HTTPException:

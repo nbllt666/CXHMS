@@ -29,8 +29,8 @@ CALL %CONDA_PATH%\Scripts\activate.bat %CONDA_PATH%
 SET KMP_DUPLICATE_LIB_OK=TRUE
 
 echo Starting backend with Conda environment...
-echo Access: http://localhost:8000
-echo API Docs: http://localhost:8000/docs
+echo Access: http://localhost:8001
+echo API Docs: http://localhost:8001/docs
 echo.
 
 python main.py

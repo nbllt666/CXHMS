@@ -29,7 +29,7 @@ class ServiceStatus(BaseModel):
 
     running: bool
     pid: Optional[int] = None
-    port: int = 8000
+    port: int = 8001
     uptime: Optional[float] = None  # 运行时间（秒）
     using_conda: bool = False  # 是否使用 Conda 环境
 
@@ -38,7 +38,7 @@ class ServiceConfig(BaseModel):
     """服务配置"""
 
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = 8001
     log_level: str = "info"
     reload: bool = False
     use_conda: bool = True  # 是否优先使用 Conda 环境
@@ -104,6 +104,8 @@ def get_backend_process() -> Optional[psutil.Process]:
 @router.get("/service/status", response_model=ServiceStatus)
 async def get_service_status():
     """获取后端服务状态"""
+    from config.settings import settings
+
     process = get_backend_process()
 
     if process is None:
@@ -140,10 +142,10 @@ async def get_service_status():
             logger.warning(f"检查Conda环境失败: {e}")
 
         return ServiceStatus(
-            running=True, pid=process.pid, port=8000, uptime=uptime, using_conda=using_conda
+            running=True, pid=process.pid, port=settings.config.system.port, uptime=uptime, using_conda=using_conda
         )
 
-    return ServiceStatus(running=False, port=8000)
+    return ServiceStatus(running=False, port=settings.config.system.port)
 
 
 def validate_service_config(config: ServiceConfig) -> None:
@@ -380,6 +382,7 @@ async def get_service_logs(lines: int = 100):
 async def get_service_config():
     """获取当前服务配置"""
     from config.settings import settings
+    from config.env import EnvConfig
 
     # 检查 Conda 环境是否可用
     conda_available = get_conda_python_path() is not None
@@ -391,6 +394,31 @@ async def get_service_config():
         "log_level": settings.config.system.log_level,
         "debug": settings.config.system.debug,
         "conda_available": conda_available,
+    }
+
+    # 检测由环境变量管理的配置段
+    active_env_overrides = EnvConfig.get_active_env_overrides()
+    vector_env_keys = (
+        "CXHMS_VECTOR_ENABLED",
+        "CXHMS_VECTOR_BACKEND",
+        "CXHMS_WEAVIATE_HOST",
+        "CXHMS_WEAVIATE_PORT",
+        "CXHMS_MILVUS_PATH",
+        "CXHMS_VECTOR_SIZE",
+    )
+    models_env_keys = (
+        "CXHMS_LLM_PROVIDER",
+        "CXHMS_LLM_HOST",
+        "CXHMS_LLM_MODEL",
+        "CXHMS_LLM_API_KEY",
+        "CXHMS_VLLM_HOST",
+        "CXHMS_VLLM_MODEL",
+        "CXHMS_SUMMARY_MODEL",
+        "CXHMS_MEMORY_MODEL",
+    )
+    config["env_managed_sections"] = {
+        "vector": any(key in active_env_overrides for key in vector_env_keys),
+        "models": any(key in active_env_overrides for key in models_env_keys),
     }
 
     # 添加模型配置
@@ -587,7 +615,7 @@ async def get_startup_command(use_conda: bool = True):
     conda_activate = get_conda_activate_script()
     project_root = get_project_root()
 
-    config = {"host": "0.0.0.0", "port": 8000, "log_level": "info"}
+    config = {"host": "0.0.0.0", "port": 8001, "log_level": "info"}
 
     from config.settings import settings
 

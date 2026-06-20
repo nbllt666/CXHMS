@@ -16,14 +16,13 @@ logger = logging.getLogger(__name__)
 class Database:
     """SQLite 数据库连接管理器"""
 
-    _local = threading.local()
-
     def __init__(self, config: GraphConfig = None):
         self.config = config or get_graph_config()
         self.db_path = self.config.database_path
         self.timeout = self.config.timeout
         self._lock = threading.Lock()
         self._init_lock = threading.Lock()
+        self._local = threading.local()
 
     def _get_connection(self) -> sqlite3.Connection:
         if not hasattr(self._local, 'connection') or self._local.connection is None:
@@ -157,14 +156,40 @@ class Database:
                 cursor.execute(query, params)
 
 
-_db_instance: Optional[Database] = None
+_db_instances: Dict[str, "Database"] = {}
 _db_lock = threading.Lock()
 
 
-def get_database(config: GraphConfig = None) -> Database:
-    global _db_instance
-    if _db_instance is None:
+def get_database(config: GraphConfig = None, agent_id: str = "default") -> Database:
+    """获取数据库实例（按 agent_id 注册表）。
+
+    当 ``agent_id`` 不在注册表中时，按需创建新的 :class:`Database`，
+    使用 per-agent 的 db_path，调用 :meth:`Database.initialize` 创建 schema，
+    存入注册表并返回。未提供 ``agent_id`` 时使用 ``'default'``。
+    """
+    if agent_id not in _db_instances:
         with _db_lock:
-            if _db_instance is None:
-                _db_instance = Database(config)
-    return _db_instance
+            if agent_id not in _db_instances:
+                agent_config = config or get_graph_config(agent_id=agent_id)
+                db = Database(agent_config)
+                db.initialize()
+                _db_instances[agent_id] = db
+                logger.info(f"图数据库已按需创建: agent_id={agent_id}, path={db.db_path}")
+    return _db_instances[agent_id]
+
+
+def get_database_if_exists(agent_id: str = "default") -> Optional[Database]:
+    """返回已注册的数据库实例，不存在时返回 None（不创建）。"""
+    return _db_instances.get(agent_id)
+
+
+def remove_database(agent_id: str) -> Optional[Database]:
+    """从注册表移除并关闭对应 agent 的数据库实例，返回被移除的实例。"""
+    with _db_lock:
+        db = _db_instances.pop(agent_id, None)
+    if db is not None:
+        try:
+            db.close()
+        except Exception as e:
+            logger.warning(f"关闭图数据库失败 (agent_id={agent_id}): {e}")
+    return db
