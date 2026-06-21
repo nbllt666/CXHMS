@@ -646,7 +646,19 @@ export function ChatPage() {
   };
 
   const getContextText = () => {
-    return messages.map((m) => `${m.role === 'user' ? '用户' : '助手'}: ${m.content}`).join('\n\n');
+    const formatTime = (timestamp: string) => {
+      try {
+        const date = new Date(timestamp);
+        return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+      } catch {
+        return '';
+      }
+    };
+
+    return messages.map((m) => {
+      const time = m.timestamp ? formatTime(m.timestamp) : '';
+      return `[${time} ${m.role === 'user' ? '用户' : '助手'}] ${m.content}`;
+    }).join('\n\n');
   };
 
   const handleClearContext = async () => {

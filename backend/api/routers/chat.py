@@ -361,6 +361,8 @@ def build_messages(
     for msg in history:
         if msg.get("role") in ["user", "assistant"]:
             messages.append({"role": msg["role"], "content": msg.get("content", "")})
+        elif msg.get("role") == "system" and msg.get("content_type") == "diary_summary":
+            messages.append({"role": "system", "content": msg.get("content", "")})
 
     # 4. 用户最新消息（支持多模态）
     if images and agent_config.get("vision_enabled", False):

@@ -17,6 +17,21 @@ logger = get_contextual_logger(__name__)
 DEFAULT_SUMMARY_THRESHOLD = 20
 
 
+def _format_msg_time(msg):
+    """从消息的 created_at 提取 HH:MM:SS 格式时间"""
+    created = msg.get("created_at", "")
+    if created:
+        try:
+            # created_at 可能是 ISO 格式如 "2026-06-21T14:30:05.123456"
+            # 或 "2026-06-21 14:30:05"
+            dt_str = created.replace("T", " ")[:19]  # 取前19字符 YYYY-MM-DD HH:MM:SS
+            time_part = dt_str.split(" ")[1] if " " in dt_str else ""
+            return time_part
+        except (IndexError, ValueError):
+            return ""
+    return ""
+
+
 async def trigger_session_summary(
     context_manager,
     model_router,
@@ -51,7 +66,7 @@ async def trigger_session_summary(
         # 构建对话内容文本
         conversation_text = "\n".join(
             [
-                f"{'用户' if m.get('role') == 'user' else '助手'}: {m.get('content', '')}"
+                f"[{_format_msg_time(m)} {'用户' if m.get('role') == 'user' else '助手'}] {m.get('content', '')}"
                 for m in to_summarize
                 if m.get("role") in ("user", "assistant")
             ]

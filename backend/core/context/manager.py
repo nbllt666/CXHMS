@@ -631,16 +631,68 @@ class ContextManager:
             for i in range(to_delete):
                 messages[active_indices[i]]["is_deleted"] = True
 
+            # 从被摘要的消息中提取话题起止时间
+            start_time = None
+            end_time = None
+            for i in range(to_delete):
+                msg = messages[active_indices[i]]
+                msg_time_str = msg.get("created_at")
+                if msg_time_str:
+                    try:
+                        # 尝试解析 ISO 格式时间
+                        msg_time = datetime.fromisoformat(msg_time_str)
+                    except (ValueError, TypeError):
+                        msg_time = datetime.now()
+                else:
+                    msg_time = datetime.now()
+                if start_time is None or msg_time < start_time:
+                    start_time = msg_time
+                if end_time is None or msg_time > end_time:
+                    end_time = msg_time
+            # fallback：若无被摘要消息，用当前时间
+            if start_time is None:
+                start_time = datetime.now()
+            if end_time is None:
+                end_time = datetime.now()
+            start_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
+            end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+
+            # 统计同一天已有的 diary_summary 数量，分配当日递增序号
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            same_day_count = 0
+            for m in messages:
+                if m.get("content_type") == "diary_summary" and not m.get("is_deleted", False):
+                    meta = m.get("metadata", {})
+                    # 优先从 time_range.start 取日期，否则从 created_at 取
+                    tr = meta.get("time_range", {})
+                    date_source = tr.get("start") or m.get("created_at", "")
+                    if date_source:
+                        try:
+                            dt = datetime.fromisoformat(date_source)
+                            if dt.strftime("%Y-%m-%d") == today_str:
+                                same_day_count += 1
+                        except (ValueError, TypeError):
+                            pass
+            sequence = same_day_count + 1
+
             # 在列表头部插入多条摘要消息（每条摘要一篇，保持传入顺序）
             now = datetime.now().isoformat()
             summary_messages = []
-            for summary_text in summary_entries:
+            for idx, summary_text in enumerate(summary_entries):
+                # 仅第一条摘要使用当前计算的 sequence，后续递增
+                cur_sequence = sequence + idx
+                prefix = f"[上下文摘要 | 时间范围: {start_str} ~ {end_str} | 当日第{cur_sequence}次摘要]\n"
                 summary_messages.append({
                     "id": str(uuid.uuid4()),
                     "role": "system",
-                    "content": summary_text,
+                    "content": prefix + summary_text,
                     "content_type": "diary_summary",
-                    "metadata": {"is_diary_summary": True, "summarized_up_to": summarized_up_to_index},
+                    "metadata": {
+                        "is_diary_summary": True,
+                        "summarized_up_to": summarized_up_to_index,
+                        "time_range": {"start": start_str, "end": end_str},
+                        "sequence": cur_sequence,
+                    },
                     "tokens": 0,
                     "created_at": now,
                     "is_deleted": False,
