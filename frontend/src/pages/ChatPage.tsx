@@ -653,7 +653,7 @@ export function ChatPage() {
     if (!confirm('确定要清空当前对话的上下文吗？这将清除所有对话历史。')) return;
 
     try {
-      const sessionId = currentSessionId || currentAgentId || 'default';
+      const sessionId = currentSessionId || `agent-${currentAgentId || 'default'}`;
       await api.clearSessionMessages(sessionId);
       // 清空后重新加载历史（会创建新的空会话）
       await loadAgentHistory(currentAgentId || 'default');
@@ -1037,7 +1037,7 @@ export function ChatPage() {
         contextText={getContextText()}
         agentId={currentAgentId || 'default'}
         autoStart={autoStartSummary}
-        targetSessionId={currentSessionId || currentAgentId || 'default'}
+        targetSessionId={currentSessionId || `agent-${currentAgentId || 'default'}`}
       />
     </div>
   );

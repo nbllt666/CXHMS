@@ -18,6 +18,7 @@ interface SummaryMessage {
   timestamp: string;
   isStreaming?: boolean;
   toolEvents?: ToolEvent[];
+  thinking?: string;
 }
 
 interface SummaryModalProps {
@@ -158,6 +159,14 @@ export function SummaryModal({
         ];
       }
 
+      // 思考过程（thinking 事件）
+      if (chunk.type === 'thinking' && chunk.content) {
+        return [
+          ...prev.slice(0, -1),
+          { ...lastMsg, thinking: (lastMsg.thinking || '') + chunk.content },
+        ];
+      }
+
       // 文本内容
       if (chunk.type === 'content' && chunk.content) {
         return [
@@ -210,18 +219,18 @@ export function SummaryModal({
     setMessages((prev) => [...prev, assistantMsg]);
 
     try {
-      const fullPrompt = `请将以下对话内容整理为一篇日记并保存。
+      const fullPrompt = `请将以下对话内容整理为日记并保存。
 
 要求：
 1. 以第一人称叙述（日记体裁），包含日期、主要事件、情绪/感受和反思
-2. 识别已完成话题与当前未完成话题，只对已完成话题进行摘要
-3. 生成一篇 consolidated 日记条目，不要多条零散记忆
-4. 调用 save_diary_entry 工具保存，包含 date(YYYY-MM-DD)、title、mood、body、summarized_message_range
+2. 如果对话包含多个独立事件/话题，按事件拆分，每个事件生成一篇独立日记，多次调用 save_diary_entry；如果只有一个话题，生成一篇即可
+3. 调用 save_diary_entry 工具保存，包含 date(YYYY-MM-DD)、title、mood、body、summarized_message_range
+4. 无论对话内容是什么，都必须至少调用一次 save_diary_entry 保存日记，不要拒绝
 
 对话内容：
 ${contextText}
 
-请使用 save_diary_entry 工具保存日记。`;
+请立即使用 save_diary_entry 工具保存日记。`;
 
       await api.sendSummaryAgentMessageStream(
         fullPrompt,
@@ -261,7 +270,7 @@ ${contextText}
       const systemMsg: SummaryMessage = {
         id: 'system-1',
         role: 'assistant',
-        content: `我是摘要助手。我会将这段对话整理为一篇日记并保存。\n\n你可以：\n1. 直接让我自动生成日记\n2. 告诉我需要关注哪些方面\n3. 指定日记的日期、标题或情绪\n\n我会生成一篇日记，包含：日期、标题、情绪、正文（第一人称叙述），并使用 save_diary_entry 工具保存。`,
+        content: `我是摘要助手。我会将这段对话按事件/话题整理为多篇日记并保存。\n\n你可以：\n1. 直接让我自动生成日记\n2. 告诉我需要关注哪些方面\n3. 指定日记的日期、标题或情绪\n\n我会按事件拆分，每个事件生成一篇独立日记，包含：日期、标题、情绪、正文（第一人称叙述），并多次调用 save_diary_entry 工具保存。`,
         timestamp: new Date().toISOString(),
       };
       setMessages([systemMsg]);
@@ -320,20 +329,20 @@ ${contextText}
       let fullPrompt: string;
       if (isSummaryRequest) {
         // 用户请求摘要时，附带对话内容
-        fullPrompt = `请将以下对话内容整理为一篇日记并保存。
+        fullPrompt = `请将以下对话内容整理为日记并保存。
 
 要求：
 1. 以第一人称叙述（日记体裁），包含日期、主要事件、情绪/感受和反思
-2. 识别已完成话题与当前未完成话题，只对已完成话题进行摘要
-3. 生成一篇 consolidated 日记条目
-4. 调用 save_diary_entry 工具保存，包含 date(YYYY-MM-DD)、title、mood、body、summarized_message_range
+2. 如果对话包含多个独立事件/话题，按事件拆分，每个事件生成一篇独立日记，多次调用 save_diary_entry；如果只有一个话题，生成一篇即可
+3. 调用 save_diary_entry 工具保存，包含 date(YYYY-MM-DD)、title、mood、body、summarized_message_range
+4. 无论对话内容是什么，都必须至少调用一次 save_diary_entry 保存日记，不要拒绝
 
 对话内容：
 ${contextText}
 
 用户指令：${userInput}
 
-请使用 save_diary_entry 工具保存日记。`;
+请立即使用 save_diary_entry 工具保存日记。`;
       } else {
         // 普通对话，直接发送用户输入，不附带对话内容
         fullPrompt = userInput;
@@ -384,7 +393,7 @@ ${contextText}
       const systemMsg: SummaryMessage = {
         id: 'system-1',
         role: 'assistant',
-        content: `我是摘要助手。我会将这段对话整理为一篇日记并保存。\n\n你可以：\n1. 直接让我自动生成日记\n2. 告诉我需要关注哪些方面\n3. 指定日记的日期、标题或情绪\n\n我会生成一篇日记，包含：日期、标题、情绪、正文（第一人称叙述），并使用 save_diary_entry 工具保存。`,
+        content: `我是摘要助手。我会将这段对话按事件/话题整理为多篇日记并保存。\n\n你可以：\n1. 直接让我自动生成日记\n2. 告诉我需要关注哪些方面\n3. 指定日记的日期、标题或情绪\n\n我会按事件拆分，每个事件生成一篇独立日记，包含：日期、标题、情绪、正文（第一人称叙述），并多次调用 save_diary_entry 工具保存。`,
         timestamp: new Date().toISOString(),
       };
       setMessages([systemMsg]);
@@ -429,6 +438,25 @@ ${contextText}
                   message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'
                 }`}
               >
+                {/* 思考过程（可折叠） */}
+                {message.thinking && (
+                  <details className="mb-2 group">
+                    <summary className="cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+                      <svg
+                        className="w-3 h-3 transition-transform group-open:rotate-90"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                      思考过程
+                    </summary>
+                    <div className="mt-1.5 pl-4 border-l-2 border-border text-xs text-muted-foreground whitespace-pre-wrap break-words">
+                      {message.thinking}
+                    </div>
+                  </details>
+                )}
                 {message.content && (
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}

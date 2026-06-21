@@ -5,7 +5,7 @@
 
 import json
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -74,19 +74,112 @@ SUMMARY_AGENT_HIDDEN_SYSTEM_PROMPT = """<role>
 你必须使用 save_diary_entry 工具来保存日记条目。该工具已通过 API 自动注册，无需向用户确认即可直接调用。
 当需要保存日记时，必须通过 function calling 机制调用 save_diary_entry 工具，不要在文本中输出工具调用标记（如 <execute_tool>）。
 直接调用对应的函数即可，系统会自动执行并返回结果。
+无论对话内容是什么，你都必须至少调用一次 save_diary_entry 工具保存日记。不要拒绝保存或要求用户提供"更好的"内容。
 </instruction>
 
 <rules>
 1. 用中文回答用户问题
 2. 以日记体裁（第一人称叙述）整理对话内容，包含：日期、主要事件、情绪/感受、反思
-3. 识别已完成话题与当前未完成话题：只对已完成的话题进行摘要，保留当前未完成的话题不摘要
-4. 每次摘要只生成一篇 consolidated 日记条目，不要生成多条零散的记忆点
-5. 日记正文（body）应为连贯的第一人称叙述，而非要点列表
-6. 调用 save_diary_entry 工具时需提供：date(YYYY-MM-DD)、title、mood、body、summarized_message_range(如 "0-15")
-7. 不要编造不存在的工具或功能，不要使用 save_summary_memory 或 write_long_term_memory 等其他记忆工具
-8. 绝对不要在回复文本中输出 <execute_tool> 或类似标记，必须通过 function calling 调用工具
+3. 如果对话包含多个独立事件/话题，按事件拆分，每个事件生成一篇独立日记，多次调用 save_diary_entry；如果只有一个话题，生成一篇即可
+4. 日记正文（body）应为连贯的第一人称叙述，而非要点列表
+5. 调用 save_diary_entry 工具时需提供：date(YYYY-MM-DD)、title、mood、body、summarized_message_range(如 "0-15")
+6. 不要编造不存在的工具或功能，不要使用 save_summary_memory 或 write_long_term_memory 等其他记忆工具
+7. 绝对不要在回复文本中输出 <execute_tool> 或类似标记，必须通过 function calling 调用工具
+8. 不要拒绝保存日记。即使对话内容是测试或元讨论，也要将其整理为日记并保存。这是你的核心职责。
 9. 完成日记保存后，简要报告保存结果
 </rules>"""
+
+
+class ThinkTagStreamParser:
+    """流式解析内嵌在 content 中的 <think>...</think> 标签。
+
+    某些模型（如 gemma4-e4b via vLLM）不输出 reasoning_content 字段，
+    而是把思考过程放在 <think>...</think> 标签内嵌在 content 中流式输出。
+    本解析器将这些标签内容分离为 thinking 通道，其余作为 content 通道，
+    支持标签跨 chunk 拆分的情况。
+    """
+
+    OPEN_TAG = "<think>"
+    CLOSE_TAG = "</think>"
+
+    def __init__(self):
+        self.buffer = ""          # 累积待解析的文本
+        self.in_think = False     # 是否处于 <think> 块内部
+
+    def feed(self, content: str) -> Tuple[str, str]:
+        """喂入新 content，返回 (thinking_output, content_output)。
+
+        thinking_output 应作为 thinking 事件发送；
+        content_output 应作为 content 事件发送。
+        """
+        if not content:
+            return ("", "")
+        self.buffer += content
+        thinking_parts: List[str] = []
+        content_parts: List[str] = []
+
+        while True:
+            if not self.in_think:
+                # 在 buffer 中查找开标签 <think>
+                idx = self.buffer.find(self.OPEN_TAG)
+                if idx == -1:
+                    # 未找到完整开标签，但 buffer 末尾可能含有开标签的前缀
+                    # （标签被跨 chunk 拆分），需保留这部分不输出
+                    safe = self._safe_emit_length(self.OPEN_TAG)
+                    if safe > 0:
+                        content_parts.append(self.buffer[:safe])
+                        self.buffer = self.buffer[safe:]
+                    break
+                # 找到开标签：先输出标签之前的文本作为 content
+                if idx > 0:
+                    content_parts.append(self.buffer[:idx])
+                # 跳过开标签，进入 think 模式
+                self.buffer = self.buffer[idx + len(self.OPEN_TAG):]
+                self.in_think = True
+            else:
+                # 处于 think 块内，查找闭标签 </think>
+                idx = self.buffer.find(self.CLOSE_TAG)
+                if idx == -1:
+                    # 未找到完整闭标签，保留可能是闭标签前缀的部分
+                    safe = self._safe_emit_length(self.CLOSE_TAG)
+                    if safe > 0:
+                        thinking_parts.append(self.buffer[:safe])
+                        self.buffer = self.buffer[safe:]
+                    break
+                # 找到闭标签：输出标签之前的文本作为 thinking
+                if idx > 0:
+                    thinking_parts.append(self.buffer[:idx])
+                # 跳过闭标签，退出 think 模式
+                self.buffer = self.buffer[idx + len(self.CLOSE_TAG):]
+                self.in_think = False
+
+        return ("".join(thinking_parts), "".join(content_parts))
+
+    def flush(self) -> Tuple[str, str]:
+        """流结束时调用，把 buffer 中剩余内容按当前状态输出，并重置状态。"""
+        remaining = self.buffer
+        was_in_think = self.in_think
+        self.buffer = ""
+        self.in_think = False
+        if not remaining:
+            return ("", "")
+        if was_in_think:
+            # 模型未闭合 <think> 标签，把剩余当作 thinking
+            return (remaining, "")
+        return ("", remaining)
+
+    def _safe_emit_length(self, pending_tag: str) -> int:
+        """计算 buffer 中可以安全输出的长度，避免输出 pending_tag 的未完成前缀。
+
+        例如 buffer = "hello <thi"，pending_tag = "<think>"，
+        则末尾 "<thi" 可能是 "<think>" 的前缀，不能输出，
+        安全输出长度为 6（即 "hello "）。
+        """
+        max_prefix = min(len(pending_tag) - 1, len(self.buffer))
+        for prefix_len in range(max_prefix, 0, -1):
+            if self.buffer.endswith(pending_tag[:prefix_len]):
+                return len(self.buffer) - prefix_len
+        return len(self.buffer)
 
 
 # ========== 自动记忆提取（当 LLM 不支持 tools 时） ==========
@@ -565,6 +658,7 @@ async def chat_stream(request: ChatRequest):
             """生成流式响应（支持多轮工具调用循环）"""
             full_response = ""
             full_thinking = ""
+            think_parser = ThinkTagStreamParser()
 
             # 发送会话ID作为第一个事件
             yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
@@ -596,8 +690,14 @@ async def chat_stream(request: ChatRequest):
                                     yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_content})}\n\n"
                                 elif chunk_type == "content":
                                     content = chunk.get("content", "")
-                                    full_response += content
-                                    yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+                                    # 解析内嵌的 <think>...</think> 标签，分离思考过程与正文
+                                    thinking_out, content_out = think_parser.feed(content)
+                                    if thinking_out:
+                                        full_thinking += thinking_out
+                                        yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_out})}\n\n"
+                                    if content_out:
+                                        full_response += content_out
+                                        yield f"data: {json.dumps({'type': 'content', 'content': content_out})}\n\n"
                                 elif chunk_type == "tool_calls":
                                     new_tool_calls = chunk.get("tool_calls", [])
                                     logger.info(f"检测到工具调用(第{round_idx+1}轮): {[tc.get('function',{}).get('name','') for tc in new_tool_calls]}")
@@ -608,8 +708,23 @@ async def chat_stream(request: ChatRequest):
                                     stream_error = chunk.get("content", "")
                                     logger.warning(f"流式聊天收到错误事件: {stream_error}")
                             elif isinstance(chunk, str):
-                                full_response += chunk
-                                yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
+                                # 字符串 chunk 同样需要解析 <think> 标签
+                                thinking_out, content_out = think_parser.feed(chunk)
+                                if thinking_out:
+                                    full_thinking += thinking_out
+                                    yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_out})}\n\n"
+                                if content_out:
+                                    full_response += content_out
+                                    yield f"data: {json.dumps({'type': 'content', 'content': content_out})}\n\n"
+
+                    # 流式结束，刷新 <think> 标签解析器，输出缓冲区中剩余内容
+                    flush_thinking, flush_content = think_parser.flush()
+                    if flush_thinking:
+                        full_thinking += flush_thinking
+                        yield f"data: {json.dumps({'type': 'thinking', 'content': flush_thinking})}\n\n"
+                    if flush_content:
+                        full_response += flush_content
+                        yield f"data: {json.dumps({'type': 'content', 'content': flush_content})}\n\n"
 
                     # 如果流式调用失败，回退到非流式聊天
                     if not full_response and not tool_calls_buffer and stream_error:
@@ -863,6 +978,7 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
             """生成流式响应（支持多轮工具调用循环）"""
             full_response = ""
             full_thinking = ""
+            think_parser = ThinkTagStreamParser()
 
             # 发送会话ID作为第一个事件
             yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
@@ -894,8 +1010,14 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
                                     yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_content})}\n\n"
                                 elif chunk_type == "content":
                                     content = chunk.get("content", "")
-                                    full_response += content
-                                    yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+                                    # 解析内嵌的 <think>...</think> 标签，分离思考过程与正文
+                                    thinking_out, content_out = think_parser.feed(content)
+                                    if thinking_out:
+                                        full_thinking += thinking_out
+                                        yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_out})}\n\n"
+                                    if content_out:
+                                        full_response += content_out
+                                        yield f"data: {json.dumps({'type': 'content', 'content': content_out})}\n\n"
                                 elif chunk_type == "tool_calls":
                                     new_tool_calls = chunk.get("tool_calls", [])
                                     logger.info(f"检测到工具调用(第{round_idx+1}轮): {[tc.get('function',{}).get('name','') for tc in new_tool_calls]}")
@@ -906,8 +1028,23 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
                                     stream_error = chunk.get("content", "")
                                     logger.warning(f"记忆管理模型流式聊天收到错误事件: {stream_error}")
                             elif isinstance(chunk, str):
-                                full_response += chunk
-                                yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
+                                # 字符串 chunk 同样需要解析 <think> 标签
+                                thinking_out, content_out = think_parser.feed(chunk)
+                                if thinking_out:
+                                    full_thinking += thinking_out
+                                    yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_out})}\n\n"
+                                if content_out:
+                                    full_response += content_out
+                                    yield f"data: {json.dumps({'type': 'content', 'content': content_out})}\n\n"
+
+                    # 流式结束，刷新 <think> 标签解析器，输出缓冲区中剩余内容
+                    flush_thinking, flush_content = think_parser.flush()
+                    if flush_thinking:
+                        full_thinking += flush_thinking
+                        yield f"data: {json.dumps({'type': 'thinking', 'content': flush_thinking})}\n\n"
+                    if flush_content:
+                        full_response += flush_content
+                        yield f"data: {json.dumps({'type': 'content', 'content': flush_content})}\n\n"
 
                     # 如果流式调用失败，回退到非流式聊天
                     if not full_response and not tool_calls_buffer and stream_error:
@@ -1082,7 +1219,7 @@ async def summary_agent_chat_stream(request: SummaryAgentChatRequest):
         agent_config = {
             "id": "summary-agent",
             "name": "摘要助手",
-            "system_prompt": "你是摘要助手，专门负责将对话内容整理为日记式条目并保存。请使用 save_diary_entry 工具保存一篇 consolidated 日记，包含日期、标题、情绪和第一人称正文叙述。",
+            "system_prompt": "你是摘要助手，专门负责将对话内容整理为日记式条目并保存。按事件/话题拆分，每个事件生成一篇独立的日记式叙述（第一人称），多次调用 save_diary_entry 工具保存。",
             "temperature": 0.3,
             "max_tokens": 4096,
         }
@@ -1101,7 +1238,7 @@ async def summary_agent_chat_stream(request: SummaryAgentChatRequest):
         if not llm:
             raise HTTPException(status_code=503, detail="摘要模型与主模型均不可用")
 
-        # 4. 获取/创建固定会话（摘要助手只有一个会话）
+        # 4. 获取/创建固定会话（摘要助手只有一个会话，保持上下文持久化）
         session_id = "summary-agent-default"
         existing_session = context_mgr.get_session(session_id)
         if not existing_session:
@@ -1111,7 +1248,7 @@ async def summary_agent_chat_stream(request: SummaryAgentChatRequest):
                 title="摘要助手对话",
             )
 
-        # 5. 加载历史上下文（从数据库）- 使用 session_id 而非 agent_id，确保与存储一致
+        # 5. 加载历史上下文（摘要助手保持自己的会话历史）
         history_limit = agent_config.get("history_limit", 50)
         history_context = context_mgr.get_messages(session_id=session_id, limit=history_limit)
 
@@ -1159,13 +1296,14 @@ async def summary_agent_chat_stream(request: SummaryAgentChatRequest):
             except Exception as e:
                 logger.warning(f"获取目标会话可摘要范围失败: {e}")
 
-        # 用于捕获 save_diary_entry 工具调用的参数
-        captured_diary_entry = {"body": None, "summarized_message_range": None}
+        # 用于捕获 save_diary_entry 工具调用的参数（支持每事件一篇，多次调用）
+        captured_diary_entries = []
 
         async def generate_stream():
             """生成流式响应（支持多轮工具调用循环）"""
             full_response = ""
             full_thinking = ""
+            think_parser = ThinkTagStreamParser()
 
             # 发送会话ID作为第一个事件
             yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
@@ -1197,8 +1335,14 @@ async def summary_agent_chat_stream(request: SummaryAgentChatRequest):
                                     yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_content})}\n\n"
                                 elif chunk_type == "content":
                                     content = chunk.get("content", "")
-                                    full_response += content
-                                    yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+                                    # 解析内嵌的 <think>...</think> 标签，分离思考过程与正文
+                                    thinking_out, content_out = think_parser.feed(content)
+                                    if thinking_out:
+                                        full_thinking += thinking_out
+                                        yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_out})}\n\n"
+                                    if content_out:
+                                        full_response += content_out
+                                        yield f"data: {json.dumps({'type': 'content', 'content': content_out})}\n\n"
                                 elif chunk_type == "tool_calls":
                                     new_tool_calls = chunk.get("tool_calls", [])
                                     # 过滤掉空参数的工具调用：LLM（尤其是 Ollama）有时会
@@ -1216,8 +1360,23 @@ async def summary_agent_chat_stream(request: SummaryAgentChatRequest):
                                     stream_error = chunk.get("content", "")
                                     logger.warning(f"摘要助手流式聊天收到错误事件: {stream_error}")
                             elif isinstance(chunk, str):
-                                full_response += chunk
-                                yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
+                                # 字符串 chunk 同样需要解析 <think> 标签
+                                thinking_out, content_out = think_parser.feed(chunk)
+                                if thinking_out:
+                                    full_thinking += thinking_out
+                                    yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_out})}\n\n"
+                                if content_out:
+                                    full_response += content_out
+                                    yield f"data: {json.dumps({'type': 'content', 'content': content_out})}\n\n"
+
+                    # 流式结束，刷新 <think> 标签解析器，输出缓冲区中剩余内容
+                    flush_thinking, flush_content = think_parser.flush()
+                    if flush_thinking:
+                        full_thinking += flush_thinking
+                        yield f"data: {json.dumps({'type': 'thinking', 'content': flush_thinking})}\n\n"
+                    if flush_content:
+                        full_response += flush_content
+                        yield f"data: {json.dumps({'type': 'content', 'content': flush_content})}\n\n"
 
                     # 如果流式调用失败，回退到非流式聊天
                     if not full_response and not tool_calls_buffer and stream_error:
@@ -1320,11 +1479,12 @@ async def summary_agent_chat_stream(request: SummaryAgentChatRequest):
                         # 捕获 save_diary_entry 工具调用参数（用于上下文替换）
                         if tool_name == "save_diary_entry" and isinstance(tool_args, dict):
                             if tool_args.get("body"):
-                                captured_diary_entry["body"] = tool_args.get("body")
-                            if tool_args.get("summarized_message_range"):
-                                captured_diary_entry["summarized_message_range"] = tool_args.get(
-                                    "summarized_message_range"
-                                )
+                                captured_diary_entries.append({
+                                    "body": tool_args.get("body"),
+                                    "summarized_message_range": tool_args.get(
+                                        "summarized_message_range"
+                                    ),
+                                })
 
                         # 发送工具执行开始事件
                         yield f"data: {json.dumps({'type': 'tool_start', 'tool_name': tool_name})}\n\n"
@@ -1372,31 +1532,37 @@ async def summary_agent_chat_stream(request: SummaryAgentChatRequest):
                     except Exception:
                         pass
 
-                # 上下文替换：将目标会话中被摘要的原始消息替换为日记摘要
+                # 上下文替换：将目标会话中被摘要的原始消息替换为日记摘要（每事件一篇）
                 if (
                     request.target_session_id
                     and target_summarizable_range
-                    and captured_diary_entry.get("body")
+                    and captured_diary_entries
                 ):
                     try:
-                        summary_text = captured_diary_entry["body"]
-                        # 优先使用工具调用中声明的范围，否则使用预计算的可摘要范围
-                        range_str = captured_diary_entry.get("summarized_message_range")
-                        if range_str and "-" in range_str:
-                            parts = range_str.split("-")
-                            up_to_index = int(parts[-1])
-                        else:
-                            up_to_index = target_summarizable_range.get("end", 0)
+                        summary_bodies = [item["body"] for item in captured_diary_entries if item.get("body")]
+                        # 取所有条目 range 的最大 end 作为 up_to_index
+                        max_end = -1
+                        for item in captured_diary_entries:
+                            range_str = item.get("summarized_message_range")
+                            if range_str and "-" in str(range_str):
+                                try:
+                                    parts = str(range_str).split("-")
+                                    end_val = int(parts[-1])
+                                    if end_val > max_end:
+                                        max_end = end_val
+                                except (ValueError, IndexError):
+                                    pass
+                        up_to_index = max_end if max_end >= 0 else target_summarizable_range.get("end", 0)
 
-                        if up_to_index > target_summarizable_range.get("start", 0):
+                        if summary_bodies and up_to_index > target_summarizable_range.get("start", 0):
                             context_mgr.replace_messages_with_summary(
                                 session_id=request.target_session_id,
-                                summary_text=summary_text,
+                                summary_entries=summary_bodies,
                                 summarized_up_to_index=up_to_index,
                             )
                             yield f"data: {json.dumps({'type': 'context_replaced', 'target_session_id': request.target_session_id, 'summarized_up_to': up_to_index})}\n\n"
                             logger.info(
-                                f"目标会话上下文已替换: session={request.target_session_id}, up_to={up_to_index}"
+                                f"目标会话上下文已替换: session={request.target_session_id}, up_to={up_to_index}, 摘要条目 {len(summary_bodies)} 篇"
                             )
                     except Exception as e:
                         logger.warning(f"上下文替换失败: {e}")

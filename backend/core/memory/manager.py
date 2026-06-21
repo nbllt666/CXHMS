@@ -246,6 +246,18 @@ class MemoryManager:
         else:
             return asyncio.run(coro)
 
+    def _get_dedup_threshold(self) -> float:
+        """获取去重相似度阈值
+
+        优先使用去重引擎的可配置阈值，否则使用默认值 0.85。
+
+        Returns:
+            去重相似度阈值
+        """
+        if self.deduplication_engine and hasattr(self.deduplication_engine, "threshold"):
+            return self.deduplication_engine.threshold
+        return 0.85
+
     def _sync_vector_for_memory(self, memory_id: int, content: str, metadata: Dict = None) -> bool:
         """同步记忆到向量数据库
 
@@ -404,12 +416,44 @@ class MemoryManager:
                 config = self._vector_store_config
                 from backend.core.memory.vector_store import create_vector_store
 
-                vector_store = create_vector_store(
-                    backend=config.get("backend", "milvus_lite"),
-                    db_path=config.get("milvus_db_path", "data/milvus_lite.db"),
-                    vector_size=config.get("vector_size", 768),
-                    embedding_model=self._embedding_model,
-                )
+                backend = config.get("backend", "milvus_lite")
+                vector_size = config.get("vector_size", 768)
+                embedding_model = self._embedding_model
+
+                # 按后端类型构造参数，避免传入后端不支持的参数
+                if backend == "chroma":
+                    vector_store = create_vector_store(
+                        backend=backend,
+                        db_path=config.get("db_path", "data/chroma_db"),
+                        collection_name=config.get("collection_name", "memory_vectors"),
+                        vector_size=vector_size,
+                        embedding_model=embedding_model,
+                    )
+                elif backend == "milvus_lite":
+                    vector_store = create_vector_store(
+                        backend=backend,
+                        db_path=config.get("milvus_db_path", "data/milvus_lite.db"),
+                        vector_size=vector_size,
+                        embedding_model=embedding_model,
+                    )
+                elif backend == "qdrant":
+                    vector_store = create_vector_store(
+                        backend=backend,
+                        host=config.get("qdrant_host", "localhost"),
+                        port=config.get("qdrant_port", 6333),
+                        vector_size=vector_size,
+                        embedding_model=embedding_model,
+                    )
+                elif backend in ("weaviate", "weaviate_embedded"):
+                    vector_store = create_vector_store(
+                        backend=backend,
+                        vector_size=vector_size,
+                        embedding_model=embedding_model,
+                    )
+                else:
+                    logger.warning(f"未知的向量存储后端: {backend}，跳过重新初始化")
+                    return
+
                 if vector_store and vector_store.is_available():
                     self._vector_store = vector_store
                     logger.info("向量存储重新初始化成功")
@@ -674,6 +718,28 @@ class MemoryManager:
         # 确保Agent的记忆表存在
         self._ensure_agent_table(agent_id)
         table_name = self._get_table_name(agent_id)
+
+        # 写入前去重检查：对同 agent 近期记忆做向量相似度搜索
+        if self.deduplication_engine and content:
+            try:
+                dup_result = self._run_async_sync(
+                    self.deduplication_engine.find_duplicate_memory(
+                        content=content,
+                        workspace_id=workspace_id,
+                        agent_id=agent_id,
+                        threshold=self._get_dedup_threshold(),
+                    )
+                )
+                if dup_result is not None:
+                    existing_id, similarity = dup_result
+                    logger.info(
+                        f"写入去重命中，跳过写入: existing_id={existing_id}, "
+                        f"similarity={similarity:.4f}, agent={agent_id}"
+                    )
+                    return existing_id
+            except Exception as e:
+                # 去重检查失败不应阻断写入，记录日志后继续
+                logger.warning(f"写入去重检查失败，继续写入 [{type(e).__name__}]: {e}")
 
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -1208,19 +1274,22 @@ class MemoryManager:
             return self._hybrid_search is not None and self._vector_store is not None
 
     async def semantic_search(
-        self, query: str, memory_type: str = None, limit: int = 10
+        self, query: str, memory_type: str = None, limit: int = 10, agent_id: str = "default"
     ) -> List[Dict]:
         if not self.is_vector_search_enabled():
-            return self.search_memories(query=query, memory_type=memory_type, limit=limit)
+            # 不再静默降级为关键词搜索，返回空结果并记录错误，让用户知道向量搜索未启用
+            logger.error("语义搜索失败: 向量搜索未启用")
+            return []
 
         try:
             results = await self._hybrid_search.semantic_search(
-                query=query, memory_type=memory_type, limit=limit
+                query=query, memory_type=memory_type, limit=limit, agent_id=agent_id
             )
             return results
         except Exception as e:
+            # 不再静默降级为关键词搜索，返回空结果并记录错误
             logger.error(f"语义搜索失败: {e}")
-            return self.search_memories(query=query, memory_type=memory_type, limit=limit)
+            return []
 
     async def hybrid_search(
         self,

@@ -110,8 +110,9 @@ class DeduplicationEngine:
             return similarity
 
         except Exception as e:
-            logger.error(f"计算相似度失败: {e}", exc_info=True)
-            return 0.0
+            # 不再吞掉异常返回 0.0，而是记录错误类型并向上传播，避免掩盖真实故障
+            logger.error(f"计算相似度失败 [{type(e).__name__}]: {e}", exc_info=True)
+            raise
 
     def _calculate_text_similarity(self, text1: str, text2: str) -> float:
         """计算两个文本的Jaccard相似度
@@ -126,9 +127,9 @@ class DeduplicationEngine:
         if not text1 or not text2:
             return 0.0
 
-        # 转换为小写并分割成词集合
-        set1 = set(text1.lower().split())
-        set2 = set(text2.lower().split())
+        # 转换为小写并按字符切分成集合（对中文有效，避免空格 split 失效）
+        set1 = set(text1.lower())
+        set2 = set(text2.lower())
 
         if not set1 or not set2:
             return 0.0
@@ -142,32 +143,149 @@ class DeduplicationEngine:
 
         return intersection / union
 
+    def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
+        """计算两个向量的余弦相似度
+
+        Args:
+            vec1: 第一个向量
+            vec2: 第二个向量
+
+        Returns:
+            余弦相似度分数 (-1.0 - 1.0，语义相似度场景下通常为 0.0 - 1.0)
+        """
+        if not vec1 or not vec2 or len(vec1) != len(vec2):
+            return 0.0
+
+        dot_product = sum(a * b for a, b in zip(vec1, vec2))
+        norm1 = sum(a * a for a in vec1) ** 0.5
+        norm2 = sum(b * b for b in vec2) ** 0.5
+
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+
+        return dot_product / (norm1 * norm2)
+
+    async def check_vector_similarity(self, content1: str, content2: str) -> float:
+        """计算两个文本内容的向量余弦相似度
+
+        使用 embedding 模型生成两个内容的向量，计算余弦相似度。
+        调用方式参考 MemoryManager._sync_vector_for_memory 中的 get_embedding 调用。
+
+        Args:
+            content1: 第一个文本内容
+            content2: 第二个文本内容
+
+        Returns:
+            余弦相似度分数 (0.0 - 1.0)
+
+        Raises:
+            RuntimeError: 当 embedding 模型不可用或生成空向量时抛出，
+                          由调用方降级为字符级 Jaccard
+        """
+        embedding_model = getattr(self.memory_manager, "_embedding_model", None)
+        if embedding_model is None:
+            raise RuntimeError("embedding 模型不可用")
+
+        if not content1 or not content2:
+            return 0.0
+
+        # 生成向量（参考项目中 _sync_vector_for_memory 的调用方式）
+        emb1 = await embedding_model.get_embedding(content1)
+        emb2 = await embedding_model.get_embedding(content2)
+
+        if not emb1 or not emb2:
+            raise RuntimeError("embedding 生成失败，返回空向量")
+
+        return self._cosine_similarity(emb1, emb2)
+
     async def find_similar_memories(
-        self, memory_id: int, threshold: float = None, limit: int = 10
+        self,
+        memory_id: int,
+        threshold: float = None,
+        limit: int = 10,
+        workspace_id: str = "default",
+        agent_id: str = "default",
     ) -> List[SimilarityRecord]:
-        """查找与指定记忆相似的其他记忆"""
+        """查找与指定记忆相似的其他记忆
+
+        优先使用向量余弦相似度，embedding 不可用时降级为字符级 Jaccard 相似度。
+
+        Args:
+            memory_id: 目标记忆ID
+            threshold: 相似度阈值，默认使用引擎阈值
+            limit: 返回数量上限
+            workspace_id: 工作区ID
+            agent_id: Agent ID
+        """
         if threshold is None:
             threshold = self.threshold
 
         similar_memories = []
 
         try:
-            # 获取所有记忆
+            # 获取目标记忆内容
+            if asyncio.iscoroutinefunction(self.memory_manager.get_memory):
+                target_memory = await self.memory_manager.get_memory(
+                    memory_id, agent_id=agent_id
+                )
+            else:
+                target_memory = self.memory_manager.get_memory(memory_id, agent_id=agent_id)
+
+            if not target_memory:
+                logger.warning(f"未找到目标记忆: {memory_id}")
+                return []
+
+            target_content = target_memory.get("content", "")
+
+            # 获取候选记忆（传递 workspace_id 和 agent_id 以限定范围）
             if asyncio.iscoroutinefunction(self.memory_manager.search_memories):
                 all_memories = await self.memory_manager.search_memories(
-                    memory_type=None, limit=10000, include_deleted=False
+                    memory_type=None,
+                    limit=10000,
+                    include_deleted=False,
+                    workspace_id=workspace_id,
+                    agent_id=agent_id,
                 )
             else:
                 all_memories = self.memory_manager.search_memories(
-                    memory_type=None, limit=10000, include_deleted=False
+                    memory_type=None,
+                    limit=10000,
+                    include_deleted=False,
+                    workspace_id=workspace_id,
+                    agent_id=agent_id,
                 )
+
+            # 判断 embedding 是否可用（只需检测一次）
+            embedding_available = (
+                getattr(self.memory_manager, "_embedding_model", None) is not None
+            )
 
             for other_memory in all_memories:
                 other_id = other_memory["id"]
                 if other_id == memory_id:
                     continue
 
-                similarity = await self.check_similarity(memory_id, other_id)
+                other_content = other_memory.get("content", "")
+
+                # 优先向量相似度，embedding 不可用时降级为字符级 Jaccard
+                if embedding_available:
+                    try:
+                        similarity = await self.check_vector_similarity(
+                            target_content, other_content
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"向量相似度计算失败，降级为 Jaccard [{type(e).__name__}]: {e}"
+                        )
+                        similarity = self._calculate_text_similarity(
+                            target_content, other_content
+                        )
+                        # 后续直接走 Jaccard，避免重复失败
+                        embedding_available = False
+                else:
+                    similarity = self._calculate_text_similarity(
+                        target_content, other_content
+                    )
 
                 if similarity >= threshold:
                     record = SimilarityRecord(
@@ -184,8 +302,102 @@ class DeduplicationEngine:
             return similar_memories[:limit]
 
         except Exception as e:
-            logger.error(f"查找相似记忆失败: {e}")
+            logger.error(f"查找相似记忆失败 [{type(e).__name__}]: {e}", exc_info=True)
             return []
+
+    async def find_duplicate_memory(
+        self,
+        content: str,
+        workspace_id: str = "default",
+        agent_id: str = "default",
+        threshold: float = None,
+        limit: int = 100,
+    ) -> Optional[Tuple[int, float]]:
+        """查找与给定内容重复的已存在记忆（用于写入去重）
+
+        优先使用向量余弦相似度，embedding 不可用时降级为字符级 Jaccard。
+
+        Args:
+            content: 待写入的记忆内容
+            workspace_id: 工作区ID
+            agent_id: Agent ID
+            threshold: 相似度阈值，默认使用引擎阈值
+            limit: 候选记忆数量上限
+
+        Returns:
+            (memory_id, similarity_score) 如果找到重复，否则 None
+        """
+        if threshold is None:
+            threshold = self.threshold
+
+        if not content:
+            return None
+
+        try:
+            # 获取同 agent 的近期记忆作为候选
+            if asyncio.iscoroutinefunction(self.memory_manager.search_memories):
+                candidates = await self.memory_manager.search_memories(
+                    memory_type=None,
+                    limit=limit,
+                    include_deleted=False,
+                    workspace_id=workspace_id,
+                    agent_id=agent_id,
+                )
+            else:
+                candidates = self.memory_manager.search_memories(
+                    memory_type=None,
+                    limit=limit,
+                    include_deleted=False,
+                    workspace_id=workspace_id,
+                    agent_id=agent_id,
+                )
+
+            if not candidates:
+                return None
+
+            embedding_available = (
+                getattr(self.memory_manager, "_embedding_model", None) is not None
+            )
+
+            best_match = None
+            best_score = 0.0
+
+            for candidate in candidates:
+                candidate_content = candidate.get("content", "")
+
+                if embedding_available:
+                    try:
+                        similarity = await self.check_vector_similarity(
+                            content, candidate_content
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"向量相似度计算失败，降级为 Jaccard [{type(e).__name__}]: {e}"
+                        )
+                        similarity = self._calculate_text_similarity(
+                            content, candidate_content
+                        )
+                        embedding_available = False
+                else:
+                    similarity = self._calculate_text_similarity(
+                        content, candidate_content
+                    )
+
+                if similarity > best_score:
+                    best_score = similarity
+                    best_match = candidate
+
+            if best_match and best_score >= threshold:
+                logger.info(
+                    f"发现重复记忆: existing_id={best_match['id']}, similarity={best_score:.4f}"
+                )
+                return (best_match["id"], best_score)
+
+            return None
+
+        except Exception as e:
+            logger.error(f"查找重复记忆失败 [{type(e).__name__}]: {e}", exc_info=True)
+            return None
 
     async def detect_duplicates_batch(
         self, memory_ids: List[int] = None, threshold: float = None

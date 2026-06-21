@@ -906,7 +906,7 @@ class SemanticSearchRequest(BaseModel):
 
     query: str
     limit: int = 10
-    threshold: float = 0.7
+    threshold: float = 0.3
     workspace_id: str = "default"
     agent_id: str = "default"
 
@@ -923,8 +923,9 @@ async def semantic_search(request: SemanticSearchRequest):
         if not memory_mgr.is_vector_search_enabled():
             raise HTTPException(status_code=503, detail="向量搜索未启用")
 
-        results = await memory_mgr.hybrid_search(
-            query=request.query, limit=request.limit, workspace_id=request.workspace_id, agent_id=request.agent_id
+        # 调用纯向量搜索（而非 hybrid_search），保留 agent_id 以支持 agent 隔离
+        results = await memory_mgr.semantic_search(
+            query=request.query, limit=request.limit, agent_id=request.agent_id
         )
 
         filtered_results = [r for r in results if r.get("score", 0) >= request.threshold]

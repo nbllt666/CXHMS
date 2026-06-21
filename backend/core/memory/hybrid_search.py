@@ -1,3 +1,4 @@
+import inspect
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
@@ -62,9 +63,18 @@ class HybridSearch:
         try:
             embedding = await self.embedding_model.get_embedding(options.query)
 
-            vector_results = await self.vector_store.search_similar(
-                query_embedding=embedding, limit=options.limit * 2, memory_type=options.memory_type
-            )
+            # 构建搜索参数，条件性传递 agent_id 以支持 agent 隔离
+            # 仅当向量存储的 search_similar 支持 agent_id 参数时才传递，避免破坏不支持的实现（如 Chroma）
+            search_kwargs = {
+                "query_embedding": embedding,
+                "limit": options.limit * 2,
+                "memory_type": options.memory_type,
+            }
+            sig = inspect.signature(self.vector_store.search_similar)
+            if "agent_id" in sig.parameters:
+                search_kwargs["agent_id"] = options.agent_id
+
+            vector_results = await self.vector_store.search_similar(**search_kwargs)
 
             return [
                 SearchResult(
@@ -162,10 +172,15 @@ class HybridSearch:
         return list(merged_dict.values())
 
     async def semantic_search(
-        self, query: str, memory_type: str = None, limit: int = 10
+        self, query: str, memory_type: str = None, limit: int = 10, agent_id: str = "default"
     ) -> List[Dict]:
         options = HybridSearchOptions(
-            query=query, memory_type=memory_type, limit=limit, use_vector=True, use_keyword=False
+            query=query,
+            memory_type=memory_type,
+            limit=limit,
+            use_vector=True,
+            use_keyword=False,
+            agent_id=agent_id,
         )
 
         results = await self.search(options)

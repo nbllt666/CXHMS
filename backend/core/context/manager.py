@@ -592,23 +592,30 @@ class ContextManager:
         }
 
     def replace_messages_with_summary(
-        self, session_id: str, summary_text: str, summarized_up_to_index: int
+        self,
+        session_id: str,
+        summary_entries: List[str],
+        summarized_up_to_index: int,
     ) -> bool:
         """将被摘要的原始消息替换为摘要内容
 
         - 标记 [0, summarized_up_to_index) 范围内的活跃消息为已删除
-        - 在消息列表头部插入一条 diary_summary 标记的摘要消息
+        - 在消息列表头部插入多条 diary_summary 标记的摘要消息（每条摘要一篇）
         - 更新 session["summarized_up_to"] 记录已摘要范围，避免重复摘要
         - 持久化 session JSON 文件
 
         Args:
             session_id: 会话ID
-            summary_text: 摘要文本（日记正文）
+            summary_entries: 摘要文本列表（每篇日记正文）。向后兼容：传入单个字符串时按单条处理。
             summarized_up_to_index: 被摘要的消息数量（活跃消息索引，不含）
 
         Returns:
             是否成功
         """
+        # 向后兼容：单个字符串视为单条列表
+        if isinstance(summary_entries, str):
+            summary_entries = [summary_entries]
+
         with self._lock:
             entry = self._store.get(session_id)
             if not entry:
@@ -624,19 +631,21 @@ class ContextManager:
             for i in range(to_delete):
                 messages[active_indices[i]]["is_deleted"] = True
 
-            # 在列表头部插入摘要消息
+            # 在列表头部插入多条摘要消息（每条摘要一篇，保持传入顺序）
             now = datetime.now().isoformat()
-            summary_message = {
-                "id": str(uuid.uuid4()),
-                "role": "system",
-                "content": summary_text,
-                "content_type": "diary_summary",
-                "metadata": {"is_diary_summary": True, "summarized_up_to": summarized_up_to_index},
-                "tokens": 0,
-                "created_at": now,
-                "is_deleted": False,
-            }
-            messages.insert(0, summary_message)
+            summary_messages = []
+            for summary_text in summary_entries:
+                summary_messages.append({
+                    "id": str(uuid.uuid4()),
+                    "role": "system",
+                    "content": summary_text,
+                    "content_type": "diary_summary",
+                    "metadata": {"is_diary_summary": True, "summarized_up_to": summarized_up_to_index},
+                    "tokens": 0,
+                    "created_at": now,
+                    "is_deleted": False,
+                })
+            messages[0:0] = summary_messages
 
             # 更新 session 元数据
             entry["session"]["summarized_up_to"] = summarized_up_to_index
@@ -647,6 +656,6 @@ class ContextManager:
             self._persist(session_id)
 
         logger.info(
-            f"上下文已替换为日记摘要: session={session_id}, 已摘要 {to_delete} 条消息"
+            f"上下文已替换为日记摘要: session={session_id}, 已摘要 {to_delete} 条消息, 摘要条目 {len(summary_messages)} 篇"
         )
         return True

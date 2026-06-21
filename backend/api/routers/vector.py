@@ -317,7 +317,7 @@ async def search_vectors(
         if not mm._embedding_model:
             raise HTTPException(status_code=503, detail="嵌入模型未初始化")
 
-        embedding = await mm._embedding_model.embed_query(query)
+        embedding = await mm._embedding_model.get_embedding(query)
 
         store = mm._vector_store
         results = await store.search_similar(
@@ -331,7 +331,7 @@ async def search_vectors(
         for result in results:
             memory_id = result.get("memory_id") or result.get("id")
             if memory_id:
-                memory = mm.read_memory(memory_id)
+                memory = mm.get_memory(memory_id=memory_id)
                 result["memory"] = memory
             enriched_results.append(result)
 
@@ -373,7 +373,7 @@ async def get_vector_stats():
             if hasattr(mm, "_vector_store_config"):
                 stats["backend"] = mm._vector_store_config.get("backend", stats["backend"])
 
-        memories = mm.read_memories(limit=10000)
+        memories = mm.search_memories(limit=10000)
         stats["total_memories"] = len(memories)
         stats["indexed_ratio"] = (
             stats["total_vectors"] / stats["total_memories"] if stats["total_memories"] > 0 else 0

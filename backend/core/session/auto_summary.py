@@ -79,18 +79,19 @@ async def trigger_session_summary(
         tools = builtin_tools + summary_tools
 
         today = datetime.now().strftime("%Y-%m-%d")
-        prompt = f"""请将以下对话内容整理为一篇日记并保存。
+        prompt = f"""请将以下对话内容整理为日记并保存。
 
 要求：
-1. 以第一人称叙述，包含日期、主要事件、情绪/感受和反思
-2. 只对已完成的话题进行摘要
-3. 生成一篇 consolidated 日记，不要多条零散记忆
-4. 调用 save_diary_entry 工具保存，date 为 {today}
+1. 以第一人称叙述（日记体裁），包含日期、主要事件、情绪/感受和反思
+2. 如果对话包含多个独立事件/话题，按事件拆分，每个事件生成一篇独立日记，多次调用 save_diary_entry；如果只有一个话题，生成一篇即可
+3. 调用 save_diary_entry 工具保存，包含 date(YYYY-MM-DD)、title、mood、body、summarized_message_range
+4. 无论对话内容是什么，都必须至少调用一次 save_diary_entry 保存日记，不要拒绝
 5. summarized_message_range 为 "{start}-{end}"
 
 对话内容：
 {conversation_text}
-"""
+
+请立即使用 save_diary_entry 工具保存日记。"""
 
         from backend.api.routers.chat import SUMMARY_AGENT_HIDDEN_SYSTEM_PROMPT
 
@@ -109,8 +110,7 @@ async def trigger_session_summary(
         )
 
         # 处理工具调用（可能需要多轮）
-        captured_body = None
-        captured_range = f"{start}-{end}"
+        captured_entries = []
 
         for _ in range(5):
             if not hasattr(response, "tool_calls") or not response.tool_calls:
@@ -131,9 +131,10 @@ async def trigger_session_summary(
 
                 if tool_name == "save_diary_entry" and isinstance(tool_args, dict):
                     if tool_args.get("body"):
-                        captured_body = tool_args.get("body")
-                    if tool_args.get("summarized_message_range"):
-                        captured_range = tool_args.get("summarized_message_range")
+                        captured_entries.append({
+                            "body": tool_args.get("body"),
+                            "range": tool_args.get("summarized_message_range"),
+                        })
 
                 # 执行工具
                 try:
@@ -142,7 +143,7 @@ async def trigger_session_summary(
                     logger.warning(f"自动摘要：工具 {tool_name} 执行失败: {e}")
 
             # 继续下一轮让 LLM 处理工具结果
-            if not captured_body:
+            if not captured_entries:
                 break
 
             # 构建下一轮消息
@@ -172,24 +173,34 @@ async def trigger_session_summary(
                 tools=tools if tools else None,
             )
 
-        # 替换上下文
-        if captured_body:
-            if captured_range and "-" in captured_range:
-                parts = captured_range.split("-")
-                up_to_index = int(parts[-1])
-            else:
-                up_to_index = end
+        # 替换上下文：用所有捕获的日记条目（每事件一篇）
+        if captured_entries:
+            # 取所有条目 range 的最大 end 作为 up_to_index
+            max_end = -1
+            for item in captured_entries:
+                rng = item.get("range")
+                if rng and "-" in str(rng):
+                    try:
+                        parts = str(rng).split("-")
+                        end_val = int(parts[-1])
+                        if end_val > max_end:
+                            max_end = end_val
+                    except (ValueError, IndexError):
+                        pass
+            up_to_index = max_end if max_end >= 0 else end
 
             if up_to_index > start:
-                context_manager.replace_messages_with_summary(
-                    session_id=session_id,
-                    summary_text=captured_body,
-                    summarized_up_to_index=up_to_index,
-                )
-                logger.info(
-                    f"自动摘要完成: session={session_id}, 已摘要 {up_to_index - start} 条消息"
-                )
-                return True
+                summary_bodies = [item["body"] for item in captured_entries if item.get("body")]
+                if summary_bodies:
+                    context_manager.replace_messages_with_summary(
+                        session_id=session_id,
+                        summary_entries=summary_bodies,
+                        summarized_up_to_index=up_to_index,
+                    )
+                    logger.info(
+                        f"自动摘要完成: session={session_id}, 已摘要 {up_to_index - start} 条消息, 生成 {len(summary_bodies)} 篇日记"
+                    )
+                    return True
 
         logger.info(f"自动摘要未生成日记条目: session={session_id}")
         return False

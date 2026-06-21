@@ -643,7 +643,7 @@ def restore_memory(memory_id: str) -> Dict[str, Any]:
         return {"error": f"恢复记忆失败: {str(e)}"}
 
 
-def search_similar_memories(
+async def search_similar_memories(
     memory_id: str, threshold: float = 0.7, limit: int = 10
 ) -> Dict[str, Any]:
     """搜索相似记忆"""
@@ -652,16 +652,17 @@ def search_similar_memories(
         return {"error": "记忆管理器不可用"}
 
     try:
-        # 获取参考记忆内容，用其内容进行关键词搜索作为近似
+        # 获取参考记忆内容，用其内容进行向量搜索
         ref_memory = mm.get_memory(memory_id=int(memory_id))
         if not ref_memory:
             return {"error": f"未找到参考记忆: {memory_id}"}
 
         query = ref_memory.get("content", "")[:200]
-        memories = mm.search_memories(query=query, limit=limit)
+        # 使用向量搜索（semantic_search）替代关键词搜索
+        memories = await mm.semantic_search(query=query, limit=limit)
 
         # 过滤掉参考记忆本身
-        similar = [m for m in memories if m.get("id") != int(memory_id)]
+        similar = [m for m in memories if m.get("memory_id") != int(memory_id)]
 
         return {
             "reference_memory_id": memory_id,
@@ -669,10 +670,10 @@ def search_similar_memories(
             "count": len(similar),
             "similar_memories": [
                 {
-                    "id": m.get("id"),
+                    "id": m.get("memory_id"),
                     "content": m.get("content", "")[:200],
-                    "importance": m.get("importance"),
-                    "created_at": m.get("created_at"),
+                    "importance": (m.get("metadata") or {}).get("importance"),
+                    "created_at": (m.get("metadata") or {}).get("created_at"),
                 }
                 for m in similar
             ],
@@ -694,24 +695,24 @@ def get_chat_history(session_id: str, limit: int = 50) -> Dict[str, Any]:
         return {"error": f"读取聊天记录失败: {str(e)}"}
 
 
-def get_similar_memories(content: str, limit: int = 10) -> Dict[str, Any]:
+async def get_similar_memories(content: str, limit: int = 10) -> Dict[str, Any]:
     """相似记忆"""
     mm = get_memory_manager()
     if not mm:
         return {"error": "记忆管理器不可用"}
 
     try:
-        # 使用 search_memories 作为近似相似搜索
-        memories = mm.search_memories(query=content, limit=limit)
+        # 使用向量搜索（semantic_search）替代关键词搜索
+        memories = await mm.semantic_search(query=content, limit=limit)
         return {
             "content_preview": content[:100],
             "count": len(memories),
             "similar_memories": [
                 {
-                    "id": m.get("id"),
+                    "id": m.get("memory_id"),
                     "content": m.get("content", "")[:200],
-                    "importance": m.get("importance"),
-                    "created_at": m.get("created_at"),
+                    "importance": (m.get("metadata") or {}).get("importance"),
+                    "created_at": (m.get("metadata") or {}).get("created_at"),
                 }
                 for m in memories
             ],

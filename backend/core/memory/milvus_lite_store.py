@@ -108,23 +108,35 @@ class MilvusLiteVectorStore:
         limit: int = 10,
         memory_type: str = None,
         min_score: float = 0.5,
+        agent_id: str = None,
     ) -> List[Dict]:
         if not self._client:
             return []
 
         try:
-            results = self._client.search(
-                collection_name=self.collection_name,
-                data=[query_embedding],
-                limit=limit,
-                output_fields=["content", "memory_id", "created_at"],
-            )
+            # 构建过滤表达式，支持 agent_id 过滤（agent 隔离）
+            expr_parts = []
+            if memory_type:
+                expr_parts.append(f'type == "{memory_type}"')
+            if agent_id and agent_id != "default":
+                expr_parts.append(f'agent_id == "{agent_id}"')
+            expr = " and ".join(expr_parts) if expr_parts else None
+
+            search_kwargs = {
+                "collection_name": self.collection_name,
+                "data": [query_embedding],
+                "limit": limit,
+                "output_fields": ["content", "memory_id", "created_at"],
+            }
+            if expr:
+                search_kwargs["filter"] = expr
+
+            results = self._client.search(**search_kwargs)
 
             filtered_results = []
             for result in results[0]:
-                # Milvus返回的是距离，距离越小越相似，所以需要转换为相似度分数
-                # 使用 1/(1+distance) 转换为相似度分数，这样分数越大越相似
-                similarity_score = 1 - result["distance"] / 2  # 将距离转换为相似度
+                # Milvus 返回的是距离（越小越相似），用 1 - distance 转为相似度分数
+                similarity_score = 1 - result["distance"]
                 if similarity_score >= min_score:
                     filtered_results.append(
                         {

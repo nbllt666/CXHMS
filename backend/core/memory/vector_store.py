@@ -36,6 +36,7 @@ class VectorStoreBase:
         limit: int = 10,
         memory_type: str = None,
         min_score: float = 0.5,
+        agent_id: str = None,
     ) -> List[Dict]:
         """搜索相似向量"""
         raise NotImplementedError
@@ -163,6 +164,7 @@ class QdrantVectorStore(VectorStoreBase):
         limit: int = 10,
         memory_type: str = None,
         min_score: float = 0.5,
+        agent_id: str = None,
     ) -> List[Dict]:
         if not self._client:
             return []
@@ -170,11 +172,13 @@ class QdrantVectorStore(VectorStoreBase):
         try:
             from qdrant_client.models import FieldCondition, Filter, MatchValue
 
-            search_filter = None
+            # 构建过滤条件，支持 memory_type 和 agent_id 过滤（agent 隔离）
+            conditions = []
             if memory_type:
-                search_filter = Filter(
-                    must=[FieldCondition(key="type", match=MatchValue(value=memory_type))]
-                )
+                conditions.append(FieldCondition(key="type", match=MatchValue(value=memory_type)))
+            if agent_id and agent_id != "default":
+                conditions.append(FieldCondition(key="agent_id", match=MatchValue(value=agent_id)))
+            search_filter = Filter(must=conditions) if conditions else None
 
             results = self._client.search(
                 collection_name=self.collection_name,
@@ -183,11 +187,10 @@ class QdrantVectorStore(VectorStoreBase):
                 query_filter=search_filter,
             )
 
-            # Qdrant返回的是距离，距离越小越相似，所以需要转换为相似度分数
-            # 使用 1/(1+distance) 转换为相似度分数，这样分数越大越相似
+            # Qdrant 使用 COSINE 距离时，返回的 score 已经是相似度分数（越大越相似），无需转换
             filtered_results = []
             for r in results:
-                similarity_score = 1 - r.score / 2  # 将距离转换为相似度
+                similarity_score = r.score
                 if similarity_score >= min_score:
                     filtered_results.append(
                         {

@@ -132,7 +132,7 @@ def register_summary_tools():
     # 5. save_diary_entry - 保存日记条目
     tool_registry.register(
         name="save_diary_entry",
-        description="将对话内容整理为一篇日记并保存为日记类型记忆。每次摘要只生成一篇 consolidated 日记，包含日期、标题、情绪和正文叙述。",
+        description="将单个事件/话题整理为一篇日记条目并保存为日记类型记忆。一次摘要可按事件拆分多次调用，每次保存一篇独立日记，包含日期、标题、情绪和正文叙述。",
         parameters={
             "type": "object",
             "properties": {
