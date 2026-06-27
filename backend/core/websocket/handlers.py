@@ -7,6 +7,8 @@ from backend.core.logging_config import get_contextual_logger
 
 from .manager import get_websocket_manager
 
+from backend.core.chat.stream import ChatStreamState, generate_chat_stream
+
 logger = get_contextual_logger(__name__)
 
 # 内置工具名称集合，用于区分内置工具和注册工具
@@ -161,175 +163,44 @@ class ChatWebSocketHandler:
         context_mgr,
         session_id: str,
     ):
-        """核心流式聊天逻辑：流式调用 LLM，处理工具调用，发送正确类型的 WebSocket 消息"""
-        from backend.core.tools import tool_registry
-        from backend.core.tools.builtin import call_builtin_tool
+        """核心流式聊天逻辑：消费共享聊天流生成器，通过 WebSocket 发送事件"""
+        state = ChatStreamState()
 
-        full_response = ""
-        full_thinking = ""
-        all_tool_calls: List[Dict] = []
-
-        # 发送会话ID作为第一个消息
-        await self.ws_manager.send_to_client(
-            client_id, {"type": "session", "session_id": session_id}
-        )
+        def is_cancelled():
+            return self._cancel_flags.get(client_id, False)
 
         try:
-            logger.info(
-                f"开始流式聊天，消息数: {len(messages)}, 工具数: {len(tools) if tools else 0}"
-            )
+            async for event in generate_chat_stream(
+                llm=llm,
+                messages=messages,
+                agent_config=agent_config,
+                tools=tools,
+                session_id=session_id,
+                state=state,
+                is_cancelled=is_cancelled,
+            ):
+                await self.ws_manager.send_to_client(client_id, event)
 
-            max_tool_rounds = 50
-            for round_idx in range(max_tool_rounds):
-                round_response = ""
-                tool_calls_buffer: List[Dict] = []
-
-                # 调用 LLM 流式接口
-                async for chunk in llm.stream_chat(
-                    messages=messages,
-                    temperature=agent_config.get("temperature", 0.7),
-                    max_tokens=(agent_config.get("max_tokens") if agent_config.get("max_tokens") is not None else 4096),
-                    tools=tools if tools else None,
-                ):
-                    # 检查取消
-                    if self._cancel_flags.get(client_id, False):
-                        await self.ws_manager.send_to_client(
-                            client_id, {"type": "cancelled", "timestamp": datetime.now().isoformat()}
-                        )
-                        # 保存已生成的部分响应
-                        self._save_assistant_message(
-                            context_mgr, session_id, full_response, full_thinking, all_tool_calls
-                        )
-                        return
-
-                    if chunk:
-                        if isinstance(chunk, dict):
-                            chunk_type = chunk.get("type")
-                            if chunk_type == "thinking":
-                                thinking_content = chunk.get("content", "")
-                                full_thinking += thinking_content
-                                await self.ws_manager.send_to_client(
-                                    client_id, {"type": "thinking", "content": thinking_content}
-                                )
-                            elif chunk_type == "content":
-                                content = chunk.get("content", "")
-                                round_response += content
-                                full_response += content
-                                await self.ws_manager.send_to_client(
-                                    client_id, {"type": "content", "content": content}
-                                )
-                            elif chunk_type == "tool_calls":
-                                new_tool_calls = chunk.get("tool_calls", [])
-                                logger.info(f"检测到工具调用(第{round_idx+1}轮): {[tc.get('function',{}).get('name','') for tc in new_tool_calls]}")
-                                tool_calls_buffer.extend(new_tool_calls)
-                                for tool_call in new_tool_calls:
-                                    await self.ws_manager.send_to_client(
-                                        client_id, {"type": "tool_call", "tool_call": tool_call}
-                                    )
-                        elif isinstance(chunk, str):
-                            full_response += chunk
-                            await self.ws_manager.send_to_client(
-                                client_id, {"type": "content", "content": chunk}
-                            )
-
-                # 没有工具调用，退出循环
-                if not tool_calls_buffer:
-                    break
-
-                # 处理工具调用
-                # 构建标准的 assistant tool_calls 消息
-                assistant_tool_calls = []
-                for tool_call in tool_calls_buffer:
-                    func = tool_call.get("function", {})
-                    assistant_tool_calls.append({
-                        "id": tool_call.get("id", ""),
-                        "type": "function",
-                        "function": {
-                            "name": func.get("name", tool_call.get("name", "")),
-                            "arguments": func.get("arguments", tool_call.get("arguments", "{}")),
-                        },
-                    })
-
-                messages.append({
-                    "role": "assistant",
-                    "content": round_response or None,
-                    "tool_calls": assistant_tool_calls,
-                })
-
-                for tool_call in tool_calls_buffer:
-                    func = tool_call.get("function", {})
-                    tool_name = func.get("name", tool_call.get("name", ""))
-                    tool_args = func.get("arguments", tool_call.get("arguments", "{}"))
-
-                    if isinstance(tool_args, str):
-                        try:
-                            tool_args = json.loads(tool_args)
-                        except json.JSONDecodeError as e:
-                            logger.warning(f"工具参数 JSON 解析失败: {e}, 原始参数: {tool_args}")
-                            try:
-                                import ast
-                                tool_args = ast.literal_eval(tool_args)
-                                if not isinstance(tool_args, dict):
-                                    tool_args = {}
-                            except Exception:
-                                tool_args = {}
-
-                    # 发送工具执行开始事件
-                    await self.ws_manager.send_to_client(
-                        client_id, {"type": "tool_start", "tool_name": tool_name}
+                # 取消事件后保存部分响应并退出
+                if event.get("type") == "cancelled":
+                    self._save_assistant_message(
+                        context_mgr,
+                        session_id,
+                        state.accumulated_response,
+                        state.full_thinking,
+                        state.tool_calls,
                     )
-
-                    # 执行工具
-                    try:
-                        if tool_name in BUILTIN_TOOL_NAMES:
-                            tool_result = call_builtin_tool(tool_name, tool_args or {})
-                        else:
-                            tool_result = tool_registry.call_tool(tool_name, tool_args)
-                    except Exception as e:
-                        logger.warning(f"工具 {tool_name} 执行失败: {e}")
-                        tool_result = {"success": False, "error": str(e)}
-
-                    # 发送工具执行结果事件
-                    await self.ws_manager.send_to_client(
-                        client_id,
-                        {"type": "tool_result", "tool_name": tool_name, "result": tool_result},
-                    )
-
-                    # 记录工具调用信息（用于持久化）
-                    all_tool_calls.append({
-                        "id": tool_call.get("id", ""),
-                        "name": tool_name,
-                        "arguments": tool_args,
-                        "result": tool_result,
-                        "status": "completed",
-                    })
-
-                    # 添加工具结果到消息
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tool_call.get("id", ""),
-                            "name": tool_name,
-                            "content": json.dumps(tool_result, ensure_ascii=False),
-                        }
-                    )
-                # 继续下一轮循环，让 LLM 处理工具结果
-
-            # 保存完整响应到上下文（包括工具调用信息）
-            self._save_assistant_message(
-                context_mgr, session_id, full_response, full_thinking, all_tool_calls
-            )
-
-            # 发送完成消息
-            await self.ws_manager.send_to_client(
-                client_id, {"type": "done", "session_id": session_id}
-            )
+                    return
 
         except Exception as e:
             logger.error(f"流式聊天错误: {e}", exc_info=True)
             # 保存已生成的部分响应（避免刷新或断连时丢失）
             self._save_assistant_message(
-                context_mgr, session_id, full_response, full_thinking, all_tool_calls
+                context_mgr,
+                session_id,
+                state.accumulated_response,
+                state.full_thinking,
+                state.tool_calls,
             )
             try:
                 await self.ws_manager.send_to_client(
@@ -337,6 +208,16 @@ class ChatWebSocketHandler:
                 )
             except Exception:
                 pass
+            return
+
+        # 正常结束后保存完整响应
+        self._save_assistant_message(
+            context_mgr,
+            session_id,
+            state.accumulated_response,
+            state.full_thinking,
+            state.tool_calls,
+        )
 
     def _save_assistant_message(
         self, context_mgr, session_id: str, content: str, thinking: str, tool_calls: List[Dict]

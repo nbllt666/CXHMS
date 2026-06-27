@@ -76,6 +76,11 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
 
   if (!thinking && (!toolCalls || toolCalls.length === 0)) return null;
 
+  // 根据内容类型决定标题
+  const hasThinking = Boolean(thinking);
+  const hasToolCalls = Boolean(toolCalls && toolCalls.length > 0);
+  const title = hasThinking ? '思考过程' : '工具调用';
+
   return (
     <div className="mt-2 border border-border/50 rounded-lg overflow-hidden">
       <button
@@ -84,10 +89,10 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
       >
         <span className="flex items-center gap-2">
           <Brain className="w-3 h-3" />
-          思考过程
-          {toolCalls && toolCalls.length > 0 && (
+          {title}
+          {hasToolCalls && (
             <span className="px-1.5 py-0.5 bg-primary/10 text-primary rounded-full text-[10px]">
-              {toolCalls.length} 个工具调用
+              {toolCalls!.length} 个工具调用
             </span>
           )}
         </span>
@@ -96,11 +101,21 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
 
       {isExpanded && (
         <div className="px-3 py-2 bg-muted/20 text-xs space-y-2">
-          {thinking && <div className="text-muted-foreground whitespace-pre-wrap">{thinking}</div>}
+          {hasThinking && (
+            <div>
+              {hasToolCalls && (
+                <div className="text-foreground font-medium mb-1">思考过程</div>
+              )}
+              <div className="text-muted-foreground whitespace-pre-wrap">{thinking}</div>
+            </div>
+          )}
 
-          {toolCalls && toolCalls.length > 0 && (
-            <div className="space-y-2">
-              {toolCalls.map((toolCall, idx) => (
+          {hasToolCalls && (
+            <div className={hasThinking ? 'space-y-2 mt-2' : 'space-y-2'}>
+              {hasThinking && (
+                <div className="text-foreground font-medium mb-1">工具调用</div>
+              )}
+              {toolCalls!.map((toolCall, idx) => (
                 <div key={idx} className="p-2 bg-muted/50 rounded border border-border/50">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="font-medium text-foreground">🔧 {toolCall.name}</span>

@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend.api.routers.agents import _load_agents
+from backend.core.chat.stream import ChatStreamState, generate_chat_stream
 from backend.core.llm.tools import is_empty_tool_args, parse_text_tool_calls, strip_text_tool_calls
 from backend.core.logging_config import get_contextual_logger
 from backend.core.tools import tool_registry
@@ -657,179 +658,26 @@ async def chat_stream(request: ChatRequest):
         )
 
         async def generate_stream():
-            """生成流式响应（支持多轮工具调用循环）"""
-            full_response = ""
-            full_thinking = ""
-            think_parser = ThinkTagStreamParser()
-
-            # 发送会话ID作为第一个事件
-            yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
-
+            """生成流式响应（消费共享聊天流生成器）"""
+            state = ChatStreamState()
             try:
-                logger.info(
-                    f"开始流式聊天，消息数: {len(messages)}, 工具数: {len(tools) if tools else 0}"
-                )
-
-                max_tool_rounds = 50
-                for round_idx in range(max_tool_rounds):
-                    full_response = ""
-                    tool_calls_buffer = []
-                    stream_error = None
-
-                    # 调用LLM流式接口
-                    async for chunk in llm.stream_chat(
-                        messages=messages,
-                        temperature=agent_config.get("temperature", 0.7),
-                        max_tokens=(agent_config.get("max_tokens") if agent_config.get("max_tokens") is not None else 4096),
-                        tools=tools if tools else None,
-                    ):
-                        if chunk:
-                            if isinstance(chunk, dict):
-                                chunk_type = chunk.get("type")
-                                if chunk_type == "thinking":
-                                    thinking_content = chunk.get("content", "")
-                                    full_thinking += thinking_content
-                                    yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_content})}\n\n"
-                                elif chunk_type == "content":
-                                    content = chunk.get("content", "")
-                                    # 解析内嵌的 <think>...</think> 标签，分离思考过程与正文
-                                    thinking_out, content_out = think_parser.feed(content)
-                                    if thinking_out:
-                                        full_thinking += thinking_out
-                                        yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_out})}\n\n"
-                                    if content_out:
-                                        full_response += content_out
-                                        yield f"data: {json.dumps({'type': 'content', 'content': content_out})}\n\n"
-                                elif chunk_type == "tool_calls":
-                                    new_tool_calls = chunk.get("tool_calls", [])
-                                    logger.info(f"检测到工具调用(第{round_idx+1}轮): {[tc.get('function',{}).get('name','') for tc in new_tool_calls]}")
-                                    tool_calls_buffer.extend(new_tool_calls)
-                                    for tool_call in new_tool_calls:
-                                        yield f"data: {json.dumps({'type': 'tool_call', 'tool_call': tool_call})}\n\n"
-                                elif chunk_type == "error":
-                                    stream_error = chunk.get("content", "")
-                                    logger.warning(f"流式聊天收到错误事件: {stream_error}")
-                            elif isinstance(chunk, str):
-                                # 字符串 chunk 同样需要解析 <think> 标签
-                                thinking_out, content_out = think_parser.feed(chunk)
-                                if thinking_out:
-                                    full_thinking += thinking_out
-                                    yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_out})}\n\n"
-                                if content_out:
-                                    full_response += content_out
-                                    yield f"data: {json.dumps({'type': 'content', 'content': content_out})}\n\n"
-
-                    # 流式结束，刷新 <think> 标签解析器，输出缓冲区中剩余内容
-                    flush_thinking, flush_content = think_parser.flush()
-                    if flush_thinking:
-                        full_thinking += flush_thinking
-                        yield f"data: {json.dumps({'type': 'thinking', 'content': flush_thinking})}\n\n"
-                    if flush_content:
-                        full_response += flush_content
-                        yield f"data: {json.dumps({'type': 'content', 'content': flush_content})}\n\n"
-
-                    # 如果流式调用失败，回退到非流式聊天
-                    if not full_response and not tool_calls_buffer and stream_error:
-                        logger.warning(f"流式聊天失败，回退到非流式模式: {stream_error}")
-                        try:
-                            response = await llm.chat(
-                                messages=messages,
-                                stream=False,
-                                temperature=agent_config.get("temperature", 0.7),
-                                max_tokens=(agent_config.get("max_tokens") if agent_config.get("max_tokens") is not None else 4096),
-                                tools=tools if tools else None,
-                            )
-                            if hasattr(response, "tool_calls") and response.tool_calls:
-                                tool_calls_buffer = response.tool_calls
-                            elif response.content:
-                                full_response = response.content
-                                yield f"data: {json.dumps({'type': 'content', 'content': full_response})}\n\n"
-                        except Exception as fallback_err:
-                            logger.error(f"非流式回退也失败: {fallback_err}")
-
-                    # 没有工具调用，退出循环
-                    if not tool_calls_buffer:
-                        break
-
-                    # 处理工具调用
-                    # BUILTIN_TOOL_NAMES 已在文件顶部导入
-
-                    # 构建标准的 assistant tool_calls 消息
-                    assistant_tool_calls = []
-                    for tool_call in tool_calls_buffer:
-                        func = tool_call.get("function", {})
-                        tc_entry = {
-                            "id": tool_call.get("id", ""),
-                            "type": "function",
-                            "function": {
-                                "name": func.get("name", tool_call.get("name", "")),
-                                "arguments": func.get("arguments", tool_call.get("arguments", "{}")),
-                            },
-                        }
-                        assistant_tool_calls.append(tc_entry)
-
-                    messages.append({
-                        "role": "assistant",
-                        "content": full_response or None,
-                        "tool_calls": assistant_tool_calls,
-                    })
-
-                    for tool_call in tool_calls_buffer:
-                        func = tool_call.get("function", {})
-                        tool_name = func.get("name", tool_call.get("name", ""))
-                        tool_args = func.get("arguments", tool_call.get("arguments", "{}"))
-
-                        if isinstance(tool_args, str):
-                            try:
-                                tool_args = json.loads(tool_args)
-                            except json.JSONDecodeError as e:
-                                logger.warning(f"工具参数 JSON 解析失败: {e}, 原始参数: {tool_args}")
-                                try:
-                                    import ast
-                                    tool_args = ast.literal_eval(tool_args)
-                                    if not isinstance(tool_args, dict):
-                                        tool_args = {}
-                                except Exception:
-                                    tool_args = {}
-
-                        # 发送工具执行开始事件
-                        yield f"data: {json.dumps({'type': 'tool_start', 'tool_name': tool_name})}\n\n"
-
-                        # 执行工具
-                        try:
-                            if tool_name in BUILTIN_TOOL_NAMES:
-                                tool_result = call_builtin_tool(tool_name, tool_args or {})
-                            else:
-                                tool_result = tool_registry.call_tool(tool_name, tool_args)
-                        except Exception as e:
-                            logger.warning(f"工具 {tool_name} 执行失败: {e}")
-                            tool_result = {"success": False, "error": str(e)}
-
-                        # 发送工具执行结果事件
-                        yield f"data: {json.dumps({'type': 'tool_result', 'tool_name': tool_name, 'result': tool_result})}\n\n"
-
-                        # 添加工具结果到消息
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.get("id", ""),
-                            "name": tool_name,
-                            "content": json.dumps(tool_result, ensure_ascii=False),
-                        })
-
-                    # 继续下一轮循环，让 LLM 处理工具结果
-
-                # 发送完成事件
-                yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
-
-            except Exception as e:
-                logger.error(f"流式聊天错误: {e}", exc_info=True)
-                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+                async for event in generate_chat_stream(
+                    llm=llm,
+                    messages=messages,
+                    agent_config=agent_config,
+                    tools=tools,
+                    session_id=session_id,
+                    state=state,
+                ):
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             finally:
-                # 确保 assistant 消息可靠落库
-                if full_response:
+                # 确保 assistant 消息可靠落库（使用跨轮累积内容）
+                if state.accumulated_response:
                     try:
                         context_mgr.add_message(
-                            session_id=session_id, role="assistant", content=full_response
+                            session_id=session_id,
+                            role="assistant",
+                            content=state.accumulated_response,
                         )
                     except Exception:
                         pass

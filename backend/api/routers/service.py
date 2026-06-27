@@ -425,17 +425,13 @@ async def get_service_config():
     if hasattr(settings.config, "models"):
         config["models"] = settings.config.models
 
-    # 添加模型默认配置 - 从 models.defaults 和 llm 配置中提取
-    model_defaults = {}
-    if hasattr(settings.config.models, "defaults"):
-        model_defaults.update(settings.config.models.defaults)
+    # 添加模型默认配置 - 仅返回 ModelsConfig.defaults（{summary, memory}）
+    config["model_defaults"] = (
+        dict(settings.config.models.defaults)
+        if hasattr(settings.config.models, "defaults")
+        else {"summary": "main", "memory": "main"}
+    )
     llm_cfg = settings.config.llm
-    model_defaults["default_model"] = llm_cfg.model
-    model_defaults["default_provider"] = llm_cfg.provider
-    model_defaults["temperature"] = llm_cfg.temperature
-    model_defaults["max_tokens"] = llm_cfg.max_tokens
-    model_defaults["stream"] = llm_cfg.stream
-    config["model_defaults"] = model_defaults
 
     # 添加LLM参数 - 从 llm 配置中提取
     llm_params = {
@@ -566,7 +562,13 @@ async def update_service_config(config: dict):
             current_config["model_defaults"] = config["model_defaults"]
 
         if "llm_params" in config:
-            current_config["llm_params"] = config["llm_params"]
+            llm_params_data = config["llm_params"]
+            if "llm" not in current_config:
+                current_config["llm"] = {}
+            # 仅合并 LLMConfig 认识的字段
+            for key in ("provider", "host", "model", "temperature", "max_tokens", "stream", "api_key"):
+                if key in llm_params_data:
+                    current_config["llm"][key] = llm_params_data[key]
 
         # system 配置
         if "system" in config:

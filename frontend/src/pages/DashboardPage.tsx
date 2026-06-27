@@ -6,10 +6,10 @@ import { Card, CardBody, Button, SkeletonCard, EmptyStateIcon } from '../compone
 import { api } from '../api/client';
 
 interface Stats {
-  memoryCount: number;
-  sessionCount: number;
-  agentCount: number;
-  todayMessages: number;
+  totalMemories: number;
+  totalMessages: number;
+  totalAgents: number;
+  archivedMemories: number;
 }
 
 interface RecentActivity {
@@ -58,17 +58,13 @@ export const DashboardPage: React.FC = () => {
   const { data: stats, isLoading: statsLoading } = useQuery<Stats>({
     queryKey: ['dashboard-stats'],
     queryFn: async () => {
-      const [memories, sessionsData, agents] = await Promise.all([
-        api.getMemories({ limit: 1 }),
-        api.getSessions(),
-        api.getAgents(),
-      ]);
-      const sessionsList = Array.isArray(sessionsData) ? sessionsData : sessionsData.sessions || [];
+      const result = await api.getStats();
+      const data = result?.data ?? result;
       return {
-        memoryCount: memories.total || 0,
-        sessionCount: sessionsList.length || 0,
-        agentCount: agents.filter((a: { id: string }) => a.id !== 'memory-agent').length || 0,
-        todayMessages: 0,
+        totalMemories: data.total_memories ?? 0,
+        totalMessages: data.total_messages ?? 0,
+        totalAgents: data.total_agents ?? 0,
+        archivedMemories: data.archived_memories ?? 0,
       };
     },
   });
@@ -103,7 +99,7 @@ export const DashboardPage: React.FC = () => {
           <>
             <StatCard
               title="记忆总数"
-              value={stats?.memoryCount || 0}
+              value={stats?.totalMemories ?? 0}
               color="accent"
               icon={
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -117,8 +113,8 @@ export const DashboardPage: React.FC = () => {
               }
             />
             <StatCard
-              title="会话数"
-              value={stats?.sessionCount || 0}
+              title="总消息数"
+              value={stats?.totalMessages ?? 0}
               color="success"
               icon={
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -133,7 +129,7 @@ export const DashboardPage: React.FC = () => {
             />
             <StatCard
               title="Agent数"
-              value={stats?.agentCount || 0}
+              value={stats?.totalAgents ?? 0}
               color="warning"
               icon={
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -147,8 +143,8 @@ export const DashboardPage: React.FC = () => {
               }
             />
             <StatCard
-              title="今日消息"
-              value={stats?.todayMessages || 0}
+              title="归档记忆数"
+              value={stats?.archivedMemories ?? 0}
               color="info"
               icon={
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -156,7 +152,7 @@ export const DashboardPage: React.FC = () => {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"
+                    d="M5 8h14M5 8a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1a2 2 0 01-2 2M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"
                   />
                 </svg>
               }

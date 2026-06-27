@@ -75,9 +75,205 @@ graph_store = None
 cxfc_manager = None
 
 
+async def _build_sim_service_state(app: FastAPI):
+    """模拟模式装配：用假实现构造 ServiceState，返回 (service_state, tmpdir)。
+
+    在 ``CXHMS_SIMULATION`` 环境变量被设置时由 lifespan 调用，使用
+    ``backend.tests.simulation.fakes`` 下的假实现驱动真实业务逻辑，
+    不依赖任何外部服务（vLLM/Ollama/Chroma/Milvus 等）。
+    """
+    import os
+    import tempfile
+
+    from backend.core.context.manager import ContextManager
+    from backend.core.memory.manager import MemoryManager
+    from backend.core.memory.secondary_router import SecondaryModelRouter
+    from backend.core.tools import (
+        register_assistant_tools,
+        register_builtin_tools,
+        register_master_tools,
+        register_summary_tools,
+        set_assistant_dependencies,
+        set_master_dependencies,
+        set_summary_dependencies,
+    )
+    from backend.core.tools.graph_tools import set_graph_dependencies
+    from backend.dependencies import ServiceState, set_service_state
+    from backend.tests.simulation.fakes.fake_embedding import FakeEmbeddingModel
+    from backend.tests.simulation.fakes.fake_graph import make_in_memory_graph_store
+    from backend.tests.simulation.fakes.fake_llm import FakeLLMClient, FakeModelRouter
+    from backend.tests.simulation.fakes.fake_vector_store import InMemoryVectorStore
+
+    import backend.dependencies as _deps
+
+    tmpdir = tempfile.mkdtemp(prefix="cxhms_sim_")
+    logger.info(f"模拟模式：使用临时目录 {tmpdir}")
+
+    # 1. 重置 MemoryManager 单例（防止残留），用临时文件 db
+    #    注意：不能用 :memory:，因为 MemoryManager 用每线程 sqlite 连接池，
+    #    不同线程会看到不同的内存库。
+    MemoryManager._instance = None
+    memory_manager = MemoryManager(db_path=os.path.join(tmpdir, "memories.db"))
+    memory_manager.enable_vector_search(
+        embedding_model=FakeEmbeddingModel(),
+        vector_store=InMemoryVectorStore(),
+    )
+
+    # 2. ContextManager：构造后把 _context_dir 指向临时目录，清空内存 _store
+    context_manager = ContextManager(db_path=os.path.join(tmpdir, "sessions.db"))
+    context_manager._context_dir = os.path.join(tmpdir, "context")
+    os.makedirs(context_manager._context_dir, exist_ok=True)
+    context_manager._store.clear()
+
+    # 3. FakeLLMClient + FakeModelRouter
+    llm_client = FakeLLMClient()
+    model_router = FakeModelRouter(client=llm_client)
+    await model_router.initialize()
+
+    # 4. SecondaryModelRouter
+    secondary_router = SecondaryModelRouter(
+        memory_manager,
+        llm_client,
+        model_router=model_router,
+        context_manager=context_manager,
+    )
+
+    # 5. acp/mcp/cxfc 模拟模式不需要，设为 None
+    acp_manager = None
+    mcp_manager = None
+    cxfc_manager = None
+
+    # 6. 工具注册（按真实 lifespan 顺序，失败不阻断）
+    try:
+        register_builtin_tools()
+        logger.info("模拟模式：内置工具已注册")
+    except Exception as e:
+        logger.warning(f"模拟模式：内置工具注册失败: {e}")
+
+    try:
+        set_master_dependencies(
+            memory_manager=memory_manager,
+            secondary_router=secondary_router,
+            context_manager=context_manager,
+            acp_manager=acp_manager,
+        )
+        register_master_tools()
+        logger.info("模拟模式：主模型工具已注册")
+    except Exception as e:
+        logger.warning(f"模拟模式：主模型工具注册失败: {e}")
+
+    try:
+        set_summary_dependencies(
+            memory_manager=memory_manager,
+            model_router=model_router,
+            context_manager=context_manager,
+        )
+        register_summary_tools()
+        logger.info("模拟模式：摘要模型工具已注册")
+    except Exception as e:
+        logger.warning(f"模拟模式：摘要模型工具注册失败: {e}")
+
+    try:
+        set_assistant_dependencies(
+            memory_manager=memory_manager,
+            secondary_router=secondary_router,
+            context_manager=context_manager,
+        )
+        register_assistant_tools()
+        logger.info("模拟模式：记忆管理模型工具已注册")
+    except Exception as e:
+        logger.warning(f"模拟模式：记忆管理模型工具注册失败: {e}")
+
+    # 7. 图存储：注入假实现到 dependencies 注册表与 graph_tools 注册表
+    try:
+        gdb, gs = make_in_memory_graph_store("default")
+        set_graph_dependencies(gs, agent_id="default")
+        _deps._graph_databases["default"] = gdb
+        _deps._graph_stores["default"] = gs
+        logger.info("模拟模式：图存储已注入")
+    except Exception as e:
+        logger.warning(f"模拟模式：图存储注入失败: {e}")
+
+    # 8. 构造 ServiceState
+    service_state = ServiceState()
+    service_state.memory_manager = memory_manager
+    service_state.async_memory_manager = None  # 模拟模式不启用异步记忆管理器
+    service_state.context_manager = context_manager
+    service_state.acp_manager = acp_manager
+    service_state.llm_client = llm_client
+    service_state.secondary_router = secondary_router
+    service_state.mcp_manager = mcp_manager
+    service_state.model_router = model_router
+    service_state.cxfc_manager = cxfc_manager
+
+    return service_state, tmpdir
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global memory_manager, context_manager, acp_manager, llm_client, secondary_router, mcp_manager, model_router, async_memory_manager, graph_database, graph_store, cxfc_manager
+
+    import os as _os
+
+    # 模拟模式分支：用假实现装配，跳过所有真实外部连接
+    if _os.environ.get("CXHMS_SIMULATION"):
+        service_state, _sim_tmpdir = await _build_sim_service_state(app)
+        # 同步模块级全局变量（app.py 的 get_* 函数依赖它们）
+        memory_manager = service_state.memory_manager
+        context_manager = service_state.context_manager
+        acp_manager = service_state.acp_manager
+        llm_client = service_state.llm_client
+        secondary_router = service_state.secondary_router
+        mcp_manager = service_state.mcp_manager
+        model_router = service_state.model_router
+        async_memory_manager = service_state.async_memory_manager
+        cxfc_manager = service_state.cxfc_manager
+        graph_database = None
+        graph_store = None
+        app.state.services = service_state
+        set_service_state(service_state)
+        app.state._sim_tmpdir = _sim_tmpdir
+        # cxfc_router 需要显式置空，避免引用上一次启动的 manager
+        try:
+            cxfc_router.set_cxfc_manager(None)
+        except Exception:
+            pass
+        logger.info("CXHMS 模拟模式已启动")
+
+        yield
+
+        # shutdown：清理模拟资源
+        logger.info("正在关闭CXHMS模拟服务...")
+        try:
+            if memory_manager:
+                memory_manager.shutdown()
+        except Exception:
+            pass
+        try:
+            import backend.dependencies as _sim_deps
+
+            for _aid, _gdb in list(_sim_deps._graph_databases.items()):
+                try:
+                    _gdb.close()
+                except Exception:
+                    pass
+            _sim_deps._graph_databases.clear()
+            _sim_deps._graph_stores.clear()
+        except Exception:
+            pass
+        try:
+            if model_router:
+                await model_router.close()
+        except Exception:
+            pass
+        try:
+            import shutil
+
+            shutil.rmtree(_sim_tmpdir, ignore_errors=True)
+        except Exception:
+            pass
+        logger.info("CXHMS模拟服务已关闭")
+        return
 
     from backend.core.acp.manager import ACPManager
     from backend.core.context.manager import ContextManager
@@ -87,6 +283,8 @@ async def lifespan(app: FastAPI):
     from backend.core.model_router import model_router as mr  # 导入模型路由器
     from backend.core.tools.mcp import MCPManager
     from backend.core.tools.registry import tool_registry
+
+    import backend.dependencies as _deps
 
     logger.info("正在启动CXHMS服务...")
 
@@ -224,6 +422,19 @@ async def lifespan(app: FastAPI):
         logger.info("记忆管理模型工具已注册")
     except Exception as e:
         logger.warning(f"记忆管理模型工具注册失败: {e}")
+
+    # 注册记忆系统工具（save_memory 等）
+    try:
+        from backend.core.tools.memory_tools import (
+            register_memory_tools,
+            set_memory_tools_dependencies,
+        )
+
+        set_memory_tools_dependencies(memory_manager=memory_manager)
+        register_memory_tools()
+        logger.info("记忆系统工具已注册")
+    except Exception as e:
+        logger.warning(f"记忆系统工具注册失败: {e}")
 
     # 验证工具注册状态
     from backend.core.tools import tool_registry

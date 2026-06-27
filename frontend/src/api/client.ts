@@ -159,28 +159,23 @@ class ApiClient {
     return response.data;
   }
 
-  // Get main backend status via control service
+  // Get main backend status via health check (control service removed)
   async getMainBackendStatus() {
-    const response = await this.controlClient.get('/control/status');
-    return response.data;
+    const response = await this.client.get('/health');
+    return { running: response.data.status === 'healthy' || response.data.status === 'degraded', ...response.data };
   }
 
-  // Start main backend service
+  // Start/stop/restart methods removed - control service no longer exists
   async startMainBackend() {
-    const response = await this.controlClient.post('/control/start');
-    return response.data;
+    throw new Error('Control service removed - start manually');
   }
 
-  // Stop main backend service
   async stopMainBackend() {
-    const response = await this.controlClient.post('/control/stop');
-    return response.data;
+    throw new Error('Control service removed - stop manually');
   }
 
-  // Restart main backend service
   async restartMainBackend() {
-    const response = await this.controlClient.post('/control/restart');
-    return response.data;
+    throw new Error('Control service removed - restart manually');
   }
 
   // ========== Main Backend APIs (Port 8000) ==========

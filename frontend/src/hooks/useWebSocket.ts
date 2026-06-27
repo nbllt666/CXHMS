@@ -143,7 +143,9 @@ export function useWebSocket(options: WebSocketOptions): UseWebSocketReturn {
             onAlarmRef.current?.(data.message || '', data.triggered_at || '');
             break;
           case 'content':
+          case 'thinking':
           case 'tool_call':
+          case 'tool_start':
           case 'tool_result':
             onMessageRef.current?.(data);
             break;

@@ -77,3 +77,59 @@ def mock_settings():
         },
         "memory": {"db_path": ":memory:", "vector_store_type": "memory"},
     }
+
+
+@pytest.fixture(scope="function")
+def sim_app(monkeypatch):
+    """模拟模式 TestClient：用假实现驱动真实 FastAPI app（无外部依赖）。
+
+    通过 ``CXHMS_SIMULATION`` 环境变量触发 ``lifespan`` 的模拟分支，
+    装配 FakeLLMClient/FakeModelRouter/InMemoryVectorStore 等假实现。
+    每个 test 独立隔离：重置 MemoryManager 单例与图注册表，避免残留。
+    """
+    from backend.api.app import app
+    from backend.core.memory.manager import MemoryManager
+
+    import backend.dependencies as _deps
+
+    monkeypatch.setenv("CXHMS_SIMULATION", "1")
+
+    # 重置单例与图注册表，防止上一次启动残留
+    MemoryManager._instance = None
+    _deps._graph_databases.clear()
+    _deps._graph_stores.clear()
+
+    with TestClient(app) as test_client:
+        yield test_client
+
+    # teardown：重置单例与图注册表，清空 data/context 目录
+    MemoryManager._instance = None
+    _deps._graph_databases.clear()
+    _deps._graph_stores.clear()
+    try:
+        ctx_dir = "data/context"
+        if os.path.isdir(ctx_dir):
+            shutil.rmtree(ctx_dir, ignore_errors=True)
+        os.makedirs(ctx_dir, exist_ok=True)
+    except Exception:
+        pass
+
+
+@pytest.fixture(scope="function")
+def sim_client(sim_app):
+    """模拟模式 TestClient（依赖 sim_app）。"""
+    return sim_app
+
+
+@pytest.fixture(scope="function")
+def sim_actor(sim_client):
+    """无头用户演员：以业务语义驱动真实后端 API。
+
+    依赖 ``sim_client``（每个测试函数独立），返回
+    ``SimUserActor(sim_client)``，让测试用 ``actor.send_streaming_message(...)``
+    等方法编写断言，避免在测试里裸构造 HTTP 请求。
+    """
+    from backend.tests.simulation.actor import SimUserActor
+
+    return SimUserActor(sim_client)
+

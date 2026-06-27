@@ -100,6 +100,11 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
 
   if (!thinking && (!toolCalls || toolCalls.length === 0)) return null;
 
+  // 根据内容类型决定标题
+  const hasThinking = Boolean(thinking);
+  const hasToolCalls = Boolean(toolCalls && toolCalls.length > 0);
+  const title = hasThinking ? '思考过程' : '工具调用';
+
   return (
     <div className="mt-3 border border-[var(--color-border)] rounded-[var(--radius-md)] overflow-hidden">
       <button
@@ -115,10 +120,10 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
               d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
             />
           </svg>
-          思考过程
-          {toolCalls && toolCalls.length > 0 && (
+          {title}
+          {hasToolCalls && (
             <span className="px-1.5 py-0.5 bg-[var(--color-accent-light)] text-[var(--color-accent)] rounded-full text-[10px]">
-              {toolCalls.length} 个工具调用
+              {toolCalls!.length} 个工具调用
             </span>
           )}
         </span>
@@ -134,13 +139,21 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
 
       {isExpanded && (
         <div className="px-3 py-2 bg-[var(--color-bg-secondary)] text-xs space-y-2">
-          {thinking && (
-            <div className="text-[var(--color-text-tertiary)] whitespace-pre-wrap">{thinking}</div>
+          {hasThinking && (
+            <div>
+              {hasToolCalls && (
+                <div className="text-[var(--color-text-secondary)] font-medium mb-1">思考过程</div>
+              )}
+              <div className="text-[var(--color-text-tertiary)] whitespace-pre-wrap">{thinking}</div>
+            </div>
           )}
 
-          {toolCalls && toolCalls.length > 0 && (
-            <div className="space-y-2">
-              {toolCalls.map((toolCall, idx) => (
+          {hasToolCalls && (
+            <div className={hasThinking ? 'space-y-2 mt-2' : 'space-y-2'}>
+              {hasThinking && (
+                <div className="text-[var(--color-text-secondary)] font-medium mb-1">工具调用</div>
+              )}
+              {toolCalls!.map((toolCall, idx) => (
                 <div
                   key={toolCall.id || `${toolCall.name}_${idx}`}
                   className="p-2 bg-[var(--color-bg-tertiary)] rounded border border-[var(--color-border)]"

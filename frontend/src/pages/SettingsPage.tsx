@@ -134,7 +134,7 @@ export function SettingsPage() {
 
   const [vectorConfig, setVectorConfig] = useState({
     backend: 'weaviate',
-    vectorSize: 2048,
+    vectorSize: 768,
     dbPath: 'data/chroma_db',
     collectionName: 'memory_vectors',
     weaviateHost: 'localhost',
@@ -169,10 +169,8 @@ export function SettingsPage() {
 
   const [modelDefaults, setModelDefaults] = useState({ summary: 'main', memory: 'main' });
   const [llmParams, setLlmParams] = useState({
-    temperature: 1.3,
-    maxTokens: 0,
-    topP: 0.9,
-    timeout: 30,
+    temperature: 0.7,
+    max_tokens: 4096,
   });
 
   useEffect(() => {
@@ -210,14 +208,15 @@ export function SettingsPage() {
         }));
       }
       if (serviceConfig.config.model_defaults) {
-        setModelDefaults(serviceConfig.config.model_defaults);
+        setModelDefaults({
+          summary: serviceConfig.config.model_defaults.summary ?? 'main',
+          memory: serviceConfig.config.model_defaults.memory ?? 'main',
+        });
       }
       if (serviceConfig.config.llm_params) {
         setLlmParams({
-          temperature: serviceConfig.config.llm_params.temperature ?? 1.3,
-          maxTokens: serviceConfig.config.llm_params.maxTokens ?? 0,
-          topP: serviceConfig.config.llm_params.topP ?? 0.9,
-          timeout: serviceConfig.config.llm_params.timeout ?? 30,
+          temperature: serviceConfig.config.llm_params.temperature ?? 0.7,
+          max_tokens: serviceConfig.config.llm_params.max_tokens ?? 4096,
         });
       }
     }
@@ -479,6 +478,7 @@ export function SettingsPage() {
                         <option value={768}>768 (中型模型)</option>
                         <option value={1024}>1024 (大型模型)</option>
                         <option value={1536}>1536 (OpenAI)</option>
+                        <option value={2048}>2048 (超大型模型)</option>
                       </select>
                     </div>
                     {vectorConfig.backend === 'chroma' && (
