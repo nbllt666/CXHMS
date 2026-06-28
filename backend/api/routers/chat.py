@@ -661,6 +661,7 @@ async def chat_stream(request: ChatRequest):
             """生成流式响应（消费共享聊天流生成器）"""
             state = ChatStreamState()
             try:
+                logger.info(f"generate_stream 开始: llm={llm}, messages={len(messages)}, tools={len(tools)}")
                 async for event in generate_chat_stream(
                     llm=llm,
                     messages=messages,
@@ -669,7 +670,12 @@ async def chat_stream(request: ChatRequest):
                     session_id=session_id,
                     state=state,
                 ):
+                    logger.debug(f"generate_stream yield event: {event.get('type')}")
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                logger.info(f"generate_stream 结束: accumulated={len(state.accumulated_response)}")
+            except Exception as e:
+                logger.error(f"generate_stream 异常: {e}", exc_info=True)
+                yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
             finally:
                 # 确保 assistant 消息可靠落库（使用跨轮累积内容）
                 if state.accumulated_response:

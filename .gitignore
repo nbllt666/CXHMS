@@ -36,6 +36,7 @@ env/
 Miniconda3/
 cx_o/
 .trae/
+Qwen3-Embedding-0.6B/
 data/
 logs/
 *.db

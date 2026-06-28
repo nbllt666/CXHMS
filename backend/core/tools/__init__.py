@@ -51,6 +51,10 @@ from .summary_tools import set_dependencies as set_summary_dependencies
 from .summary_tools import (
     summarize_content,
 )
+from .task_tools import (
+    register_task_tools,
+    set_task_tools_dependencies,
+)
 
 __all__ = [
     "tool_registry",
@@ -100,4 +104,7 @@ __all__ = [
     "get_memory_logs",
     "get_available_commands",
     "set_assistant_dependencies",
+    # Task tools
+    "register_task_tools",
+    "set_task_tools_dependencies",
 ]

@@ -1,0 +1,82 @@
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-gemma4
+    ports:
+      - "8000:8000"
+    volumes:
+      - gemma4-models:/models
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        limits:
+          memory: 24g
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    shm_size: 16gb
+    command: >
+      /models/gemma-4-e4b-it
+      --quantization int8_per_channel_weight_only
+      --dtype float16
+      --max-model-len 8192
+      --gpu-memory-utilization 0.85
+      --host 0.0.0.0
+      --port 8000
+      --served-model-name gemma4-e4b
+      --attention-backend triton_attn
+      --tensor-parallel-size 2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  vllm-embedding:
+    image: vllm/vllm-openai:latest
+    container_name: cxhms-vllm-embedding
+    ports:
+      - "8101:8000"
+    volumes:
+      - ./Qwen3-Embedding-0.6B:/models/Qwen3-Embedding-0.6B:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        limits:
+          memory: 8g
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    shm_size: 4gb
+    command: >
+      --model /models/Qwen3-Embedding-0.6B
+      --runner pooling
+      --host 0.0.0.0
+      --port 8000
+      --tensor-parallel-size 1
+      --gpu-memory-utilization 0.85
+      --max-model-len 8192
+      --no-enable-prefix-caching
+      --quantization int8_per_channel_weight_only
+      --attention-backend triton_attn
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  gemma4-models:
+    external: true
+
+networks:
+  default:
+    name: weaviate-network

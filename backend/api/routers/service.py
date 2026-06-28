@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import time
+from dataclasses import asdict
 from typing import Optional
 
 import psutil
@@ -421,9 +422,11 @@ async def get_service_config():
         "models": any(key in active_env_overrides for key in models_env_keys),
     }
 
-    # 添加模型配置
+    # 添加模型配置（转为 dict 并脱敏；defaults 单独通过 model_defaults 返回，避免重复）
     if hasattr(settings.config, "models"):
-        config["models"] = settings.config.models
+        models_dict = asdict(settings.config.models)
+        models_dict.pop("defaults", None)
+        config["models"] = EnvConfig.mask_secrets(models_dict)
 
     # 添加模型默认配置 - 仅返回 ModelsConfig.defaults（{summary, memory}）
     config["model_defaults"] = (

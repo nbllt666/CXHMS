@@ -165,6 +165,13 @@ export function SettingsPage() {
       apiKey: '',
       enabled: false,
     },
+    embedding: {
+      provider: 'vllm',
+      host: 'http://localhost:8101',
+      model: '/models/Qwen3-Embedding-0.6B',
+      apiKey: '',
+      enabled: true,
+    },
   });
 
   const [modelDefaults, setModelDefaults] = useState({ summary: 'main', memory: 'main' });
@@ -205,6 +212,9 @@ export function SettingsPage() {
           memory: serviceConfig.config.models?.memory
             ? { ...prev.memory, ...serviceConfig.config.models.memory }
             : prev.memory,
+          embedding: serviceConfig.config.models?.embedding
+            ? { ...prev.embedding, ...serviceConfig.config.models.embedding }
+            : prev.embedding,
         }));
       }
       if (serviceConfig.config.model_defaults) {
@@ -638,6 +648,58 @@ export function SettingsPage() {
                         }
                         className="w-full"
                       />
+                    </div>
+                    <div className="border-t border-[var(--color-border)] pt-4 mt-4">
+                      <h4 className="text-md font-medium mb-3">嵌入模型（Embedding）</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-sm font-medium mb-2 block">嵌入模型提供商</label>
+                          <select
+                            value={modelsConfig.embedding.provider}
+                            onChange={(e) =>
+                              setModelsConfig((prev) => ({
+                                ...prev,
+                                embedding: { ...prev.embedding, provider: e.target.value },
+                              }))
+                            }
+                            className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
+                          >
+                            <option value="ollama">Ollama (本地)</option>
+                            <option value="vllm">vLLM</option>
+                            <option value="openai">OpenAI</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium mb-2 block">嵌入模型名称</label>
+                          <input
+                            type="text"
+                            value={modelsConfig.embedding.model}
+                            onChange={(e) =>
+                              setModelsConfig((prev) => ({
+                                ...prev,
+                                embedding: { ...prev.embedding, model: e.target.value },
+                              }))
+                            }
+                            className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
+                            placeholder="/models/Qwen3-Embedding-0.6B"
+                          />
+                        </div>
+                      </div>
+                      <div className="mt-4">
+                        <label className="text-sm font-medium mb-2 block">嵌入模型服务地址</label>
+                        <input
+                          type="text"
+                          value={modelsConfig.embedding.host}
+                          onChange={(e) =>
+                            setModelsConfig((prev) => ({
+                              ...prev,
+                              embedding: { ...prev.embedding, host: e.target.value },
+                            }))
+                          }
+                          className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
+                          placeholder="http://localhost:8101"
+                        />
+                      </div>
                     </div>
                   </div>
                   <div className="flex justify-end mt-6">

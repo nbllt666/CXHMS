@@ -27,13 +27,13 @@ database:
 models:
   main:
     provider: vllm
-    # 宿主机直连 Docker vLLM: http://localhost:8000 (当前使用)
+    # 宿主机直连 Docker vLLM: http://localhost:8002 (当前使用)
     # Docker 网络访问 vLLM: http://vllm:8000
-    host: http://localhost:8000
+    host: http://localhost:8002
     model: gemma4-e4b
     apiKey: ''
     enabled: true
-    port: 8000
+    port: 8002
     temperature: 0.7
     max_tokens: 0
     timeout: 60
@@ -43,7 +43,7 @@ models:
     # 宿主机直连 Docker vLLM Embedding: http://localhost:8101
     # Docker 网络访问 vLLM Embedding: http://vllm-embedding:8000
     host: http://localhost:8101
-    model: /models/Qwen3-VL-Embedding-2B
+    model: /models/Qwen3-Embedding-0.6B
     apiKey: ''
     enabled: true
     port: 8101

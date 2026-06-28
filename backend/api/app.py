@@ -423,6 +423,24 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"记忆管理模型工具注册失败: {e}")
 
+    # 注册任务辅助工具（任务清单 + 定时提醒）
+    try:
+        from backend.core.tools.task_tools import (
+            register_task_tools,
+            set_task_tools_dependencies,
+        )
+        from backend.core.tasks import get_task_manager
+        from backend.core.alarm import get_alarm_manager
+
+        set_task_tools_dependencies(
+            task_manager=get_task_manager(),
+            alarm_manager=get_alarm_manager(),
+        )
+        register_task_tools()
+        logger.info("任务辅助工具已注册")
+    except Exception as e:
+        logger.warning(f"任务辅助工具注册失败: {e}")
+
     # 注册记忆系统工具（save_memory 等）
     try:
         from backend.core.tools.memory_tools import (
