@@ -352,21 +352,22 @@ class VLLMClient(LLMClient):
                             break
                     await asyncio.sleep(0.05)
                 await self._http_lock.acquire()
-            except Exception:
+            except BaseException:
                 self._bg_semaphore.release()
                 raise
         else:
             async with self._user_count_lock:
                 self._user_waiting += 1
+            acquired_semaphore = False
             try:
                 await self._semaphore.acquire()
-            finally:
+                acquired_semaphore = True
                 async with self._user_count_lock:
                     self._user_waiting -= 1
-            try:
                 await self._http_lock.acquire()
-            except Exception:
-                self._semaphore.release()
+            except BaseException:
+                if acquired_semaphore:
+                    self._semaphore.release()
                 raise
 
     def _release_http(self, is_background: bool = False):
