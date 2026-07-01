@@ -81,7 +81,7 @@ class WeaviateVectorStore:
                     grpc_port=self.grpc_port,
                     headers=headers,
                     additional_config=AdditionalConfig(
-                        timeout=Timeout(init=2, query=45, insert=120)
+                        timeout=Timeout(init=2, query=3, insert=120)
                     ),
                 )
                 logger.info(f"Weaviate 客户端已连接: {self.host}:{self.port}")
@@ -194,6 +194,10 @@ class WeaviateVectorStore:
     ) -> List[Dict]:
         """搜索相似向量"""
         if not self._client:
+            return []
+
+        if not self.is_available():
+            logger.warning("Weaviate 不可用，跳过向量搜索")
             return []
 
         try:

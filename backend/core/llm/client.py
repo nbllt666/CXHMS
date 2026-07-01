@@ -318,6 +318,7 @@ class VLLMClient(LLMClient):
         embedding_model: str = None,
         api_key: Optional[str] = None,
         supports_tools: bool = True,
+        max_concurrent: int = 1,
     ):
         self.host = host.rstrip("/")
         # 如果 host 已包含 /v1 后缀，去掉以避免拼接时重复
@@ -332,6 +333,50 @@ class VLLMClient(LLMClient):
         self.embedding_model = embedding_model or self.model
         self.api_key = api_key
         self.supports_tools = supports_tools
+        # Docker Desktop Windows 端口代理无法处理并发连接（返回 502）
+        # 用信号量串行化 vLLM HTTP 请求；若后端运行在 Docker 内可调大
+        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._bg_semaphore = asyncio.Semaphore(max_concurrent)
+        self._http_lock = asyncio.Lock()
+        self._user_waiting = 0
+        self._user_count_lock = asyncio.Lock()
+
+    async def _acquire_http(self, is_background: bool = False):
+        """获取 HTTP 访问权。用户请求优先于后台任务。"""
+        if is_background:
+            await self._bg_semaphore.acquire()
+            try:
+                while True:
+                    async with self._user_count_lock:
+                        if self._user_waiting == 0:
+                            break
+                    await asyncio.sleep(0.05)
+                await self._http_lock.acquire()
+            except Exception:
+                self._bg_semaphore.release()
+                raise
+        else:
+            async with self._user_count_lock:
+                self._user_waiting += 1
+            try:
+                await self._semaphore.acquire()
+            finally:
+                async with self._user_count_lock:
+                    self._user_waiting -= 1
+            try:
+                await self._http_lock.acquire()
+            except Exception:
+                self._semaphore.release()
+                raise
+
+    def _release_http(self, is_background: bool = False):
+        """释放 HTTP 访问权。"""
+        if self._http_lock.locked():
+            self._http_lock.release()
+        if is_background:
+            self._bg_semaphore.release()
+        else:
+            self._semaphore.release()
 
     def _validate_messages(self, messages: List[Dict]) -> None:
         """验证消息格式"""
@@ -348,17 +393,19 @@ class VLLMClient(LLMClient):
             if msg["role"] not in ["system", "user", "assistant", "tool"]:
                 raise ValueError(f"消息 {i} 的 role 必须是 'system', 'user', 'assistant' 或 'tool'")
 
-    async def chat(self, messages: List[Dict], stream: bool = False, **kwargs) -> LLMResponse:
+    async def chat(self, messages: List[Dict], stream: bool = False, is_background: bool = False, **kwargs) -> LLMResponse:
         """发送聊天请求
 
         Args:
             messages: 消息列表
             stream: 是否流式响应
+            is_background: 是否为后台任务（用户请求优先）
             **kwargs: 额外参数（tools, temperature, max_tokens 等）
 
         Returns:
             LLMResponse: 包含响应内容或错误信息
         """
+        await self._acquire_http(is_background=is_background)
         try:
             # 验证输入
             self._validate_messages(messages)
@@ -412,7 +459,8 @@ class VLLMClient(LLMClient):
             else:
                 # 如果带 tools 请求失败，尝试不带 tools 降级请求
                 if tools and response.status_code in (400, 422, 500):
-                    logger.warning(f"带 tools 请求失败 (HTTP {response.status_code})，尝试不带 tools 降级请求")
+                    err_body = response.text[:800] if response.text else ""
+                    logger.warning(f"带 tools 请求失败 (HTTP {response.status_code})，尝试不带 tools 降级请求。错误体: {err_body}")
                     request_body_fallback = {k: v for k, v in request_body.items() if k != "tools"}
                     response = await asyncio.to_thread(_do_post, request_body_fallback)
                     if response.status_code == 200:
@@ -508,14 +556,19 @@ class VLLMClient(LLMClient):
                 error=error_msg,
                 error_details={"exception": str(e)},
             )
+        finally:
+            self._release_http(is_background=is_background)
 
-    async def stream_chat(self, messages: List[Dict], **kwargs):
+    async def stream_chat(self, messages: List[Dict], is_background: bool = False, **kwargs):
+        await self._acquire_http(is_background=is_background)
         try:
+            enable_thinking = kwargs.get("enable_thinking", False)
             request_body = {
                 "model": self.model,
                 "messages": messages,
                 "stream": True,
                 "temperature": kwargs.get("temperature", self.temperature),
+                "chat_template_kwargs": {"enable_thinking": enable_thinking},
             }
             max_tokens = kwargs.get("max_tokens", self.max_tokens)
             if max_tokens and max_tokens > 0:
@@ -558,7 +611,7 @@ class VLLMClient(LLMClient):
                                 try:
                                     chunk = json.loads(data)
                                     delta = chunk["choices"][0].get("delta", {})
-                                    reasoning_content = delta.get("reasoning_content", "")
+                                    reasoning_content = delta.get("reasoning_content", "") or delta.get("reasoning", "")
                                     if reasoning_content and reasoning_content != "<pad>":
                                         yield {"type": "thinking", "content": reasoning_content}
                                     content = delta.get("content", "")
@@ -600,6 +653,8 @@ class VLLMClient(LLMClient):
         except Exception as e:
             logger.error(f"VLLM流式调用失败: {e}")
             yield {"type": "error", "content": str(e)}
+        finally:
+            self._release_http(is_background=is_background)
 
     @property
     def model_name(self) -> str:
@@ -623,6 +678,47 @@ class VLLMClient(LLMClient):
                     continue
             return False
         except Exception:
+            return False
+
+    async def warmup(self, timeout: float = 90.0) -> bool:
+        """发送预热请求到 vLLM，触发模型加载与 kernel 编译。
+
+        在后端启动时调用，确保首个用户请求不会承担冷启动延迟。
+        失败不抛异常，仅记录警告。
+        """
+        import time as _time
+
+        start = _time.monotonic()
+        url = f"{self.host}/v1/chat/completions"
+        request_body = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 4,
+            "temperature": 0.0,
+            "stream": False,
+            "chat_template_kwargs": {"enable_thinking": False},
+        }
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(timeout, connect=10.0), trust_env=False
+            ) as client:
+                response = await client.post(url, json=request_body, headers=headers)
+                if response.status_code == 200:
+                    elapsed_ms = int((_time.monotonic() - start) * 1000)
+                    logger.info(f"vLLM 预热完成: {elapsed_ms}ms")
+                    return True
+                else:
+                    logger.warning(
+                        f"vLLM 预热返回非 200: HTTP {response.status_code}, "
+                        f"body={response.text[:200]}"
+                    )
+                    return False
+        except Exception as e:
+            logger.warning(f"vLLM 预热失败（不阻断启动）: {e}")
             return False
 
     async def get_embedding(self, text: str) -> Optional[List[float]]:

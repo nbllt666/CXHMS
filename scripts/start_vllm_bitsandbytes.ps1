@@ -1,0 +1,3 @@
+# vLLM 启动脚本 (单卡 + bitsandbytes 4-bit 回退方案)
+# 当 FP8 量化不可用时使用此脚本
+docker run -d --name vllm-gemma4 --gpus "device=0" -p 8002:8000 -v gemma4-models:/models:rw -e NCCL_ALGO=Ring -e NCCL_DEBUG=WARN -e NCCL_P2P_DISABLE=1 -e NCCL_SHM_DISABLE=0 -e TRITON_CACHE_DIR=/root/.cache/triton vllm/vllm-openai:latest --model /models/gemma-4-e4b-it --quantization bitsandbytes --load-format bitsandbytes --dtype float16 --max-model-len 8192 --gpu-memory-utilization 0.90 --tensor-parallel-size 1 --max-num-seqs 8 --host 0.0.0.0 --port 8000 --served-model-name gemma4-e4b --attention-backend triton_attn --enable-auto-tool-choice --tool-call-parser gemma4 --reasoning-parser gemma4

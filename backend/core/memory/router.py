@@ -1,3 +1,4 @@
+import asyncio
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -114,7 +115,7 @@ class MemoryRouter:
         all_memories = []
 
         try:
-            recent_memories = self._get_recent_memories(session_id)
+            recent_memories = await asyncio.to_thread(self._get_recent_memories, session_id)
             if recent_memories:
                 all_memories.extend(recent_memories)
                 applied_rules.append("最近交互记忆优先")
@@ -243,7 +244,8 @@ class MemoryRouter:
 
                 return memories
 
-            return self.memory_manager.search_memories(
+            return await asyncio.to_thread(
+                self.memory_manager.search_memories,
                 query=query,
                 memory_type=options.get("memory_type"),
                 tags=options.get("tags"),

@@ -3,7 +3,7 @@
 参照 backend/core/tools/assistant_tools.py 的实现模式
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .registry import tool_registry
 
@@ -89,11 +89,11 @@ def list_tasks(status: str = None, priority: str = None) -> Dict[str, Any]:
 
 def update_task(
     task_id: str,
-    title: str = None,
-    description: str = None,
-    priority: str = None,
-    status: str = None,
-    due_date: str = None,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    priority: Optional[str] = None,
+    status: Optional[str] = None,
+    due_date: Optional[str] = None,
 ) -> Dict[str, Any]:
     """更新任务"""
     tm = get_task_manager()

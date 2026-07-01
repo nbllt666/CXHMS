@@ -79,7 +79,8 @@ class DeduplicationEngine:
     async def check_similarity(self, memory_id_1: int, memory_id_2: int) -> float:
         """检查两个记忆的相似度
 
-        使用文本内容的相似度计算（基于向量存储或文本相似度）
+        优先使用向量余弦相似度，embedding 不可用时降级为字符级 Jaccard 相似度。
+        与 find_duplicate_memory 保持一致的降级策略。
         """
         cache_key = f"{min(memory_id_1, memory_id_2)}:{max(memory_id_1, memory_id_2)}"
 
@@ -101,8 +102,14 @@ class DeduplicationEngine:
             content_1 = memory_1.get("content", "")
             content_2 = memory_2.get("content", "")
 
-            # 计算文本相似度（使用简单的Jaccard相似度）
-            similarity = self._calculate_text_similarity(content_1, content_2)
+            # 优先向量相似度，embedding 不可用时降级为字符级 Jaccard
+            try:
+                similarity = await self.check_vector_similarity(content_1, content_2)
+            except Exception as e:
+                logger.warning(
+                    f"向量相似度计算失败，降级为 Jaccard [{type(e).__name__}]: {e}"
+                )
+                similarity = self._calculate_text_similarity(content_1, content_2)
 
             # 缓存结果
             self._similarity_cache[cache_key] = similarity

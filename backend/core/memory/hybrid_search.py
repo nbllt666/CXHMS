@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
@@ -61,6 +62,14 @@ class HybridSearch:
 
     async def _vector_search(self, options: HybridSearchOptions) -> List[SearchResult]:
         try:
+            # Check vector store availability BEFORE getting embedding (which can be slow)
+            is_available_fn = getattr(self.vector_store, "is_available", None)
+            if is_available_fn is not None:
+                available = await is_available_fn() if asyncio.iscoroutinefunction(is_available_fn) else is_available_fn()
+                if not available:
+                    logger.warning("向量存储不可用，跳过向量搜索（含 embedding 请求）")
+                    return []
+
             embedding = await self.embedding_model.get_embedding(options.query)
 
             # 构建搜索参数，条件性传递 agent_id 以支持 agent 隔离

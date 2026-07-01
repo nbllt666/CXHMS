@@ -24,7 +24,11 @@ from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
 from backend.core.llm.tools import parse_text_tool_calls, strip_text_tool_calls
 from backend.core.logging_config import get_contextual_logger
 from backend.core.tools import tool_registry
-from backend.core.tools.builtin import BUILTIN_TOOL_NAMES, call_builtin_tool
+from backend.core.tools.builtin import (
+    BUILTIN_TOOL_NAMES,
+    call_builtin_tool,
+    call_builtin_tool_async,
+)
 
 logger = get_contextual_logger(__name__)
 
@@ -34,55 +38,141 @@ logger = get_contextual_logger(__name__)
 # ============================================================================
 
 
-class ThinkTagStreamParser:
-    """流式解析内嵌在 content 中的 <think>...</think> 标签。
+THOUGHT_MARKER = "thought\n"
+FINAL_MARKER = "final\n"
 
-    某些模型（如 gemma4-e4b via vLLM）不输出 reasoning_content 字段，
-    而是把思考过程放在 <think>...</think> 标签内嵌在 content 中流式输出。
+
+class ThinkTagStreamParser:
+    """流式解析内嵌在 content 中的思考标签。
+
+    支持三种格式：
+    1. 标准标签：<think>...</think>（Qwen3、DeepSeek 等）
+    2. Gemma 4 channel 分隔符：`<|channel|>thought` 换行 ... `<|channel|>final` 换行
+       - `<|channel|>thought\n` 开启思考模式
+       - 下一个 `<|channel|>...`（如 `<|channel|>final\n`）关闭思考模式
+
     本解析器将这些标签内容分离为 thinking 通道，其余作为 content 通道，
     支持标签跨 chunk 拆分的情况。
+
+    3. 无前缀裸标记（tokenizer 剥离 <|channel|> 后的残余）：
+       - 响应开头出现 `thought\n` → 进入思考模式
+       - 思考中出现 `final\n` → 退出思考模式
     """
+
+    THOUGHT_MARKER = THOUGHT_MARKER
+    FINAL_MARKER = FINAL_MARKER
 
     OPEN_TAG = "<think>"
     CLOSE_TAG = "</think>"
+    # Gemma 4 channel 分隔符
+    GEMMA_CHANNEL_PREFIX = "<|channel|>"
+    GEMMA_THOUGHT_OPEN = "thought\n"  # 紧跟在 GEMMA_CHANNEL_PREFIX 之后，表示开启思考模式
 
     def __init__(self):
         self.buffer = ""
         self.in_think = False
+        self.seen_content = False
 
     def feed(self, content: str) -> tuple:
         """喂入新 content，返回 (thinking_output, content_output)。"""
         if not content:
             return ("", "")
         self.buffer += content
-        thinking_parts: List[str] = []
-        content_parts: List[str] = []
+        thinking_parts = []
+        content_parts = []
 
         while True:
             if not self.in_think:
-                idx = self.buffer.find(self.OPEN_TAG)
-                if idx == -1:
-                    safe = self._safe_emit_length(self.OPEN_TAG)
+                candidates = []
+                think_idx = self.buffer.find(self.OPEN_TAG)
+                if think_idx != -1:
+                    candidates.append((think_idx, "think_open"))
+                gemma_idx = self.buffer.find(self.GEMMA_CHANNEL_PREFIX)
+                if gemma_idx != -1:
+                    candidates.append((gemma_idx, "gemma"))
+                if not self.seen_content:
+                    thought_idx = self.buffer.find(self.THOUGHT_MARKER)
+                    if thought_idx == 0:
+                        candidates.append((thought_idx, "thought_bare"))
+
+                if not candidates:
+                    pending = [self.OPEN_TAG, self.GEMMA_CHANNEL_PREFIX]
+                    if not self.seen_content:
+                        pending.append(self.THOUGHT_MARKER)
+                    safe = self._safe_emit_length_multi(pending)
                     if safe > 0:
                         content_parts.append(self.buffer[:safe])
+                        self.seen_content = True
                         self.buffer = self.buffer[safe:]
                     break
+
+                idx, kind = min(candidates)
                 if idx > 0:
                     content_parts.append(self.buffer[:idx])
-                self.buffer = self.buffer[idx + len(self.OPEN_TAG):]
-                self.in_think = True
+                    self.seen_content = True
+
+                if kind == "think_open":
+                    self.buffer = self.buffer[idx + len(self.OPEN_TAG):]
+                    self.in_think = True
+                elif kind == "thought_bare":
+                    self.buffer = self.buffer[idx + len(self.THOUGHT_MARKER):]
+                    self.in_think = True
+                    self.seen_content = True
+                else:
+                    rest = self.buffer[idx + len(self.GEMMA_CHANNEL_PREFIX):]
+                    if rest.startswith(self.GEMMA_THOUGHT_OPEN):
+                        self.buffer = rest[len(self.GEMMA_THOUGHT_OPEN):]
+                        self.in_think = True
+                    else:
+                        nl_idx = rest.find("\n")
+                        if nl_idx == -1:
+                            self.buffer = self.buffer[idx:]
+                            break
+                        self.buffer = rest[nl_idx + 1:]
             else:
-                idx = self.buffer.find(self.CLOSE_TAG)
-                if idx == -1:
-                    safe = self._safe_emit_length(self.CLOSE_TAG)
+                candidates = []
+                think_close_idx = self.buffer.find(self.CLOSE_TAG)
+                if think_close_idx != -1:
+                    candidates.append((think_close_idx, "think_close"))
+                gemma_idx = self.buffer.find(self.GEMMA_CHANNEL_PREFIX)
+                if gemma_idx != -1:
+                    candidates.append((gemma_idx, "gemma"))
+                final_idx = self.buffer.find(self.FINAL_MARKER)
+                if final_idx != -1:
+                    candidates.append((final_idx, "final_bare"))
+
+                if not candidates:
+                    safe = self._safe_emit_length_multi(
+                        [self.CLOSE_TAG, self.GEMMA_CHANNEL_PREFIX, self.FINAL_MARKER]
+                    )
                     if safe > 0:
                         thinking_parts.append(self.buffer[:safe])
                         self.buffer = self.buffer[safe:]
                     break
+
+                idx, kind = min(candidates)
                 if idx > 0:
                     thinking_parts.append(self.buffer[:idx])
-                self.buffer = self.buffer[idx + len(self.CLOSE_TAG):]
-                self.in_think = False
+
+                if kind == "think_close":
+                    self.buffer = self.buffer[idx + len(self.CLOSE_TAG):]
+                    self.in_think = False
+                    self.seen_content = True
+                elif kind == "final_bare":
+                    self.buffer = self.buffer[idx + len(self.FINAL_MARKER):]
+                    self.in_think = False
+                    self.seen_content = True
+                else:
+                    rest = self.buffer[idx + len(self.GEMMA_CHANNEL_PREFIX):]
+                    if rest.startswith(self.GEMMA_THOUGHT_OPEN):
+                        self.buffer = rest[len(self.GEMMA_THOUGHT_OPEN):]
+                    else:
+                        nl_idx = rest.find("\n")
+                        if nl_idx == -1:
+                            self.buffer = self.buffer[idx:]
+                            break
+                        self.buffer = rest[nl_idx + 1:]
+                        self.in_think = False
 
         return ("".join(thinking_parts), "".join(content_parts))
 
@@ -92,23 +182,24 @@ class ThinkTagStreamParser:
         was_in_think = self.in_think
         self.buffer = ""
         self.in_think = False
+        self.seen_content = False
         if not remaining:
             return ("", "")
         if was_in_think:
             return (remaining, "")
         return ("", remaining)
 
-    def _safe_emit_length(self, pending_tag: str) -> int:
-        max_prefix = min(len(pending_tag) - 1, len(self.buffer))
-        for prefix_len in range(max_prefix, 0, -1):
-            if self.buffer.endswith(pending_tag[:prefix_len]):
-                return len(self.buffer) - prefix_len
-        return len(self.buffer)
-
-
-# ============================================================================
-# 可变状态对象（调用方创建，生成器更新，生成器结束后调用方读取）
-# ============================================================================
+    def _safe_emit_length_multi(self, pending_tags):
+        """Calculate safe emit length to avoid outputting incomplete prefix of any pending_tag."""
+        max_prefix_len = 0
+        for tag in pending_tags:
+            max_prefix = min(len(tag) - 1, len(self.buffer))
+            for prefix_len in range(max_prefix, 0, -1):
+                if self.buffer.endswith(tag[:prefix_len]):
+                    if prefix_len > max_prefix_len:
+                        max_prefix_len = prefix_len
+                    break
+        return len(self.buffer) - max_prefix_len
 
 
 @dataclass
@@ -139,6 +230,7 @@ async def generate_chat_stream(
     session_id: str,
     state: ChatStreamState,
     is_cancelled: Optional[Callable[[], bool]] = None,
+    on_tool_result: Optional[Callable[[str, Dict, Dict], None]] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """共享聊天流核心逻辑，产出标准化事件字典。
 
@@ -150,6 +242,8 @@ async def generate_chat_stream(
         session_id: 会话 ID
         state: 可变状态对象，生成器结束后调用方读取累积内容
         is_cancelled: 可选的取消检查回调，返回 True 时中止生成
+        on_tool_result: 可选回调，每次工具执行后调用，签名 (tool_name, tool_args, tool_result)，
+                        供调用方（如摘要助手）捕获特定工具调用参数
 
     产出:
         标准化事件字典（见模块文档字符串）
@@ -159,9 +253,6 @@ async def generate_chat_stream(
     accumulated_response = ""
     had_tool_calls = False
     think_parser = ThinkTagStreamParser()
-
-    # 发送会话ID作为第一个事件
-    yield {"type": "session", "session_id": session_id}
 
     try:
         logger.info(
@@ -194,6 +285,7 @@ async def generate_chat_stream(
                     else 4096
                 ),
                 tools=tools if tools else None,
+                enable_thinking=agent_config.get("enable_thinking", False),
             ):
                 # 检查取消（流式过程中也可能被取消）
                 if is_cancelled and is_cancelled():
@@ -376,12 +468,12 @@ async def generate_chat_stream(
                 # 发送工具执行开始事件
                 yield {"type": "tool_start", "tool_name": tool_name}
 
-                # 执行工具
+                # 执行工具（异步，不阻塞事件循环）
                 try:
                     if tool_name in BUILTIN_TOOL_NAMES:
-                        tool_result = call_builtin_tool(tool_name, tool_args or {})
+                        tool_result = await call_builtin_tool_async(tool_name, tool_args or {})
                     else:
-                        tool_result = tool_registry.call_tool(tool_name, tool_args)
+                        tool_result = await tool_registry.call_tool_async(tool_name, tool_args)
                 except Exception as e:
                     logger.warning(f"工具 {tool_name} 执行失败: {e}")
                     tool_result = {"success": False, "error": str(e)}
@@ -403,6 +495,13 @@ async def generate_chat_stream(
                         "status": "completed",
                     }
                 )
+
+                # 通知调用方工具执行完成（供摘要助手捕获 save_diary_entry 参数等）
+                if on_tool_result:
+                    try:
+                        on_tool_result(tool_name, tool_args or {}, tool_result)
+                    except Exception as cb_err:
+                        logger.warning(f"on_tool_result 回调失败: {cb_err}")
 
                 # 添加工具结果到消息
                 messages.append(

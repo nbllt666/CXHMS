@@ -122,6 +122,7 @@ async def trigger_session_summary(
             temperature=0.3,
             max_tokens=4096,
             tools=tools if tools else None,
+            is_background=True,
         )
 
         # 处理工具调用（可能需要多轮）
@@ -186,6 +187,7 @@ async def trigger_session_summary(
                 temperature=0.3,
                 max_tokens=4096,
                 tools=tools if tools else None,
+                is_background=True,
             )
 
         # 替换上下文：用所有捕获的日记条目（每事件一篇）
@@ -303,14 +305,21 @@ class AutoSummaryTask:
                         f"会话 {sid} 消息数达到阈值，触发自动摘要 "
                         f"(range: {rng.get('start')}-{rng.get('end')})"
                     )
-                    success = await trigger_session_summary(
-                        self.context_manager,
-                        self.model_router,
-                        sid,
-                        threshold=self.summary_threshold,
+                    task = asyncio.create_task(
+                        trigger_session_summary(
+                            self.context_manager,
+                            self.model_router,
+                            sid,
+                            threshold=self.summary_threshold,
+                        )
                     )
-                    if success:
-                        triggered += 1
+
+                    def _on_done(t, _sid=sid):
+                        if t.exception():
+                            logger.error(f"后台摘要任务失败 session={_sid}: {t.exception()}")
+
+                    task.add_done_callback(_on_done)
+                    triggered += 1
             except Exception as e:
                 logger.warning(f"检查会话 {sid} 失败: {e}")
 

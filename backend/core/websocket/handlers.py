@@ -108,7 +108,7 @@ class ChatWebSocketHandler:
         )
 
         # 添加用户消息到上下文（在构建消息之后，避免历史中重复）
-        context_mgr.add_message(session_id=session_id, role="user", content=user_message)
+        await context_mgr.add_message_async(session_id=session_id, role="user", content=user_message)
 
         # 获取工具（只过滤 summary 类别）
         from backend.core.tools import tool_registry
@@ -179,11 +179,13 @@ class ChatWebSocketHandler:
                 state=state,
                 is_cancelled=is_cancelled,
             ):
+                if event.get("type") == "session":
+                    continue  # already sent early in _handle_chat
                 await self.ws_manager.send_to_client(client_id, event)
 
                 # 取消事件后保存部分响应并退出
                 if event.get("type") == "cancelled":
-                    self._save_assistant_message(
+                    await self._save_assistant_message(
                         context_mgr,
                         session_id,
                         state.accumulated_response,
@@ -195,7 +197,7 @@ class ChatWebSocketHandler:
         except Exception as e:
             logger.error(f"流式聊天错误: {e}", exc_info=True)
             # 保存已生成的部分响应（避免刷新或断连时丢失）
-            self._save_assistant_message(
+            await self._save_assistant_message(
                 context_mgr,
                 session_id,
                 state.accumulated_response,
@@ -211,7 +213,7 @@ class ChatWebSocketHandler:
             return
 
         # 正常结束后保存完整响应
-        self._save_assistant_message(
+        await self._save_assistant_message(
             context_mgr,
             session_id,
             state.accumulated_response,
@@ -219,7 +221,7 @@ class ChatWebSocketHandler:
             state.tool_calls,
         )
 
-    def _save_assistant_message(
+    async def _save_assistant_message(
         self, context_mgr, session_id: str, content: str, thinking: str, tool_calls: List[Dict]
     ):
         """保存助手消息到上下文（包括 thinking 和工具调用信息）"""
@@ -231,7 +233,7 @@ class ChatWebSocketHandler:
         if tool_calls:
             metadata["tool_calls"] = tool_calls
         try:
-            context_mgr.add_message(
+            await context_mgr.add_message_async(
                 session_id=session_id,
                 role="assistant",
                 content=content,
@@ -244,6 +246,12 @@ class ChatWebSocketHandler:
         """处理普通聊天消息（使用流式响应）"""
         try:
             self._cancel_flags[client_id] = False
+            # Send session event immediately (before slow prep) so frontend shows "thinking"
+            agent_id = message.get("agent_id", "default")
+            early_session_id = message.get("session_id") or f"agent-{agent_id}"
+            await self.ws_manager.send_to_client(
+                client_id, {"type": "session", "session_id": early_session_id}
+            )
             prep = await self._prepare_chat(client_id, message)
             if prep is None:
                 return
@@ -264,6 +272,12 @@ class ChatWebSocketHandler:
         """处理流式聊天消息"""
         try:
             self._cancel_flags[client_id] = False
+            # Send session event immediately (before slow prep) so frontend shows "thinking"
+            agent_id = message.get("agent_id", "default")
+            early_session_id = message.get("session_id") or f"agent-{agent_id}"
+            await self.ws_manager.send_to_client(
+                client_id, {"type": "session", "session_id": early_session_id}
+            )
             prep = await self._prepare_chat(client_id, message)
             if prep is None:
                 return

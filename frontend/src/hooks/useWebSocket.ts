@@ -161,6 +161,16 @@ export function useWebSocket(options: WebSocketOptions): UseWebSocketReturn {
             setIsGenerating(false);
             onMessageRef.current?.(data);
             break;
+          case 'session':
+            // 早期 session 事件：后端在记忆检索前发送，保持 isGenerating 思考状态
+            onMessageRef.current?.(data);
+            break;
+          case 'connected':
+          case 'subscribed':
+          case 'unsubscribed':
+          case 'config_updated':
+            // 连接/订阅/配置事件：无需特殊处理
+            break;
           default:
             onMessageRef.current?.(data);
         }

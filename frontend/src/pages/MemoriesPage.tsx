@@ -76,26 +76,12 @@ export function MemoriesPage() {
     refetchInterval: 5000,
   });
 
-  const [expandedDiaryDates, setExpandedDiaryDates] = useState<Set<string>>(new Set());
-
   const { data: diaryData, isLoading: isDiaryLoading } = useQuery({
     queryKey: ['diaryEntries', currentAgentId],
     queryFn: () => api.getDiaryEntries({ limit: 200, agent_id: currentAgentId }),
     enabled: activeTab === 'diary',
     staleTime: 30000,
   });
-
-  const toggleDiaryDate = (date: string) => {
-    setExpandedDiaryDates((prev) => {
-      const next = new Set(prev);
-      if (next.has(date)) {
-        next.delete(date);
-      } else {
-        next.add(date);
-      }
-      return next;
-    });
-  };
 
   const handleCreateMemory = async () => {
     try {
@@ -287,7 +273,7 @@ export function MemoriesPage() {
                   : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
               }`}
             >
-              日记
+              记录
             </button>
             <button
               onClick={() => setActiveTab('graph')}
@@ -322,8 +308,6 @@ export function MemoriesPage() {
         <DiaryView
           diaryData={diaryData}
           isLoading={isDiaryLoading}
-          expandedDates={expandedDiaryDates}
-          onToggleDate={toggleDiaryDate}
         />
       ) : (
       <>
@@ -974,7 +958,7 @@ export function MemoriesPage() {
   );
 }
 
-// ========== 日记视图组件 ==========
+// ========== 记录视图组件 ==========
 
 interface DiaryEntry {
   id: number;
@@ -998,12 +982,39 @@ interface DiaryGroup {
 interface DiaryViewProps {
   diaryData?: { diary_groups?: DiaryGroup[]; count?: number };
   isLoading: boolean;
-  expandedDates: Set<string>;
-  onToggleDate: (date: string) => void;
 }
 
-function DiaryView({ diaryData, isLoading, expandedDates, onToggleDate }: DiaryViewProps) {
+interface TimelineEntry extends DiaryEntry {
+  groupDate: string;
+}
+
+function DiaryView({ diaryData, isLoading }: DiaryViewProps) {
+  const [expandedEntryIds, setExpandedEntryIds] = useState<Set<number>>(new Set());
+
   const groups = diaryData?.diary_groups || [];
+
+  // Flatten date-grouped entries into a single list sorted by created_at descending.
+  // The API already returns groups in date-descending order, but we re-sort defensively.
+  const allEntries: TimelineEntry[] = groups
+    .flatMap((group) =>
+      group.entries.map((entry) => ({ ...entry, groupDate: group.date }))
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+  const toggleEntry = (id: number) => {
+    setExpandedEntryIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
   if (isLoading) {
     return (
@@ -1013,7 +1024,7 @@ function DiaryView({ diaryData, isLoading, expandedDates, onToggleDate }: DiaryV
     );
   }
 
-  if (groups.length === 0) {
+  if (allEntries.length === 0) {
     return (
       <Card className="py-12 text-center">
         <div className="text-[var(--color-text-tertiary)]">
@@ -1030,94 +1041,121 @@ function DiaryView({ diaryData, isLoading, expandedDates, onToggleDate }: DiaryV
               d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
             />
           </svg>
-          <h3 className="text-lg font-medium mb-2">暂无日记</h3>
-          <p className="text-sm">对话摘要后会自动生成日记条目</p>
+          <h3 className="text-lg font-medium mb-2">暂无记录</h3>
+          <p className="text-sm">对话摘要后会自动生成记录条目</p>
         </div>
       </Card>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {groups.map((group) => {
-        const isExpanded = expandedDates.has(group.date);
-        return (
-          <Card key={group.date}>
-            <button
-              onClick={() => onToggleDate(group.date)}
-              className="w-full flex items-center justify-between p-4 hover:bg-[var(--color-bg-hover)] transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <svg
-                  className="w-5 h-5 text-[var(--color-accent)]"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                  />
-                </svg>
-                <h3 className="text-lg font-semibold text-[var(--color-text-primary)]">
-                  {group.date}
-                </h3>
-                <Badge variant="secondary" size="sm">
-                  {group.entries.length} 篇
-                </Badge>
-              </div>
-              <svg
-                className={`w-5 h-5 text-[var(--color-text-secondary)] transition-transform ${
-                  isExpanded ? 'rotate-180' : ''
+    <div className="relative pl-8">
+      {/* Vertical timeline connector line */}
+      <div className="absolute left-[7px] top-3 bottom-3 w-px bg-[var(--color-border)]" />
+
+      <div className="space-y-4">
+        {allEntries.map((entry) => {
+          const meta = entry.metadata || {};
+          const isExpanded = expandedEntryIds.has(entry.id);
+          const hasExpandableDetail = Boolean(
+            meta.body || meta.summarized_message_range
+          );
+          const previewBody = meta.body ?? entry.content;
+
+          return (
+            <div key={entry.id} className="relative">
+              {/* Timeline node dot */}
+              <div
+                className={`absolute -left-[1.95rem] top-4 w-3.5 h-3.5 rounded-full ring-4 ring-[var(--color-bg-primary)] transition-colors ${
+                  isExpanded
+                    ? 'bg-[var(--color-accent)]'
+                    : 'bg-[var(--color-text-tertiary)]'
                 }`}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
+              />
+
+              <Card
+                className={`transition-all hover:shadow-lg ${
+                  hasExpandableDetail ? 'cursor-pointer' : ''
+                } ${isExpanded ? 'ring-1 ring-[var(--color-accent)]' : ''}`}
+                onClick={() => hasExpandableDetail && toggleEntry(entry.id)}
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {isExpanded && (
-              <div className="border-t border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-                {group.entries.map((entry) => {
-                  const meta = entry.metadata || {};
-                  return (
-                    <div key={entry.id} className="p-4 space-y-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {meta.title && (
-                          <span className="font-medium text-[var(--color-text-primary)]">
-                            {meta.title}
-                          </span>
-                        )}
-                        {meta.mood && (
-                          <Badge variant="primary" size="sm">
-                            {meta.mood}
-                          </Badge>
-                        )}
-                        {meta.summarized_message_range && (
-                          <span className="text-xs text-[var(--color-text-tertiary)]">
-                            消息范围: {meta.summarized_message_range}
-                          </span>
-                        )}
-                      </div>
-                      {meta.body && (
-                        <p className="text-sm text-[var(--color-text-primary)] whitespace-pre-wrap leading-relaxed">
-                          {meta.body}
-                        </p>
+                <CardBody>
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <span className="text-xs font-medium text-[var(--color-text-secondary)]">
+                      {entry.groupDate}
+                    </span>
+                    {meta.mood && (
+                      <Badge variant="primary" size="sm">
+                        {meta.mood}
+                      </Badge>
+                    )}
+                    {meta.source && (
+                      <span className="text-xs text-[var(--color-text-tertiary)]">
+                        · {meta.source}
+                      </span>
+                    )}
+                    {hasExpandableDetail && (
+                      <svg
+                        className={`w-4 h-4 ml-auto text-[var(--color-text-secondary)] transition-transform ${
+                          isExpanded ? 'rotate-180' : ''
+                        }`}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 9l-7 7-7-7"
+                        />
+                      </svg>
+                    )}
+                  </div>
+
+                  {meta.title && (
+                    <h4 className="text-base font-semibold text-[var(--color-text-primary)] mb-1.5">
+                      {meta.title}
+                    </h4>
+                  )}
+
+                  <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap">
+                    {isExpanded ? previewBody : truncate(previewBody, 120)}
+                  </p>
+
+                  {isExpanded && (
+                    <div className="mt-3 pt-3 border-t border-[var(--color-border)] space-y-2">
+                      {meta.summarized_message_range && (
+                        <div className="flex items-center gap-2 text-xs text-[var(--color-text-tertiary)]">
+                          <span className="font-medium">消息范围:</span>
+                          <span>{meta.summarized_message_range}</span>
+                        </div>
                       )}
-                      <div className="text-xs text-[var(--color-text-tertiary)]">
-                        {formatDate(entry.created_at)}
+                      <div className="flex items-center gap-2 text-xs text-[var(--color-text-tertiary)]">
+                        <svg
+                          className="w-3.5 h-3.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                        <span className="font-medium">完整时间:</span>
+                        <span>{formatDate(entry.created_at)}</span>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-        );
-      })}
+                  )}
+                </CardBody>
+              </Card>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

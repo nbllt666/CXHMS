@@ -562,7 +562,38 @@ async def lifespan(app: FastAPI):
                 if not all_messages or len(all_messages) <= 10:
                     return
 
-                messages_to_archive = all_messages[:-10]
+                # 仅归档尚未摘要的消息：通过 get_summarizable_range 获取已摘要起点
+                # （优先识别 diary_summary 标记，回退到 session.summarized_up_to）
+                rng = cm.get_summarizable_range(session_id)
+                start_idx = rng.get("start", 0)
+                total_active = rng.get("total", 0)
+                # get_messages 返回最后 limit 条；当活跃消息超过 limit 时需对齐索引
+                fetched_count = len(all_messages)
+                if total_active > fetched_count:
+                    start_idx = max(0, start_idx - (total_active - fetched_count))
+
+                # 保留最后 10 条作为近期上下文
+                keep_recent = 10
+                if start_idx >= len(all_messages) - keep_recent:
+                    return  # 没有新的可归档消息
+
+                candidates = all_messages[start_idx : len(all_messages) - keep_recent]
+
+                # 仅归档 user/assistant 角色消息，跳过 diary_summary 标记（避免重复摘要）
+                messages_to_archive = []
+                for msg in candidates:
+                    if msg.get("content_type") == "diary_summary":
+                        continue
+                    meta = msg.get("metadata") or {}
+                    if meta.get("is_diary_summary"):
+                        continue
+                    if msg.get("role") not in ("user", "assistant"):
+                        continue
+                    messages_to_archive.append(msg)
+
+                if not messages_to_archive:
+                    return
+
                 context_text = "\n".join(
                     [
                         f"{msg.get('role', 'unknown')}: {msg.get('content', '')}"
@@ -585,6 +616,7 @@ async def lifespan(app: FastAPI):
                         tags=["offline_save", "context", agent_id],
                     )
 
+                # 仅删除真正归档的 user/assistant 消息，保留 diary_summary 标记
                 for msg in messages_to_archive:
                     cm.delete_message(msg.get("id"))
 
@@ -659,6 +691,14 @@ async def lifespan(app: FastAPI):
     service_state.model_router = model_router
     service_state.cxfc_manager = cxfc_manager
     app.state.services = service_state
+
+    # vLLM 预热：触发模型加载与 kernel 编译，消除首请求冷启动延迟
+    try:
+        if llm_client and hasattr(llm_client, "warmup"):
+            logger.info("开始 vLLM 预热...")
+            await llm_client.warmup(timeout=120.0)
+    except Exception as e:
+        logger.warning(f"vLLM 预热异常（不阻断启动）: {e}")
 
     yield
 

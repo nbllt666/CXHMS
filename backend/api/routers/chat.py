@@ -1,11 +1,13 @@
 """
 聊天路由 - 支持 Agent 的聊天 API
-前端只发送最新一条消息，后端根据 Agent 配置构建完整上下文
+前端只发送最新消息，后端根据 Agent 配置构建完整上下文
 """
 
+import asyncio
 import json
 import re
-from typing import Dict, List, Optional, Tuple
+import time
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -91,101 +93,168 @@ SUMMARY_AGENT_HIDDEN_SYSTEM_PROMPT = """<role>
 </rules>"""
 
 
-class ThinkTagStreamParser:
-    """流式解析内嵌在 content 中的 <think>...</think> 标签。
+THOUGHT_MARKER = "thought\n"
+FINAL_MARKER = "final\n"
 
-    某些模型（如 gemma4-e4b via vLLM）不输出 reasoning_content 字段，
-    而是把思考过程放在 <think>...</think> 标签内嵌在 content 中流式输出。
+
+class ThinkTagStreamParser:
+    """流式解析内嵌在 content 中的思考标签。
+
+    支持三种格式：
+    1. 标准标签：<think>...</think>（Qwen3、DeepSeek 等）
+    2. Gemma 4 channel 分隔符：`<|channel|>thought` 换行 ... `<|channel|>final` 换行
+       - `<|channel|>thought\n` 开启思考模式
+       - 下一个 `<|channel|>...`（如 `<|channel|>final\n`）关闭思考模式
+
     本解析器将这些标签内容分离为 thinking 通道，其余作为 content 通道，
     支持标签跨 chunk 拆分的情况。
+
+    3. 无前缀裸标记（tokenizer 剥离 <|channel|> 后的残余）：
+       - 响应开头出现 `thought\n` → 进入思考模式
+       - 思考中出现 `final\n` → 退出思考模式
     """
+
+    THOUGHT_MARKER = THOUGHT_MARKER
+    FINAL_MARKER = FINAL_MARKER
 
     OPEN_TAG = "<think>"
     CLOSE_TAG = "</think>"
+    # Gemma 4 channel 分隔符
+    GEMMA_CHANNEL_PREFIX = "<|channel|>"
+    GEMMA_THOUGHT_OPEN = "thought\n"  # 紧跟在 GEMMA_CHANNEL_PREFIX 之后，表示开启思考模式
 
     def __init__(self):
-        self.buffer = ""          # 累积待解析的文本
-        self.in_think = False     # 是否处于 <think> 块内部
+        self.buffer = ""
+        self.in_think = False
+        self.seen_content = False
 
-    def feed(self, content: str) -> Tuple[str, str]:
-        """喂入新 content，返回 (thinking_output, content_output)。
-
-        thinking_output 应作为 thinking 事件发送；
-        content_output 应作为 content 事件发送。
-        """
+    def feed(self, content: str) -> tuple:
+        """喂入新 content，返回 (thinking_output, content_output)。"""
         if not content:
             return ("", "")
         self.buffer += content
-        thinking_parts: List[str] = []
-        content_parts: List[str] = []
+        thinking_parts = []
+        content_parts = []
 
         while True:
             if not self.in_think:
-                # 在 buffer 中查找开标签 <think>
-                idx = self.buffer.find(self.OPEN_TAG)
-                if idx == -1:
-                    # 未找到完整开标签，但 buffer 末尾可能含有开标签的前缀
-                    # （标签被跨 chunk 拆分），需保留这部分不输出
-                    safe = self._safe_emit_length(self.OPEN_TAG)
+                candidates = []
+                think_idx = self.buffer.find(self.OPEN_TAG)
+                if think_idx != -1:
+                    candidates.append((think_idx, "think_open"))
+                gemma_idx = self.buffer.find(self.GEMMA_CHANNEL_PREFIX)
+                if gemma_idx != -1:
+                    candidates.append((gemma_idx, "gemma"))
+                if not self.seen_content:
+                    thought_idx = self.buffer.find(self.THOUGHT_MARKER)
+                    if thought_idx == 0:
+                        candidates.append((thought_idx, "thought_bare"))
+
+                if not candidates:
+                    pending = [self.OPEN_TAG, self.GEMMA_CHANNEL_PREFIX]
+                    if not self.seen_content:
+                        pending.append(self.THOUGHT_MARKER)
+                    safe = self._safe_emit_length_multi(pending)
                     if safe > 0:
                         content_parts.append(self.buffer[:safe])
+                        self.seen_content = True
                         self.buffer = self.buffer[safe:]
                     break
-                # 找到开标签：先输出标签之前的文本作为 content
+
+                idx, kind = min(candidates)
                 if idx > 0:
                     content_parts.append(self.buffer[:idx])
-                # 跳过开标签，进入 think 模式
-                self.buffer = self.buffer[idx + len(self.OPEN_TAG):]
-                self.in_think = True
+                    self.seen_content = True
+
+                if kind == "think_open":
+                    self.buffer = self.buffer[idx + len(self.OPEN_TAG):]
+                    self.in_think = True
+                elif kind == "thought_bare":
+                    self.buffer = self.buffer[idx + len(self.THOUGHT_MARKER):]
+                    self.in_think = True
+                    self.seen_content = True
+                else:
+                    rest = self.buffer[idx + len(self.GEMMA_CHANNEL_PREFIX):]
+                    if rest.startswith(self.GEMMA_THOUGHT_OPEN):
+                        self.buffer = rest[len(self.GEMMA_THOUGHT_OPEN):]
+                        self.in_think = True
+                    else:
+                        nl_idx = rest.find("\n")
+                        if nl_idx == -1:
+                            self.buffer = self.buffer[idx:]
+                            break
+                        self.buffer = rest[nl_idx + 1:]
             else:
-                # 处于 think 块内，查找闭标签 </think>
-                idx = self.buffer.find(self.CLOSE_TAG)
-                if idx == -1:
-                    # 未找到完整闭标签，保留可能是闭标签前缀的部分
-                    safe = self._safe_emit_length(self.CLOSE_TAG)
+                candidates = []
+                think_close_idx = self.buffer.find(self.CLOSE_TAG)
+                if think_close_idx != -1:
+                    candidates.append((think_close_idx, "think_close"))
+                gemma_idx = self.buffer.find(self.GEMMA_CHANNEL_PREFIX)
+                if gemma_idx != -1:
+                    candidates.append((gemma_idx, "gemma"))
+                final_idx = self.buffer.find(self.FINAL_MARKER)
+                if final_idx != -1:
+                    candidates.append((final_idx, "final_bare"))
+
+                if not candidates:
+                    safe = self._safe_emit_length_multi(
+                        [self.CLOSE_TAG, self.GEMMA_CHANNEL_PREFIX, self.FINAL_MARKER]
+                    )
                     if safe > 0:
                         thinking_parts.append(self.buffer[:safe])
                         self.buffer = self.buffer[safe:]
                     break
-                # 找到闭标签：输出标签之前的文本作为 thinking
+
+                idx, kind = min(candidates)
                 if idx > 0:
                     thinking_parts.append(self.buffer[:idx])
-                # 跳过闭标签，退出 think 模式
-                self.buffer = self.buffer[idx + len(self.CLOSE_TAG):]
-                self.in_think = False
+
+                if kind == "think_close":
+                    self.buffer = self.buffer[idx + len(self.CLOSE_TAG):]
+                    self.in_think = False
+                    self.seen_content = True
+                elif kind == "final_bare":
+                    self.buffer = self.buffer[idx + len(self.FINAL_MARKER):]
+                    self.in_think = False
+                    self.seen_content = True
+                else:
+                    rest = self.buffer[idx + len(self.GEMMA_CHANNEL_PREFIX):]
+                    if rest.startswith(self.GEMMA_THOUGHT_OPEN):
+                        self.buffer = rest[len(self.GEMMA_THOUGHT_OPEN):]
+                    else:
+                        nl_idx = rest.find("\n")
+                        if nl_idx == -1:
+                            self.buffer = self.buffer[idx:]
+                            break
+                        self.buffer = rest[nl_idx + 1:]
+                        self.in_think = False
 
         return ("".join(thinking_parts), "".join(content_parts))
 
-    def flush(self) -> Tuple[str, str]:
+    def flush(self) -> tuple:
         """流结束时调用，把 buffer 中剩余内容按当前状态输出，并重置状态。"""
         remaining = self.buffer
         was_in_think = self.in_think
         self.buffer = ""
         self.in_think = False
+        self.seen_content = False
         if not remaining:
             return ("", "")
         if was_in_think:
-            # 模型未闭合 <think> 标签，把剩余当作 thinking
             return (remaining, "")
         return ("", remaining)
 
-    def _safe_emit_length(self, pending_tag: str) -> int:
-        """计算 buffer 中可以安全输出的长度，避免输出 pending_tag 的未完成前缀。
-
-        例如 buffer = "hello <thi"，pending_tag = "<think>"，
-        则末尾 "<thi" 可能是 "<think>" 的前缀，不能输出，
-        安全输出长度为 6（即 "hello "）。
-        """
-        max_prefix = min(len(pending_tag) - 1, len(self.buffer))
-        for prefix_len in range(max_prefix, 0, -1):
-            if self.buffer.endswith(pending_tag[:prefix_len]):
-                return len(self.buffer) - prefix_len
-        return len(self.buffer)
-
-
-# ========== 自动记忆提取（当 LLM 不支持 tools 时） ==========
-
-# 匹配包含个人信息的用户消息模式
+    def _safe_emit_length_multi(self, pending_tags):
+        """Calculate safe emit length to avoid outputting incomplete prefix of any pending_tag."""
+        max_prefix_len = 0
+        for tag in pending_tags:
+            max_prefix = min(len(tag) - 1, len(self.buffer))
+            for prefix_len in range(max_prefix, 0, -1):
+                if self.buffer.endswith(tag[:prefix_len]):
+                    if prefix_len > max_prefix_len:
+                        max_prefix_len = prefix_len
+                    break
+        return len(self.buffer) - max_prefix_len
 _MEMORY_PATTERNS = [
     # 名字/称呼 - 注意：排除疑问句中的"我叫"
     (r"^(?!.*还?记得).*(?:我(?:叫|是)([\w·]{2,10}))(?!.*[？?])", "name"),
@@ -272,6 +341,37 @@ def _try_auto_store_memory(
             logger.info(f"自动记忆提取并存储: {memory_content[:80]}... -> {result}")
     except Exception as e:
         logger.warning(f"自动记忆提取失败: {e}")
+
+
+# Agent 工具列表缓存（避免每次请求重建 OpenAI function schema）
+_tools_cache: Dict[str, List[Dict]] = {}
+_tools_cache_sig: Dict[str, int] = {}
+
+
+def _get_tools_for_agent(agent_id: str) -> List[Dict]:
+    """获取 Agent 的工具列表，按 agent_id 缓存，工具注册数量变化时失效。"""
+    current_sig = len(tool_registry._tools)
+    if agent_id in _tools_cache and _tools_cache_sig.get(agent_id) == current_sig:
+        return _tools_cache[agent_id]
+
+    builtin_tools = get_builtin_tools()
+    EXCLUDED_CATEGORIES = {"summary"}
+    main_tool_names = {
+        "write_long_term_memory", "search_all_memories", "call_assistant",
+        "set_alarm", "mono", "write_permanent_memory",
+        "acp_list_agents", "acp_connect", "acp_disconnect", "acp_send_message",
+        "acp_create_group", "acp_join_group", "acp_leave_group",
+    }
+    main_tools = []
+    for tool_name in main_tool_names:
+        tool = tool_registry.get_tool(tool_name)
+        if tool and tool.enabled and tool.category not in EXCLUDED_CATEGORIES:
+            main_tools.append(tool.to_openai_function())
+
+    tools = builtin_tools + main_tools
+    _tools_cache[agent_id] = tools
+    _tools_cache_sig[agent_id] = current_sig
+    return tools
 
 
 class ChatRequest(BaseModel):
@@ -400,6 +500,7 @@ async def chat(request: ChatRequest):
     from backend.api.app import get_context_manager, get_memory_manager
 
     try:
+        _t0 = time.monotonic()
         # 1. 获取 Agent 配置
         agent_config = get_agent_config(request.agent_id)
         set_current_agent_id(request.agent_id)
@@ -421,6 +522,7 @@ async def chat(request: ChatRequest):
                 session_id=session_id,
                 metadata={"agent_id": request.agent_id},
             )
+        _t1 = time.monotonic()
 
         # 4. 检索记忆（如果启用）
         memory_context = None
@@ -441,6 +543,7 @@ async def chat(request: ChatRequest):
                 memory_context = "\n".join(
                     [f"- {m['content']}" for m in routing_result.memories[:agent_config.get("memory_context_limit", 5)]]
                 )
+        _t2 = time.monotonic()
 
         # 5. 构建消息列表（在 add_message 之前，避免当前用户消息重复）
         messages = build_messages(
@@ -451,9 +554,11 @@ async def chat(request: ChatRequest):
             memory_context=memory_context,
             images=request.images,
         )
+        _t3 = time.monotonic()
 
         # 6. 添加用户消息到上下文（在构建消息之后，避免历史中重复）
         context_mgr.add_message(session_id=session_id, role="user", content=request.message)
+        _t4 = time.monotonic()
 
         # 7. 获取工具（排除 summary 类别，合并内置工具）
         builtin_tools = get_builtin_tools()
@@ -469,9 +574,16 @@ async def chat(request: ChatRequest):
         tools = builtin_tools + filtered_registered
         if not tools:
             tools = None
+        _t5 = time.monotonic()
 
         # 8. 调用 LLM
         response = await llm.chat(messages=messages, stream=False, tools=tools if tools else None)
+        _t6 = time.monotonic()
+        logger.info(
+            f"[CHAT_TIMING] session={int((_t1-_t0)*1000)}ms memory={int((_t2-_t1)*1000)}ms "
+            f"build={int((_t3-_t2)*1000)}ms add_user={int((_t4-_t3)*1000)}ms "
+            f"tools={int((_t5-_t4)*1000)}ms llm={int((_t6-_t5)*1000)}ms total_pre_llm={int((_t5-_t0)*1000)}ms"
+        )
 
         # 9. 循环处理工具调用（最多10轮，防止无限循环和高成本）
         max_tool_rounds = 10
@@ -543,10 +655,16 @@ async def chat(request: ChatRequest):
         final_response = response.content
 
         # 10. 保存助手响应到上下文
+        _t7 = time.monotonic()
         context_mgr.add_message(session_id=session_id, role="assistant", content=final_response)
+        _t8 = time.monotonic()
 
         # 11. 当 LLM 不支持 tools 时，自动提取并存储记忆
         _try_auto_store_memory(request.message, final_response, llm, session_id)
+        _t9 = time.monotonic()
+        logger.info(
+            f"[CHAT_TIMING_POST] add_asst={int((_t8-_t7)*1000)}ms auto_store={int((_t9-_t8)*1000)}ms"
+        )
 
         return {
             "status": "success",
@@ -571,6 +689,7 @@ async def chat_stream(request: ChatRequest):
     from backend.api.app import get_context_manager, get_memory_manager
 
     try:
+        # Fast prep only: agent config, managers, session, LLM client
         # 1. 获取 Agent 配置
         agent_config = get_agent_config(request.agent_id)
         set_current_agent_id(request.agent_id)
@@ -593,75 +712,76 @@ async def chat_stream(request: ChatRequest):
                 metadata={"agent_id": request.agent_id},
             )
 
-        # 4. 检索记忆（如果启用）
-        memory_context = None
-        if agent_config.get("use_memory", True) and memory_mgr:
-            from backend.core.memory.router import MemoryRouter
-
-            router = MemoryRouter(
-                memory_manager=memory_mgr,
-                vector_store=getattr(memory_mgr, "_vector_store", None),
-                embedding_model=getattr(memory_mgr, "_embedding_model", None),
-            )
-            routing_result = await router.route(
-                query=request.message,
-                session_id=session_id,
-                scene_type=agent_config.get("memory_scene", "chat"),
-            )
-            if routing_result.memories:
-                memory_context = "\n".join(
-                    [f"- {m['content']}" for m in routing_result.memories[:agent_config.get("memory_context_limit", 5)]]
-                )
-
-        # 5. 构建消息列表（在 add_message 之前，避免当前用户消息重复）
-        messages = build_messages(
-            agent_config=agent_config,
-            context_mgr=context_mgr,
-            session_id=session_id,
-            user_message=request.message,
-            memory_context=memory_context,
-        )
-
-        # 6. 添加用户消息到上下文（在构建消息之后，避免历史中重复）
-        context_mgr.add_message(session_id=session_id, role="user", content=request.message)
-
-        # 7. 获取工具（排除 summary 类别，合并内置工具）
-        builtin_tools = get_builtin_tools()
-
-        # 主模型专属工具列表
-        EXCLUDED_CATEGORIES = {"summary"}
-        main_tool_names = {
-            "write_long_term_memory",
-            "search_all_memories",
-            "call_assistant",
-            "set_alarm",
-            "mono",
-            "write_permanent_memory",
-            "acp_list_agents",
-            "acp_connect",
-            "acp_disconnect",
-            "acp_send_message",
-            "acp_create_group",
-            "acp_join_group",
-            "acp_leave_group",
-        }
-        main_tools = []
-        for tool_name in main_tool_names:
-            tool = tool_registry.get_tool(tool_name)
-            if tool and tool.enabled and tool.category not in EXCLUDED_CATEGORIES:
-                main_tools.append(tool.to_openai_function())
-
-        tools = builtin_tools + main_tools
-
-        logger.info(
-            f"为 Agent '{agent_config.get('name')}' 配置了 {len(tools)} 个工具: {[t['function']['name'] for t in tools]}"
-        )
-
         async def generate_stream():
             """生成流式响应（消费共享聊天流生成器）"""
+            import time as _time
+            _t_start = _time.monotonic()
+            # 1. Send session event IMMEDIATELY (before slow prep) so frontend shows "thinking"
+            yield f"data: {json.dumps({'type': 'session', 'session_id': session_id}, ensure_ascii=False)}\n\n"
+            _t_session = _time.monotonic()
+
             state = ChatStreamState()
+            _t_llm_first = None
+            _t_llm_end = None
+            _t_tools_total = 0.0
+            persist_task = None
             try:
+                async def _retrieve_memory():
+                    if not (agent_config.get("use_memory", True) and memory_mgr):
+                        return None
+                    from backend.core.memory.router import MemoryRouter
+
+                    router = MemoryRouter(
+                        memory_manager=memory_mgr,
+                        vector_store=getattr(memory_mgr, "_vector_store", None),
+                        embedding_model=getattr(memory_mgr, "_embedding_model", None),
+                    )
+                    routing_result = await router.route(
+                        query=request.message,
+                        session_id=session_id,
+                        scene_type=agent_config.get("memory_scene", "chat"),
+                    )
+                    if routing_result.memories:
+                        return "\n".join(
+                            [f"- {m['content']}" for m in routing_result.memories[:agent_config.get("memory_context_limit", 5)]]
+                        )
+                    return None
+
+                async def _persist_user_message():
+                    await context_mgr.add_message_async(
+                        session_id=session_id, role="user", content=request.message
+                    )
+
+                # 并行准备：记忆检索（async）与工具获取（sync 走缓存）并行
+                # 注意：用户消息持久化不能与记忆检索并行——add_message_async 会立即
+                # 在内存历史中追加当前消息，而 build_messages 会读历史并再次追加
+                # user_message，导致重复。故持久化改为与 LLM 流并行（见下）。
+                _t_prep_start = _time.monotonic()
+                memory_task = asyncio.create_task(_retrieve_memory())
+                tools = _get_tools_for_agent(request.agent_id)
+                memory_context = await memory_task
+                _t_prep_end = _time.monotonic()
+
+                # 构建消息列表（必须在持久化用户消息之前，避免当前用户消息重复）
+                _t_build_start = _time.monotonic()
+                messages = build_messages(
+                    agent_config=agent_config,
+                    context_mgr=context_mgr,
+                    session_id=session_id,
+                    user_message=request.message,
+                    memory_context=memory_context,
+                )
+                _t_build_end = _time.monotonic()
+
+                # 用户消息持久化与 LLM 流并行（磁盘写入卸载到线程，不阻塞 TTFT）
+                persist_task = asyncio.create_task(_persist_user_message())
+
+                logger.info(
+                    f"为 Agent '{agent_config.get('name')}' 配置了 {len(tools)} 个工具: {[t['function']['name'] for t in tools]}"
+                )
                 logger.info(f"generate_stream 开始: llm={llm}, messages={len(messages)}, tools={len(tools)}")
+
+                _t_llm_start = _time.monotonic()
                 async for event in generate_chat_stream(
                     llm=llm,
                     messages=messages,
@@ -670,17 +790,42 @@ async def chat_stream(request: ChatRequest):
                     session_id=session_id,
                     state=state,
                 ):
+                    # 记录首 token 时间
+                    if _t_llm_first is None and event.get("type") in ("content", "thinking"):
+                        _t_llm_first = _time.monotonic()
+                    # 累计工具执行时间
+                    if event.get("type") == "tool_start":
+                        _t_tool_start = _time.monotonic()
+                    elif event.get("type") == "tool_result":
+                        _t_tools_total += _time.monotonic() - _t_tool_start
                     logger.debug(f"generate_stream yield event: {event.get('type')}")
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                _t_llm_end = _time.monotonic()
                 logger.info(f"generate_stream 结束: accumulated={len(state.accumulated_response)}")
+                # 输出分阶段计时
+                logger.info(
+                    f"[STREAM_TIMING] session={int((_t_session-_t_start)*1000)}ms "
+                    f"prep={int((_t_prep_end-_t_prep_start)*1000)}ms "
+                    f"build={int((_t_build_end-_t_build_start)*1000)}ms "
+                    f"llm_first={int((_t_llm_first-_t_llm_start)*1000) if _t_llm_first else -1}ms "
+                    f"llm_total={int((_t_llm_end-_t_llm_start)*1000)}ms "
+                    f"tools={int(_t_tools_total*1000)}ms "
+                    f"total={int((_t_llm_end-_t_start)*1000)}ms"
+                )
             except Exception as e:
                 logger.error(f"generate_stream 异常: {e}", exc_info=True)
                 yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
             finally:
+                # 确保用户消息持久化完成
+                if persist_task is not None:
+                    try:
+                        await persist_task
+                    except Exception:
+                        pass
                 # 确保 assistant 消息可靠落库（使用跨轮累积内容）
                 if state.accumulated_response:
                     try:
-                        context_mgr.add_message(
+                        await context_mgr.add_message_async(
                             session_id=session_id,
                             role="assistant",
                             content=state.accumulated_response,
@@ -795,14 +940,11 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
                 title="记忆管理对话",
             )
 
-        # 5. 加载历史上下文（从数据库，条数可由 history_limit 配置，默认 50）
+        # 5. 加载历史上下文（在 add_message 之前加载，避免当前用户消息重复）
         history_limit = agent_config.get("history_limit", 50)
         history_context = context_mgr.get_message_history(agent_id="memory-agent", limit=history_limit)
 
-        # 6. 添加用户消息到上下文（持久化）
-        context_mgr.add_message(session_id=session_id, role="user", content=request.message)
-
-        # 7. 构建消息列表（包含历史上下文）
+        # 6. 构建消息列表（包含历史上下文）
         messages = []
 
         # 系统提示词
@@ -831,207 +973,43 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
         )
 
         async def generate_stream():
-            """生成流式响应（支持多轮工具调用循环）"""
-            full_response = ""
-            full_thinking = ""
-            think_parser = ThinkTagStreamParser()
+            """生成流式响应（消费共享聊天流生成器）"""
+            # 1. 立即发送 session 事件，让前端显示"思考中"状态
+            yield f"data: {json.dumps({'type': 'session', 'session_id': session_id}, ensure_ascii=False)}\n\n"
 
-            # 发送会话ID作为第一个事件
-            yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
+            # 2. 用户消息异步持久化（不阻塞事件循环）
+            try:
+                await context_mgr.add_message_async(
+                    session_id=session_id, role="user", content=request.message
+                )
+            except Exception as e:
+                logger.warning(f"记忆管理模型用户消息持久化失败: {e}")
 
+            state = ChatStreamState()
             try:
                 logger.info(
                     f"开始记忆管理模型流式聊天，消息数: {len(messages)}, 工具数: {len(tools)}"
                 )
-
-                max_tool_rounds = 50
-                for round_idx in range(max_tool_rounds):
-                    full_response = ""
-                    tool_calls_buffer = []
-                    stream_error = None
-
-                    # 调用LLM流式接口
-                    async for chunk in llm.stream_chat(
-                        messages=messages,
-                        temperature=agent_config.get("temperature", 0.3),
-                        max_tokens=(agent_config.get("max_tokens") if agent_config.get("max_tokens") is not None else 4096),
-                        tools=tools if tools else None,
-                    ):
-                        if chunk:
-                            if isinstance(chunk, dict):
-                                chunk_type = chunk.get("type")
-                                if chunk_type == "thinking":
-                                    thinking_content = chunk.get("content", "")
-                                    full_thinking += thinking_content
-                                    yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_content})}\n\n"
-                                elif chunk_type == "content":
-                                    content = chunk.get("content", "")
-                                    # 解析内嵌的 <think>...</think> 标签，分离思考过程与正文
-                                    thinking_out, content_out = think_parser.feed(content)
-                                    if thinking_out:
-                                        full_thinking += thinking_out
-                                        yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_out})}\n\n"
-                                    if content_out:
-                                        full_response += content_out
-                                        yield f"data: {json.dumps({'type': 'content', 'content': content_out})}\n\n"
-                                elif chunk_type == "tool_calls":
-                                    new_tool_calls = chunk.get("tool_calls", [])
-                                    logger.info(f"检测到工具调用(第{round_idx+1}轮): {[tc.get('function',{}).get('name','') for tc in new_tool_calls]}")
-                                    tool_calls_buffer.extend(new_tool_calls)
-                                    for tool_call in new_tool_calls:
-                                        yield f"data: {json.dumps({'type': 'tool_call', 'tool_call': tool_call})}\n\n"
-                                elif chunk_type == "error":
-                                    stream_error = chunk.get("content", "")
-                                    logger.warning(f"记忆管理模型流式聊天收到错误事件: {stream_error}")
-                            elif isinstance(chunk, str):
-                                # 字符串 chunk 同样需要解析 <think> 标签
-                                thinking_out, content_out = think_parser.feed(chunk)
-                                if thinking_out:
-                                    full_thinking += thinking_out
-                                    yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_out})}\n\n"
-                                if content_out:
-                                    full_response += content_out
-                                    yield f"data: {json.dumps({'type': 'content', 'content': content_out})}\n\n"
-
-                    # 流式结束，刷新 <think> 标签解析器，输出缓冲区中剩余内容
-                    flush_thinking, flush_content = think_parser.flush()
-                    if flush_thinking:
-                        full_thinking += flush_thinking
-                        yield f"data: {json.dumps({'type': 'thinking', 'content': flush_thinking})}\n\n"
-                    if flush_content:
-                        full_response += flush_content
-                        yield f"data: {json.dumps({'type': 'content', 'content': flush_content})}\n\n"
-
-                    # 如果流式调用失败，回退到非流式聊天
-                    if not full_response and not tool_calls_buffer and stream_error:
-                        logger.warning(f"记忆管理模型流式聊天失败，回退到非流式模式: {stream_error}")
-                        try:
-                            response = await llm.chat(
-                                messages=messages,
-                                stream=False,
-                                temperature=agent_config.get("temperature", 0.3),
-                                max_tokens=(agent_config.get("max_tokens") if agent_config.get("max_tokens") is not None else 4096),
-                                tools=tools if tools else None,
-                            )
-                            if hasattr(response, "tool_calls") and response.tool_calls:
-                                tool_calls_buffer = response.tool_calls
-                            elif response.content:
-                                full_response = response.content
-                                yield f"data: {json.dumps({'type': 'content', 'content': full_response})}\n\n"
-                        except Exception as fallback_err:
-                            logger.error(f"记忆管理模型非流式回退也失败: {fallback_err}")
-
-                    # 文本工具调用兜底：模型未走标准 function calling，
-                    # 而是以文本形式（如 <execute_tool>tool()</execute_tool>）表达调用意图
-                    if not tool_calls_buffer and full_response:
-                        tool_name_set = {
-                            t["function"]["name"] for t in tools
-                        } if tools else set()
-                        tool_name_set |= {"calculator", "datetime", "random", "json_format"}
-                        text_tool_calls = parse_text_tool_calls(full_response, tool_name_set)
-                        # 防御性过滤：剔除空参数的工具调用（arguments 为 "{}" 或空字符串）。
-                        # 这些通常是 LLM 在解释性文本中提到工具名而被误解析为工具调用，
-                        # 执行时必然失败（缺少必填参数），只会污染 UI 展示。
-                        text_tool_calls = [
-                            tc for tc in text_tool_calls
-                            if tc.get("function", {}).get("arguments", "{}") not in ("{}", "", None)
-                        ]
-                        if text_tool_calls:
-                            logger.info(
-                                f"文本工具调用兜底解析(第{round_idx+1}轮): "
-                                f"{[tc.get('function',{}).get('name','') for tc in text_tool_calls]}"
-                            )
-                            tool_calls_buffer = text_tool_calls
-                            # 清理展示文本中的工具标记，仅保留纯文本
-                            full_response = strip_text_tool_calls(full_response)
-
-                    # 没有工具调用，退出循环
-                    if not tool_calls_buffer:
-                        break
-
-                    # 处理工具调用
-                    # BUILTIN_TOOL_NAMES 已在文件顶部导入
-
-                    # 构建标准的 assistant tool_calls 消息
-                    assistant_tool_calls = []
-                    for tool_call in tool_calls_buffer:
-                        func = tool_call.get("function", {})
-                        tc_entry = {
-                            "id": tool_call.get("id", ""),
-                            "type": "function",
-                            "function": {
-                                "name": func.get("name", tool_call.get("name", "")),
-                                "arguments": func.get("arguments", tool_call.get("arguments", "{}")),
-                            },
-                        }
-                        assistant_tool_calls.append(tc_entry)
-
-                    messages.append({
-                        "role": "assistant",
-                        "content": full_response or None,
-                        "tool_calls": assistant_tool_calls,
-                    })
-
-                    for tool_call in tool_calls_buffer:
-                        func = tool_call.get("function", {})
-                        tool_name = func.get("name", tool_call.get("name", ""))
-                        tool_args = func.get("arguments", tool_call.get("arguments", "{}"))
-
-                        if isinstance(tool_args, str):
-                            try:
-                                tool_args = json.loads(tool_args)
-                            except json.JSONDecodeError as e:
-                                logger.warning(f"工具参数 JSON 解析失败: {e}, 原始参数: {tool_args}")
-                                try:
-                                    import ast
-                                    tool_args = ast.literal_eval(tool_args)
-                                    if not isinstance(tool_args, dict):
-                                        tool_args = {}
-                                except Exception:
-                                    tool_args = {}
-
-                        # 发送工具执行开始事件
-                        yield f"data: {json.dumps({'type': 'tool_start', 'tool_name': tool_name})}\n\n"
-
-                        # 执行工具
-                        try:
-                            if tool_name in BUILTIN_TOOL_NAMES:
-                                tool_result = call_builtin_tool(tool_name, tool_args or {})
-                            else:
-                                tool_result = tool_registry.call_tool(tool_name, tool_args)
-                        except Exception as e:
-                            logger.warning(f"工具 {tool_name} 执行失败: {e}")
-                            tool_result = {"success": False, "error": str(e)}
-
-                        # 发送工具执行结果事件
-                        yield f"data: {json.dumps({'type': 'tool_result', 'tool_name': tool_name, 'result': tool_result})}\n\n"
-
-                        # 添加工具结果到消息
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.get("id", ""),
-                            "name": tool_name,
-                            "content": json.dumps(tool_result, ensure_ascii=False),
-                        })
-
-                    # 继续下一轮循环，让 LLM 处理工具结果
-
-                # 流结束，兜底再清理一次工具标记
-                if full_response:
-                    full_response = strip_text_tool_calls(full_response)
-
-                # 发送完成事件
-                yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
-
+                async for event in generate_chat_stream(
+                    llm=llm,
+                    messages=messages,
+                    agent_config=agent_config,
+                    tools=tools,
+                    session_id=session_id,
+                    state=state,
+                ):
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             except Exception as e:
                 logger.error(f"记忆管理模型流式聊天错误: {e}", exc_info=True)
-                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+                yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
             finally:
-                # 确保 assistant 消息可靠落库
-                if full_response:
+                # 确保 assistant 消息可靠落库（使用跨轮累积内容）
+                if state.accumulated_response:
                     try:
-                        context_mgr.add_message(
-                            session_id=session_id, role="assistant", content=full_response
+                        await context_mgr.add_message_async(
+                            session_id=session_id,
+                            role="assistant",
+                            content=state.accumulated_response,
                         )
                     except Exception:
                         pass
@@ -1104,14 +1082,11 @@ async def summary_agent_chat_stream(request: SummaryAgentChatRequest):
                 title="摘要助手对话",
             )
 
-        # 5. 加载历史上下文（摘要助手保持自己的会话历史）
+        # 5. 加载历史上下文（在 add_message 之前加载，避免当前用户消息重复）
         history_limit = agent_config.get("history_limit", 50)
         history_context = context_mgr.get_messages(session_id=session_id, limit=history_limit)
 
-        # 6. 添加用户消息到上下文（持久化）
-        context_mgr.add_message(session_id=session_id, role="user", content=request.message)
-
-        # 7. 构建消息列表（包含历史上下文）
+        # 6. 构建消息列表（包含历史上下文）
         messages = []
 
         # 系统提示词
@@ -1130,7 +1105,7 @@ async def summary_agent_chat_stream(request: SummaryAgentChatRequest):
         # 当前用户消息（history_context 在持久化之前加载，不含本条，需显式追加）
         messages.append({"role": "user", "content": request.message})
 
-        # 8. 获取摘要工具（summary类别工具 + 内置工具）
+        # 7. 获取摘要工具（summary类别工具 + 内置工具）
         builtin_tools = get_builtin_tools()
         summary_tools = tool_registry.list_openai_functions(include_builtin=False, category="summary")
         tools = builtin_tools + summary_tools
@@ -1155,235 +1130,56 @@ async def summary_agent_chat_stream(request: SummaryAgentChatRequest):
         # 用于捕获 save_diary_entry 工具调用的参数（支持每事件一篇，多次调用）
         captured_diary_entries = []
 
+        def _on_tool_result(tool_name: str, tool_args: Dict, tool_result: Dict) -> None:
+            """捕获 save_diary_entry 工具调用参数（用于上下文替换）"""
+            if tool_name == "save_diary_entry" and isinstance(tool_args, dict):
+                if tool_args.get("body"):
+                    captured_diary_entries.append({
+                        "body": tool_args.get("body"),
+                        "summarized_message_range": tool_args.get(
+                            "summarized_message_range"
+                        ),
+                    })
+
         async def generate_stream():
-            """生成流式响应（支持多轮工具调用循环）"""
-            full_response = ""
-            full_thinking = ""
-            think_parser = ThinkTagStreamParser()
+            """生成流式响应（消费共享聊天流生成器）"""
+            # 1. 立即发送 session 事件，让前端显示"思考中"状态
+            yield f"data: {json.dumps({'type': 'session', 'session_id': session_id}, ensure_ascii=False)}\n\n"
 
-            # 发送会话ID作为第一个事件
-            yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
+            # 2. 用户消息异步持久化（不阻塞事件循环）
+            try:
+                await context_mgr.add_message_async(
+                    session_id=session_id, role="user", content=request.message
+                )
+            except Exception as e:
+                logger.warning(f"摘要助手用户消息持久化失败: {e}")
 
+            state = ChatStreamState()
             try:
                 logger.info(
                     f"开始摘要助手流式聊天，消息数: {len(messages)}, 工具数: {len(tools)}"
                 )
-
-                max_tool_rounds = 50
-                for round_idx in range(max_tool_rounds):
-                    full_response = ""
-                    tool_calls_buffer = []
-                    stream_error = None
-
-                    # 调用LLM流式接口
-                    async for chunk in llm.stream_chat(
-                        messages=messages,
-                        temperature=agent_config.get("temperature", 0.3),
-                        max_tokens=(agent_config.get("max_tokens") if agent_config.get("max_tokens") is not None else 4096),
-                        tools=tools if tools else None,
-                    ):
-                        if chunk:
-                            if isinstance(chunk, dict):
-                                chunk_type = chunk.get("type")
-                                if chunk_type == "thinking":
-                                    thinking_content = chunk.get("content", "")
-                                    full_thinking += thinking_content
-                                    yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_content})}\n\n"
-                                elif chunk_type == "content":
-                                    content = chunk.get("content", "")
-                                    # 解析内嵌的 <think>...</think> 标签，分离思考过程与正文
-                                    thinking_out, content_out = think_parser.feed(content)
-                                    if thinking_out:
-                                        full_thinking += thinking_out
-                                        yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_out})}\n\n"
-                                    if content_out:
-                                        full_response += content_out
-                                        yield f"data: {json.dumps({'type': 'content', 'content': content_out})}\n\n"
-                                elif chunk_type == "tool_calls":
-                                    new_tool_calls = chunk.get("tool_calls", [])
-                                    # 过滤掉空参数的工具调用：LLM（尤其是 Ollama）有时会
-                                    # 生成空 arguments 的假调用，执行必然失败且污染 UI。
-                                    empty_names = [tc.get('function', {}).get('name', '') for tc in new_tool_calls if is_empty_tool_args(tc)]
-                                    if empty_names:
-                                        logger.warning(f"摘要助手过滤空参数工具调用: {empty_names}")
-                                    new_tool_calls = [tc for tc in new_tool_calls if not is_empty_tool_args(tc)]
-                                    if new_tool_calls:
-                                        logger.info(f"摘要助手检测到工具调用(第{round_idx+1}轮): {[tc.get('function',{}).get('name','') for tc in new_tool_calls]}")
-                                        tool_calls_buffer.extend(new_tool_calls)
-                                        for tool_call in new_tool_calls:
-                                            yield f"data: {json.dumps({'type': 'tool_call', 'tool_call': tool_call})}\n\n"
-                                elif chunk_type == "error":
-                                    stream_error = chunk.get("content", "")
-                                    logger.warning(f"摘要助手流式聊天收到错误事件: {stream_error}")
-                            elif isinstance(chunk, str):
-                                # 字符串 chunk 同样需要解析 <think> 标签
-                                thinking_out, content_out = think_parser.feed(chunk)
-                                if thinking_out:
-                                    full_thinking += thinking_out
-                                    yield f"data: {json.dumps({'type': 'thinking', 'content': thinking_out})}\n\n"
-                                if content_out:
-                                    full_response += content_out
-                                    yield f"data: {json.dumps({'type': 'content', 'content': content_out})}\n\n"
-
-                    # 流式结束，刷新 <think> 标签解析器，输出缓冲区中剩余内容
-                    flush_thinking, flush_content = think_parser.flush()
-                    if flush_thinking:
-                        full_thinking += flush_thinking
-                        yield f"data: {json.dumps({'type': 'thinking', 'content': flush_thinking})}\n\n"
-                    if flush_content:
-                        full_response += flush_content
-                        yield f"data: {json.dumps({'type': 'content', 'content': flush_content})}\n\n"
-
-                    # 如果流式调用失败，回退到非流式聊天
-                    if not full_response and not tool_calls_buffer and stream_error:
-                        logger.warning(f"摘要助手流式聊天失败，回退到非流式模式: {stream_error}")
-                        try:
-                            response = await llm.chat(
-                                messages=messages,
-                                stream=False,
-                                temperature=agent_config.get("temperature", 0.3),
-                                max_tokens=(agent_config.get("max_tokens") if agent_config.get("max_tokens") is not None else 4096),
-                                tools=tools if tools else None,
-                            )
-                            if hasattr(response, "tool_calls") and response.tool_calls:
-                                # 非流式回退同样过滤空参数工具调用
-                                filtered = [tc for tc in response.tool_calls if not is_empty_tool_args(tc)]
-                                if len(filtered) < len(response.tool_calls):
-                                    logger.warning(f"摘要助手非流式回退过滤空参数工具调用: {len(response.tool_calls) - len(filtered)} 个")
-                                tool_calls_buffer = filtered
-                                for tool_call in filtered:
-                                    yield f"data: {json.dumps({'type': 'tool_call', 'tool_call': tool_call})}\n\n"
-                            elif response.content:
-                                full_response = response.content
-                                yield f"data: {json.dumps({'type': 'content', 'content': full_response})}\n\n"
-                        except Exception as fallback_err:
-                            logger.error(f"摘要助手非流式回退也失败: {fallback_err}")
-
-                    # 文本工具调用兜底：模型未走标准 function calling，
-                    # 而是以文本形式（如 <execute_tool>tool()</execute_tool>）表达调用意图
-                    if not tool_calls_buffer and full_response:
-                        tool_name_set = {
-                            t["function"]["name"] for t in tools
-                        } if tools else set()
-                        tool_name_set |= {"calculator", "datetime", "random", "json_format"}
-                        text_tool_calls = parse_text_tool_calls(full_response, tool_name_set)
-                        # 防御性过滤：剔除空参数的工具调用（arguments 为 "{}" 或空字符串）。
-                        # 这些通常是 LLM 在解释性文本中提到工具名而被误解析为工具调用，
-                        # 执行时必然失败（缺少必填参数），只会污染 UI 展示。
-                        text_tool_calls = [
-                            tc for tc in text_tool_calls
-                            if not is_empty_tool_args(tc)
-                        ]
-                        if text_tool_calls:
-                            logger.info(
-                                f"摘要助手文本工具调用兜底解析(第{round_idx+1}轮): "
-                                f"{[tc.get('function',{}).get('name','') for tc in text_tool_calls]}"
-                            )
-                            tool_calls_buffer = text_tool_calls
-                            # 文本兜底解析出的工具调用也需要发送 tool_call 事件给前端，
-                            # 否则前端只能收到 tool_start/tool_result，无法显示参数详情
-                            for tool_call in text_tool_calls:
-                                yield f"data: {json.dumps({'type': 'tool_call', 'tool_call': tool_call})}\n\n"
-                            # 清理展示文本中的工具标记，仅保留纯文本
-                            full_response = strip_text_tool_calls(full_response)
-
-                    # 没有工具调用，退出循环
-                    if not tool_calls_buffer:
-                        break
-
-                    # 处理工具调用
-                    # BUILTIN_TOOL_NAMES 已在文件顶部导入
-
-                    # 构建标准的 assistant tool_calls 消息
-                    assistant_tool_calls = []
-                    for tool_call in tool_calls_buffer:
-                        func = tool_call.get("function", {})
-                        tc_entry = {
-                            "id": tool_call.get("id", ""),
-                            "type": "function",
-                            "function": {
-                                "name": func.get("name", tool_call.get("name", "")),
-                                "arguments": func.get("arguments", tool_call.get("arguments", "{}")),
-                            },
-                        }
-                        assistant_tool_calls.append(tc_entry)
-
-                    messages.append({
-                        "role": "assistant",
-                        "content": full_response or None,
-                        "tool_calls": assistant_tool_calls,
-                    })
-
-                    for tool_call in tool_calls_buffer:
-                        func = tool_call.get("function", {})
-                        tool_name = func.get("name", tool_call.get("name", ""))
-                        tool_args = func.get("arguments", tool_call.get("arguments", "{}"))
-
-                        if isinstance(tool_args, str):
-                            try:
-                                tool_args = json.loads(tool_args)
-                            except json.JSONDecodeError as e:
-                                logger.warning(f"工具参数 JSON 解析失败: {e}, 原始参数: {tool_args}")
-                                try:
-                                    import ast
-                                    tool_args = ast.literal_eval(tool_args)
-                                    if not isinstance(tool_args, dict):
-                                        tool_args = {}
-                                except Exception:
-                                    tool_args = {}
-
-                        # 捕获 save_diary_entry 工具调用参数（用于上下文替换）
-                        if tool_name == "save_diary_entry" and isinstance(tool_args, dict):
-                            if tool_args.get("body"):
-                                captured_diary_entries.append({
-                                    "body": tool_args.get("body"),
-                                    "summarized_message_range": tool_args.get(
-                                        "summarized_message_range"
-                                    ),
-                                })
-
-                        # 发送工具执行开始事件
-                        yield f"data: {json.dumps({'type': 'tool_start', 'tool_name': tool_name})}\n\n"
-
-                        # 执行工具
-                        try:
-                            if tool_name in BUILTIN_TOOL_NAMES:
-                                tool_result = call_builtin_tool(tool_name, tool_args or {})
-                            else:
-                                tool_result = tool_registry.call_tool(tool_name, tool_args)
-                        except Exception as e:
-                            logger.warning(f"工具 {tool_name} 执行失败: {e}")
-                            tool_result = {"success": False, "error": str(e)}
-
-                        # 发送工具执行结果事件
-                        yield f"data: {json.dumps({'type': 'tool_result', 'tool_name': tool_name, 'result': tool_result})}\n\n"
-
-                        # 添加工具结果到消息
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.get("id", ""),
-                            "name": tool_name,
-                            "content": json.dumps(tool_result, ensure_ascii=False),
-                        })
-
-                    # 继续下一轮循环，让 LLM 处理工具结果
-
-                # 流结束，兜底再清理一次工具标记
-                if full_response:
-                    full_response = strip_text_tool_calls(full_response)
-
-                # 发送完成事件
-                yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
-
+                async for event in generate_chat_stream(
+                    llm=llm,
+                    messages=messages,
+                    agent_config=agent_config,
+                    tools=tools,
+                    session_id=session_id,
+                    state=state,
+                    on_tool_result=_on_tool_result,
+                ):
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             except Exception as e:
                 logger.error(f"摘要助手流式聊天错误: {e}", exc_info=True)
-                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+                yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
             finally:
-                # 确保 assistant 消息可靠落库
-                if full_response:
+                # 确保 assistant 消息可靠落库（使用跨轮累积内容）
+                if state.accumulated_response:
                     try:
-                        context_mgr.add_message(
-                            session_id=session_id, role="assistant", content=full_response
+                        await context_mgr.add_message_async(
+                            session_id=session_id,
+                            role="assistant",
+                            content=state.accumulated_response,
                         )
                     except Exception:
                         pass
@@ -1416,7 +1212,7 @@ async def summary_agent_chat_stream(request: SummaryAgentChatRequest):
                                 summary_entries=summary_bodies,
                                 summarized_up_to_index=up_to_index,
                             )
-                            yield f"data: {json.dumps({'type': 'context_replaced', 'target_session_id': request.target_session_id, 'summarized_up_to': up_to_index})}\n\n"
+                            yield f"data: {json.dumps({'type': 'context_replaced', 'target_session_id': request.target_session_id, 'summarized_up_to': up_to_index}, ensure_ascii=False)}\n\n"
                             logger.info(
                                 f"目标会话上下文已替换: session={request.target_session_id}, up_to={up_to_index}, 摘要条目 {len(summary_bodies)} 篇"
                             )

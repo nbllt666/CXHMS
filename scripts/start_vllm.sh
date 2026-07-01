@@ -22,4 +22,5 @@ docker run -d --name vllm-gemma4 \
   --attention-backend triton_attn \
   --limit-mm-per-prompt '{"image": 999, "video": 999, "audio": 999}' \
   --enable-auto-tool-choice \
-  --tool-call-parser hermes
+  --tool-call-parser gemma4 \
+  --reasoning-parser gemma4

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import threading
@@ -257,6 +258,66 @@ class ContextManager:
             entry["session"]["message_count"] += 1
             entry["session"]["updated_at"] = now
             self._persist(session_id)
+
+        return message_id
+
+    async def add_message_async(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        content_type: str = "text",
+        metadata: Dict = None,
+        tokens: int = 0,
+    ) -> str:
+        """异步追加消息：内存立即更新（持锁），磁盘持久化通过 asyncio.to_thread 卸载，不阻塞事件循环。
+
+        与 add_message 行为一致，但将磁盘写入卸载到线程池，避免阻塞事件循环。
+        磁盘写入失败仅记录日志，不抛出异常（不打断流式响应）。
+        """
+        message_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        msg_meta = metadata or {}
+
+        message = {
+            "id": message_id,
+            "role": role,
+            "content": content,
+            "content_type": content_type,
+            "metadata": msg_meta,
+            "tokens": tokens,
+            "created_at": now,
+            "is_deleted": False,
+            "thinking": msg_meta.get("thinking"),
+            "images": msg_meta.get("images"),
+        }
+
+        with self._lock:
+            entry = self._store.get(session_id)
+            if not entry:
+                raise ContextError(f"Session {session_id} not found")
+
+            entry["messages"].append(message)
+            entry["session"]["message_count"] += 1
+            entry["session"]["updated_at"] = now
+            # Capture a snapshot for disk persistence (avoid holding lock during I/O)
+            snapshot = dict(entry["session"])
+            messages_snapshot = list(entry["messages"])
+            mono_contexts_snapshot = list(entry.get("mono_contexts", []))
+
+        # Disk persistence offloaded to thread pool (outside the lock)
+        try:
+            await asyncio.to_thread(
+                self._atomic_write,
+                session_id,
+                {
+                    "session": snapshot,
+                    "messages": messages_snapshot,
+                    "mono_contexts": mono_contexts_snapshot,
+                },
+            )
+        except Exception as e:
+            logger.warning(f"异步持久化失败 {session_id}: {e}")
 
         return message_id
 

@@ -205,6 +205,59 @@ async def get_memory_stats(workspace_id: str = "default"):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/memories/diary")
+async def get_diary_entries(
+    limit: int = 100, workspace_id: str = "default", agent_id: str = "default"
+):
+    """获取记录条目，按日期分组返回
+
+    Returns:
+        [{"date": "2026-06-20", "entries": [{...}, ...]}] 按日期降序
+    """
+    from backend.api.app import get_memory_manager
+
+    try:
+        memory_mgr = get_memory_manager()
+        memories = memory_mgr.search_memories(
+            memory_type="diary", limit=limit, workspace_id=workspace_id, agent_id=agent_id
+        )
+
+        grouped: Dict[str, list] = {}
+        for m in memories:
+            meta = m.get("metadata") or {}
+            date = meta.get("date") or "未知日期"
+            grouped.setdefault(date, []).append(m)
+
+        sorted_dates = sorted(grouped.keys(), reverse=True)
+        result = [{"date": d, "entries": grouped[d]} for d in sorted_dates]
+
+        return {
+            "status": "success",
+            "diary_groups": result,
+            "count": len(memories),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/memories/search-by-tag")
+async def search_by_tag_endpoint(
+    tag: str, limit: int = 20, workspace_id: str = "default", agent_id: str = "default"
+):
+    """按标签搜索记忆"""
+    from backend.api.app import get_memory_manager
+
+    try:
+        memory_mgr = get_memory_manager()
+        memories = memory_mgr.search_memories(
+            tags=[tag], limit=limit, workspace_id=workspace_id, agent_id=agent_id
+        )
+
+        return {"status": "success", "memories": memories, "count": len(memories)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/memories/{memory_id}")
 async def get_memory(memory_id: int, agent_id: str = "default"):
     from backend.api.app import get_memory_manager
@@ -739,61 +792,6 @@ async def get_memories_by_type(
         memory_mgr = get_memory_manager()
         memories = memory_mgr.search_memories(
             memory_type=memory_type, limit=limit, workspace_id=workspace_id, agent_id=agent_id
-        )
-
-        return {"status": "success", "memories": memories, "count": len(memories)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/memories/diary")
-async def get_diary_entries(
-    limit: int = 100, workspace_id: str = "default", agent_id: str = "default"
-):
-    """获取日记条目，按日期分组返回
-
-    Returns:
-        [{"date": "2026-06-20", "entries": [{...}, ...]}, ...] 按日期降序
-    """
-    from backend.api.app import get_memory_manager
-
-    try:
-        memory_mgr = get_memory_manager()
-        memories = memory_mgr.search_memories(
-            memory_type="diary", limit=limit, workspace_id=workspace_id, agent_id=agent_id
-        )
-
-        # 按 metadata.date 分组
-        grouped: Dict[str, list] = {}
-        for m in memories:
-            meta = m.get("metadata") or {}
-            date = meta.get("date") or "未知日期"
-            grouped.setdefault(date, []).append(m)
-
-        # 按日期降序排序
-        sorted_dates = sorted(grouped.keys(), reverse=True)
-        result = [{"date": d, "entries": grouped[d]} for d in sorted_dates]
-
-        return {
-            "status": "success",
-            "diary_groups": result,
-            "count": len(memories),
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/memories/search-by-tag")
-async def search_by_tag(
-    tag: str, limit: int = 20, workspace_id: str = "default", agent_id: str = "default"
-):
-    """按标签搜索记忆"""
-    from backend.api.app import get_memory_manager
-
-    try:
-        memory_mgr = get_memory_manager()
-        memories = memory_mgr.search_memories(
-            tags=[tag], limit=limit, workspace_id=workspace_id, agent_id=agent_id
         )
 
         return {"status": "success", "memories": memories, "count": len(memories)}

@@ -18,8 +18,8 @@ class Task:
     priority: str = "medium"  # low / medium / high / urgent
     status: str = "pending"  # pending / in_progress / completed / cancelled
     due_date: Optional[str] = None  # ISO 格式字符串
-    created_at: datetime = None
-    updated_at: datetime = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
 
     def to_dict(self) -> Dict[str, Any]:

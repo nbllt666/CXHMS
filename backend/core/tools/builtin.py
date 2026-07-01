@@ -4,6 +4,7 @@
 这些工具对所有 Agent 默认可用，不依赖工具注册表
 """
 
+import asyncio
 import ast
 import json
 import math
@@ -399,6 +400,11 @@ def get_builtin_tools() -> List[Dict[str, Any]]:
 def call_builtin_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """调用内置工具"""
     return builtin_tools.call_tool(name, arguments)
+
+
+async def call_builtin_tool_async(name: str, arguments: Dict = None) -> Dict:
+    """异步执行内置工具，通过 asyncio.to_thread 卸载到线程池，不阻塞事件循环。"""
+    return await asyncio.to_thread(call_builtin_tool, name, arguments or {})
 
 
 def register_builtin_tools():

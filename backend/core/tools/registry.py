@@ -248,7 +248,7 @@ class ToolRegistry:
                 if asyncio.iscoroutinefunction(tool.function):
                     result = await tool.function(**(arguments or {}))
                 else:
-                    result = tool.function(**(arguments or {}))
+                    result = await asyncio.to_thread(tool.function, **(arguments or {}))
 
                 return {"success": True, "result": result, "tool_name": name}
             else:
