@@ -66,7 +66,7 @@ class PermanentMemoryUpdateRequest(BaseModel):
 @router.get("/memories/agents")
 async def list_agent_memory_tables():
     """获取所有Agent的记忆表列表"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -108,7 +108,7 @@ async def list_memories(
     agent_id: str = "default",
 ):
     """列出记忆"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     actual_type = type or memory_type
 
@@ -161,7 +161,7 @@ async def list_memories(
 
 @router.post("/memories")
 async def create_memory(request: MemoryCreateRequest):
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
     from backend.core.memory.emotion import get_emotion_for_decay
 
     try:
@@ -194,7 +194,7 @@ async def create_memory(request: MemoryCreateRequest):
 
 @router.get("/memories/stats")
 async def get_memory_stats(workspace_id: str = "default"):
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -214,7 +214,7 @@ async def get_diary_entries(
     Returns:
         [{"date": "2026-06-20", "entries": [{...}, ...]}] 按日期降序
     """
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -245,7 +245,7 @@ async def search_by_tag_endpoint(
     tag: str, limit: int = 20, workspace_id: str = "default", agent_id: str = "default"
 ):
     """按标签搜索记忆"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -260,7 +260,7 @@ async def search_by_tag_endpoint(
 
 @router.get("/memories/{memory_id}")
 async def get_memory(memory_id: int, agent_id: str = "default"):
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -278,7 +278,7 @@ async def get_memory(memory_id: int, agent_id: str = "default"):
 
 @router.put("/memories/{memory_id}")
 async def update_memory(memory_id: int, request: MemoryUpdateRequest):
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -304,7 +304,7 @@ async def update_memory(memory_id: int, request: MemoryUpdateRequest):
 @router.delete("/memories/{memory_id}")
 async def delete_memory(memory_id: int, soft_delete: bool = True, agent_id: str = "default"):
     """删除记忆（默认软删除）"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -322,7 +322,7 @@ async def delete_memory(memory_id: int, soft_delete: bool = True, agent_id: str 
 
 @router.post("/memories/search")
 async def search_memories(request: MemorySearchRequest):
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -347,7 +347,7 @@ async def search_memories(request: MemorySearchRequest):
 @router.post("/memories/rag")
 async def rag_search(query: str, workspace_id: str = "default", limit: int = 5, agent_id: str = "default"):
     """RAG搜索"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
     from backend.core.exceptions import VectorStoreError
 
     try:
@@ -372,7 +372,7 @@ async def rag_search(query: str, workspace_id: str = "default", limit: int = 5, 
 
 @router.post("/memories/permanent")
 async def create_permanent_memory(request: PermanentMemoryCreateRequest):
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -392,7 +392,7 @@ async def create_permanent_memory(request: PermanentMemoryCreateRequest):
 
 @router.get("/memories/permanent/{memory_id}")
 async def get_permanent_memory(memory_id: int):
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -410,7 +410,7 @@ async def get_permanent_memory(memory_id: int):
 
 @router.get("/memories/permanent")
 async def list_permanent_memories(limit: int = 20, offset: int = 0, tags: List[str] = []):
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -425,7 +425,7 @@ async def list_permanent_memories(limit: int = 20, offset: int = 0, tags: List[s
 
 @router.put("/memories/permanent/{memory_id}")
 async def update_permanent_memory(memory_id: int, request: PermanentMemoryUpdateRequest):
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -445,7 +445,7 @@ async def update_permanent_memory(memory_id: int, request: PermanentMemoryUpdate
 
 @router.delete("/memories/permanent/{memory_id}")
 async def delete_permanent_memory(memory_id: int):
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -470,7 +470,7 @@ async def search_memories_3d(
     weights: List[float] = [0.35, 0.25, 0.4],
     workspace_id: str = "default",
 ):
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -504,12 +504,13 @@ async def search_memories_3d(
 
 
 @router.post("/memories/recall/{memory_id}")
-async def recall_memory(memory_id: int, emotion_intensity: float = 0.0):
-    from backend.api.app import get_memory_manager
+async def recall_memory(memory_id: int, emotion_intensity: float = 0.0, agent_id: str = "default"):
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
-        memory = memory_mgr.recall_memory(memory_id, emotion_intensity)
+        # B4: 透传 agent_id，按 agent 表查询，避免跨 agent 记忆串扰
+        memory = memory_mgr.recall_memory(memory_id, emotion_intensity, agent_id=agent_id)
 
         if not memory:
             raise HTTPException(status_code=404, detail="记忆不存在")
@@ -523,7 +524,7 @@ async def recall_memory(memory_id: int, emotion_intensity: float = 0.0):
 
 @router.post("/memories/batch/write")
 async def batch_write_memories(memories: List[Dict], raise_on_error: bool = False):
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         # 验证请求结构
@@ -554,7 +555,7 @@ class BatchUpdateRequest(BaseModel):
 @router.post("/memories/batch/update")
 async def batch_update_memories(request: BatchUpdateRequest):
     """批量更新记忆"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -599,7 +600,7 @@ async def batch_delete_memories(
     request: BatchIdsRequest, soft_delete: bool = False, raise_on_error: bool = False
 ):
     """批量删除记忆（默认硬删除）"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -619,7 +620,7 @@ async def batch_update_memory_tags(request: BatchTagsRequest):
     Args:
         request: 包含ids(记忆ID列表), tags(标签列表), operation(操作类型), agent_id
     """
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -638,7 +639,7 @@ async def batch_update_memory_tags(request: BatchTagsRequest):
 @router.post("/memories/batch/archive")
 async def batch_archive_memories(request: BatchIdsRequest):
     """批量归档记忆"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -652,7 +653,7 @@ async def batch_archive_memories(request: BatchIdsRequest):
 @router.post("/memories/batch/restore")
 async def batch_restore_memories(request: BatchIdsRequest):
     """批量恢复记忆"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -689,7 +690,7 @@ class BatchTagByQueryRequest(BaseModel):
 @router.post("/memories/batch/tag-by-query")
 async def batch_tag_by_query(request: BatchTagByQueryRequest):
     """按查询批量更新标签"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -726,7 +727,7 @@ class BatchDeleteByQueryRequest(BaseModel):
 @router.post("/memories/batch/delete-by-query")
 async def batch_delete_by_query(request: BatchDeleteByQueryRequest):
     """按查询批量删除"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -759,7 +760,7 @@ class BatchArchiveByQueryRequest(BaseModel):
 @router.post("/memories/batch/archive-by-query")
 async def batch_archive_by_query(request: BatchArchiveByQueryRequest):
     """按查询批量归档"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -786,7 +787,7 @@ async def get_memories_by_type(
     memory_type: str, limit: int = 20, workspace_id: str = "default", agent_id: str = "default"
 ):
     """按类型获取记忆"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -801,7 +802,7 @@ async def get_memories_by_type(
 
 @router.post("/memories/sync-decay")
 async def sync_decay_values(workspace_id: str = "default"):
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -814,7 +815,7 @@ async def sync_decay_values(workspace_id: str = "default"):
 
 @router.get("/memories/decay-stats")
 async def get_decay_statistics(workspace_id: str = "default"):
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -834,7 +835,7 @@ async def execute_secondary_command(
     context: Dict = {},
     priority: int = 0,
 ):
-    from backend.api.app import get_memory_manager, get_secondary_router
+    from backend.dependencies import get_memory_manager, get_secondary_router
 
     try:
         memory_mgr = get_memory_manager()
@@ -863,7 +864,7 @@ async def execute_secondary_command(
 
 @router.get("/memories/secondary/commands")
 async def get_secondary_commands():
-    from backend.api.app import get_secondary_router
+    from backend.dependencies import get_secondary_router
 
     try:
         secondary_router = get_secondary_router()
@@ -882,7 +883,7 @@ async def get_secondary_commands():
 
 @router.get("/memories/secondary/history")
 async def get_secondary_history(limit: int = 10):
-    from backend.api.app import get_secondary_router
+    from backend.dependencies import get_secondary_router
 
     try:
         secondary_router = get_secondary_router()
@@ -912,7 +913,7 @@ class SemanticSearchRequest(BaseModel):
 @router.post("/memories/semantic-search")
 async def semantic_search(request: SemanticSearchRequest):
     """语义搜索 - 基于向量相似度的搜索"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
     from backend.core.exceptions import VectorStoreError
 
     try:
@@ -947,7 +948,7 @@ async def semantic_search(request: SemanticSearchRequest):
 @router.get("/memories/vectors/status")
 async def get_vector_status():
     """获取向量数据库状态"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()

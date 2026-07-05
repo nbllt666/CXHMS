@@ -1,0 +1,124 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cxhms.local/schema/memory.json",
+  "title": "Memory",
+  "description": "CXHMS 记忆实体契约。对应 backend/models/memory.py 的 Memory dataclass。所有记忆读写必须通过本契约校验。",
+  "type": "object",
+  "required": ["id", "type", "content", "importance", "created_at", "workspace_id"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "记忆唯一标识，自增主键，0 表示尚未持久化"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["permanent", "long_term", "short_term"],
+      "description": "记忆类型：permanent=永久记忆、long_term=长期记忆、short_term=短期记忆"
+    },
+    "content": {
+      "type": "string",
+      "minLength": 1,
+      "description": "记忆文本内容，禁止空字符串"
+    },
+    "vector_id": {
+      "type": ["string", "null"],
+      "description": "向量库中的主键；未向量化时为 null"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "任意扩展元数据，如 {date, source_url, verified} 等",
+      "additionalProperties": true
+    },
+    "importance": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "重要度等级（1-5），影响召回权重与衰减速率"
+    },
+    "importance_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "default": 0.6,
+      "description": "归一化重要度分数 [0,1]，用于排序"
+    },
+    "decay_type": {
+      "type": "string",
+      "enum": ["exponential", "ebbinghaus"],
+      "default": "exponential",
+      "description": "衰减模型类型"
+    },
+    "decay_params": {
+      "type": "object",
+      "description": "衰减模型参数，如 {t50, k} 用于 ebbinghaus",
+      "additionalProperties": true
+    },
+    "reactivation_count": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "被召回激活的次数，每次召回提升记忆强度"
+    },
+    "emotion_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "default": 0.0,
+      "description": "情感强度分数 [0,1]，影响记忆持久化倾向"
+    },
+    "permanent": {
+      "type": "boolean",
+      "default": false,
+      "description": "是否为永久记忆（不衰减）"
+    },
+    "psychological_age": {
+      "type": "number",
+      "minimum": 0,
+      "default": 1.0,
+      "description": "心理年龄指标，随时间与召回变化的相对年龄"
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true,
+      "description": "标签列表，用于分类与按标签检索"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "创建时间，ISO 8601 字符串"
+    },
+    "updated_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "最近更新时间，未更新时为 null"
+    },
+    "archived_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "归档时间；未归档为 null"
+    },
+    "is_deleted": {
+      "type": "boolean",
+      "default": false,
+      "description": "软删除标记。true=已软删除，不参与默认检索"
+    },
+    "source": {
+      "type": "string",
+      "default": "user",
+      "description": "记忆来源，如 user/system/imported"
+    },
+    "workspace_id": {
+      "type": "string",
+      "default": "default",
+      "description": "工作空间隔离标识"
+    },
+    "agent_id": {
+      "type": "string",
+      "default": "default",
+      "description": "归属 Agent 标识，用于 agent 级记忆隔离"
+    }
+  }
+}

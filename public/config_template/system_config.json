@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cxhms.local/config_template/system_config.json",
+  "title": "SystemConfig",
+  "description": "系统级配置契约。对应 config/default.yaml 的 server/cors/logging/database/agent/security/monitoring 段。配置加载时自动补充缺失字段为默认值。",
+  "type": "object",
+  "required": ["server", "logging", "database"],
+  "additionalProperties": false,
+  "properties": {
+    "server": {
+      "type": "object",
+      "description": "HTTP 服务配置",
+      "additionalProperties": false,
+      "properties": {
+        "host": {"type": "string", "default": "0.0.0.0"},
+        "port": {"type": "integer", "default": 8001, "minimum": 1, "maximum": 65535},
+        "debug": {"type": "boolean", "default": true}
+      }
+    },
+    "cors": {
+      "type": "object",
+      "description": "CORS 跨域配置",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean", "default": true},
+        "origins": {"type": "array", "items": {"type": "string"}, "default": ["*"]},
+        "methods": {"type": "array", "items": {"type": "string"}, "default": ["*"]},
+        "headers": {"type": "array", "items": {"type": "string"}, "default": ["*"]},
+        "allow_credentials": {"type": "boolean", "default": true}
+      }
+    },
+    "logging": {
+      "type": "object",
+      "description": "日志配置",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+          "default": "INFO"
+        },
+        "format": {"type": "string", "default": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"},
+        "file": {"type": "string", "default": "logs/app.log"},
+        "max_bytes": {"type": "integer", "default": 10485760, "minimum": 1},
+        "backup_count": {"type": "integer", "default": 5, "minimum": 0}
+      }
+    },
+    "database": {
+      "type": "object",
+      "description": "数据库配置",
+      "additionalProperties": false,
+      "properties": {
+        "type": {"type": "string", "enum": ["sqlite", "postgres", "mysql"], "default": "sqlite"},
+        "path": {"type": "string", "default": "data/cxhms.db"},
+        "memories_db": {"type": "string", "default": "data/memories.db"},
+        "sessions_db": {"type": "string", "default": "data/sessions.db"},
+        "acp_db": {"type": "string", "default": "data/acp"},
+        "echo": {"type": "boolean", "default": false}
+      }
+    },
+    "agent": {
+      "type": "object",
+      "description": "本机 Agent 身份",
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {"type": "string", "default": "cxhms_agent_001"},
+        "name": {"type": "string", "default": "CXHMS Agent"},
+        "version": {"type": "string", "default": "1.0.0"},
+        "description": {"type": "string", "default": "一个智能记忆管理系统"},
+        "capabilities": {
+          "type": "array",
+          "items": {"type": "string"},
+          "default": ["memory", "tools", "chat", "context"]
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "description": "安全配置",
+      "additionalProperties": false,
+      "properties": {
+        "api_key_enabled": {"type": "boolean", "default": false},
+        "api_key": {"type": "string", "default": ""},
+        "rate_limit_enabled": {"type": "boolean", "default": false},
+        "rate_limit_requests": {"type": "integer", "default": 100, "minimum": 1},
+        "rate_limit_period": {"type": "integer", "default": 60, "minimum": 1}
+      }
+    },
+    "monitoring": {
+      "type": "object",
+      "description": "监控配置",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean", "default": true},
+        "metrics_enabled": {"type": "boolean", "default": true},
+        "health_check_enabled": {"type": "boolean", "default": true},
+        "performance_logging": {"type": "boolean", "default": true}
+      }
+    }
+  }
+}

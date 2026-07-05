@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../api/client';
+import { useTranslation } from 'react-i18next';
+import { api } from '../api';
 import { cn } from '../lib/utils';
 import { useThemeStore } from '../store/themeStore';
 import { PageHeader } from '../components/layout';
@@ -13,70 +14,8 @@ interface SettingSection {
   description: string;
 }
 
-const sections: SettingSection[] = [
-  {
-    id: 'appearance',
-    title: '外观设置',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
-        />
-      </svg>
-    ),
-    description: '主题、颜色和界面设置',
-  },
-  {
-    id: 'vector',
-    title: '向量存储',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
-        />
-      </svg>
-    ),
-    description: '配置向量数据库连接',
-  },
-  {
-    id: 'llm',
-    title: '模型设置',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-        />
-      </svg>
-    ),
-    description: '配置大语言模型参数',
-  },
-];
-
-const themeOptions = [
-  { value: 'light', label: '浅色', icon: '☀️', description: '明亮清爽的界面' },
-  { value: 'dark', label: '深色', icon: '🌙', description: '护眼暗色主题' },
-  { value: 'system', label: '跟随系统', icon: '💻', description: '自动跟随系统设置' },
-];
-
-const accentColors = [
-  { value: '#3b82f6', label: '蓝色', class: 'bg-blue-500' },
-  { value: '#8b5cf6', label: '紫色', class: 'bg-violet-500' },
-  { value: '#10b981', label: '绿色', class: 'bg-emerald-500' },
-  { value: '#f59e0b', label: '橙色', class: 'bg-amber-500' },
-  { value: '#ef4444', label: '红色', class: 'bg-red-500' },
-  { value: '#ec4899', label: '粉色', class: 'bg-pink-500' },
-];
-
 export function SettingsPage() {
+  const { t } = useTranslation();
   const [activeSection, setActiveSection] = useState<'appearance' | 'vector' | 'llm'>('appearance');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const saveStatusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,6 +27,70 @@ export function SettingsPage() {
 
   const { theme, setTheme } = useThemeStore();
   const [selectedAccent, setSelectedAccent] = useState('#3b82f6');
+
+  // 模块作用域数组移入组件以支持 i18n
+  const sections: SettingSection[] = [
+    {
+      id: 'appearance',
+      title: t('settings.appearanceSettings'),
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
+          />
+        </svg>
+      ),
+      description: t('settings.appearanceSettingsDesc'),
+    },
+    {
+      id: 'vector',
+      title: t('settings.vectorStorage'),
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
+          />
+        </svg>
+      ),
+      description: t('settings.vectorStorageDesc'),
+    },
+    {
+      id: 'llm',
+      title: t('settings.modelSettings'),
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+          />
+        </svg>
+      ),
+      description: t('settings.modelSettingsDesc'),
+    },
+  ];
+
+  const themeOptions = [
+    { value: 'light', label: t('settings.theme.light'), icon: '☀️', description: t('settings.themeLightDesc') },
+    { value: 'dark', label: t('settings.theme.dark'), icon: '🌙', description: t('settings.themeDarkDesc') },
+    { value: 'system', label: t('settings.theme.system'), icon: '💻', description: t('settings.themeSystemDesc') },
+  ];
+
+  const accentColors = [
+    { value: '#3b82f6', label: t('settings.accentBlue'), class: 'bg-blue-500' },
+    { value: '#8b5cf6', label: t('settings.accentPurple'), class: 'bg-violet-500' },
+    { value: '#10b981', label: t('settings.accentGreen'), class: 'bg-emerald-500' },
+    { value: '#f59e0b', label: t('settings.accentOrange'), class: 'bg-amber-500' },
+    { value: '#ef4444', label: t('settings.accentRed'), class: 'bg-red-500' },
+    { value: '#ec4899', label: t('settings.accentPink'), class: 'bg-pink-500' },
+  ];
 
   useEffect(() => {
     document.documentElement.style.setProperty('--accent', selectedAccent);
@@ -112,9 +115,10 @@ export function SettingsPage() {
 
   useEffect(() => {
     checkBackendStatus();
+    // F9: 健康检查轮询 3s → 15s，减少无谓周期请求
     const interval = setInterval(() => {
       checkBackendStatus();
-    }, 3000);
+    }, 15000);
     return () => clearInterval(interval);
   }, [checkBackendStatus]);
 
@@ -242,15 +246,15 @@ export function SettingsPage() {
 
   const handleSave = async () => {
     if (!isBackendRunning) {
-      alert('后端服务未运行，无法保存配置');
+      alert(t('settings.backendNotRunning'));
       return;
     }
     if (activeSection === 'vector' && envManagedSections.vector) {
-      alert('向量存储由环境变量管理，无法在界面修改');
+      alert(t('settings.vectorEnvManagedAlert'));
       return;
     }
     if (activeSection === 'llm' && envManagedSections.models) {
-      alert('模型设置由环境变量管理，无法在界面修改');
+      alert(t('settings.modelEnvManagedAlert'));
       return;
     }
     setSaveStatus('saving');
@@ -303,7 +307,7 @@ export function SettingsPage() {
 
   return (
     <div className={`max-w-6xl mx-auto ${themeTransition ? 'transition-colors duration-300' : ''}`}>
-      <PageHeader title="系统设置" description="配置系统外观、服务和行为" />
+      <PageHeader title={t('settings.title')} description={t('settings.pageDescription')} />
 
       <div className="flex gap-6">
         <nav className="w-56 flex-shrink-0 space-y-1">
@@ -334,7 +338,7 @@ export function SettingsPage() {
             <div className="space-y-6">
               <Card>
                 <CardBody>
-                  <h3 className="text-lg font-semibold mb-4">主题设置</h3>
+                  <h3 className="text-lg font-semibold mb-4">{t('settings.themeSettings')}</h3>
                   <div className="grid grid-cols-3 gap-4">
                     {themeOptions.map((option) => (
                       <button
@@ -360,7 +364,7 @@ export function SettingsPage() {
 
               <Card>
                 <CardBody>
-                  <h3 className="text-lg font-semibold mb-4">强调色</h3>
+                  <h3 className="text-lg font-semibold mb-4">{t('settings.accentColor')}</h3>
                   <div className="flex gap-3">
                     {accentColors.map((color) => (
                       <button
@@ -378,19 +382,19 @@ export function SettingsPage() {
                     ))}
                   </div>
                   <p className="text-xs text-[var(--color-text-tertiary)] mt-3">
-                    强调色用于按钮、链接和高亮元素
+                    {t('settings.accentColorDesc')}
                   </p>
                 </CardBody>
               </Card>
 
               <Card>
                 <CardBody>
-                  <h3 className="text-lg font-semibold mb-4">连接设置</h3>
+                  <h3 className="text-lg font-semibold mb-4">{t('settings.connectionSettings')}</h3>
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium mb-2">离线超时时间</label>
+                      <label className="block text-sm font-medium mb-2">{t('settings.offlineTimeoutLabel')}</label>
                       <p className="text-xs text-[var(--color-text-tertiary)] mb-3">
-                        当前端断开连接超过此时间后，系统将自动保存当前上下文到长期记忆
+                        {t('settings.offlineTimeoutDesc')}
                       </p>
                       <select
                         value={localStorage.getItem('cxhms-offline-timeout') || '60'}
@@ -402,10 +406,10 @@ export function SettingsPage() {
                         }}
                         className="w-full px-3 py-2 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-[var(--radius-md)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                       >
-                        <option value="30">30 秒</option>
-                        <option value="60">60 秒（默认）</option>
-                        <option value="120">2 分钟</option>
-                        <option value="300">5 分钟</option>
+                        <option value="30">{t('settings.timeout30s')}</option>
+                        <option value="60">{t('settings.timeout60s')}</option>
+                        <option value="120">{t('settings.timeout2min')}</option>
+                        <option value="300">{t('settings.timeout5min')}</option>
                       </select>
                     </div>
                   </div>
@@ -414,26 +418,26 @@ export function SettingsPage() {
 
               <Card>
                 <CardBody>
-                  <h3 className="text-lg font-semibold mb-4">界面预览</h3>
+                  <h3 className="text-lg font-semibold mb-4">{t('settings.interfacePreview')}</h3>
                   <div className="p-4 bg-[var(--color-bg-tertiary)] rounded-[var(--radius-lg)]">
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-10 h-10 rounded-full bg-[var(--color-accent)] flex items-center justify-center text-[var(--color-bg-primary)]">
                         AI
                       </div>
                       <div>
-                        <div className="font-medium">示例标题</div>
+                        <div className="font-medium">{t('settings.sampleTitle')}</div>
                         <div className="text-sm text-[var(--color-text-secondary)]">
-                          这是一个预览文本
+                          {t('settings.sampleText')}
                         </div>
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <Button size="sm">主要按钮</Button>
+                      <Button size="sm">{t('settings.primaryButton')}</Button>
                       <Button variant="secondary" size="sm">
-                        次要按钮
+                        {t('settings.secondaryButton')}
                       </Button>
                       <Button variant="ghost" size="sm">
-                        幽灵按钮
+                        {t('settings.ghostButton')}
                       </Button>
                     </div>
                   </div>
@@ -445,9 +449,9 @@ export function SettingsPage() {
           {activeSection === 'vector' && envManagedSections.vector && (
             <Card>
               <CardBody>
-                <h3 className="text-lg font-semibold mb-2">向量存储配置</h3>
+                <h3 className="text-lg font-semibold mb-2">{t('settings.vectorConfigTitle')}</h3>
                 <p className="text-sm text-[var(--color-text-secondary)]">
-                  向量存储由环境变量管理，无法在界面修改。
+                  {t('settings.vectorEnvManaged')}
                 </p>
               </CardBody>
             </Card>
@@ -457,10 +461,10 @@ export function SettingsPage() {
             <div className="space-y-6">
               <Card>
                 <CardBody>
-                  <h3 className="text-lg font-semibold mb-4">向量存储配置</h3>
+                  <h3 className="text-lg font-semibold mb-4">{t('settings.vectorConfigTitle')}</h3>
                   <div className="space-y-4">
                     <div>
-                      <label className="text-sm font-medium mb-2 block">向量存储后端</label>
+                      <label className="text-sm font-medium mb-2 block">{t('settings.vectorBackendLabel')}</label>
                       <select
                         value={vectorConfig.backend}
                         onChange={(e) =>
@@ -468,15 +472,15 @@ export function SettingsPage() {
                         }
                         className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
                       >
-                        <option value="chroma">Chroma (推荐 Windows)</option>
-                        <option value="milvus_lite">Milvus Lite (仅 Linux/macOS)</option>
-                        <option value="weaviate_embedded">Weaviate Embedded</option>
-                        <option value="weaviate">Weaviate (独立服务)</option>
-                        <option value="qdrant">Qdrant</option>
+                        <option value="chroma">{t('settings.backendChroma')}</option>
+                        <option value="milvus_lite">{t('settings.backendMilvusLite')}</option>
+                        <option value="weaviate_embedded">{t('settings.backendWeaviateEmbedded')}</option>
+                        <option value="weaviate">{t('settings.backendWeaviate')}</option>
+                        <option value="qdrant">{t('settings.backendQdrant')}</option>
                       </select>
                     </div>
                     <div>
-                      <label className="text-sm font-medium mb-2 block">向量维度</label>
+                      <label className="text-sm font-medium mb-2 block">{t('settings.vectorDimLabel')}</label>
                       <select
                         value={vectorConfig.vectorSize}
                         onChange={(e) =>
@@ -484,16 +488,16 @@ export function SettingsPage() {
                         }
                         className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
                       >
-                        <option value={384}>384 (小型模型)</option>
-                        <option value={768}>768 (中型模型)</option>
-                        <option value={1024}>1024 (大型模型)</option>
-                        <option value={1536}>1536 (OpenAI)</option>
-                        <option value={2048}>2048 (超大型模型)</option>
+                        <option value={384}>{t('settings.dimSmall')}</option>
+                        <option value={768}>{t('settings.dimMedium')}</option>
+                        <option value={1024}>{t('settings.dimLarge')}</option>
+                        <option value={1536}>{t('settings.dimOpenai')}</option>
+                        <option value={2048}>{t('settings.dimXlarge')}</option>
                       </select>
                     </div>
                     {vectorConfig.backend === 'chroma' && (
                       <div>
-                        <label className="text-sm font-medium mb-2 block">数据存储路径</label>
+                        <label className="text-sm font-medium mb-2 block">{t('settings.dataPathLabel')}</label>
                         <input
                           type="text"
                           value={vectorConfig.dbPath || 'data/chroma_db'}
@@ -509,7 +513,7 @@ export function SettingsPage() {
                       vectorConfig.backend === 'weaviate_embedded') && (
                       <>
                         <div>
-                          <label className="text-sm font-medium mb-2 block">Weaviate 主机</label>
+                          <label className="text-sm font-medium mb-2 block">{t('settings.weaviateHostLabel')}</label>
                           <input
                             type="text"
                             value={vectorConfig.weaviateHost || 'localhost'}
@@ -521,7 +525,7 @@ export function SettingsPage() {
                           />
                         </div>
                         <div>
-                          <label className="text-sm font-medium mb-2 block">Weaviate 端口</label>
+                          <label className="text-sm font-medium mb-2 block">{t('settings.weaviatePortLabel')}</label>
                           <input
                             type="number"
                             value={vectorConfig.weaviatePort || 8080}
@@ -540,7 +544,7 @@ export function SettingsPage() {
                     {vectorConfig.backend === 'qdrant' && (
                       <>
                         <div>
-                          <label className="text-sm font-medium mb-2 block">Qdrant 主机</label>
+                          <label className="text-sm font-medium mb-2 block">{t('settings.qdrantHostLabel')}</label>
                           <input
                             type="text"
                             value={vectorConfig.qdrantHost || 'localhost'}
@@ -552,7 +556,7 @@ export function SettingsPage() {
                           />
                         </div>
                         <div>
-                          <label className="text-sm font-medium mb-2 block">Qdrant 端口</label>
+                          <label className="text-sm font-medium mb-2 block">{t('settings.qdrantPortLabel')}</label>
                           <input
                             type="number"
                             value={vectorConfig.qdrantPort || 6333}
@@ -575,7 +579,7 @@ export function SettingsPage() {
                       loading={saveStatus === 'saving'}
                       disabled={!isBackendRunning}
                     >
-                      {saveStatus === 'saved' ? '已保存' : '保存配置'}
+                      {saveStatus === 'saved' ? t('settings.savedLabel') : t('settings.saveConfig')}
                     </Button>
                   </div>
                 </CardBody>
@@ -586,9 +590,9 @@ export function SettingsPage() {
           {activeSection === 'llm' && envManagedSections.models && (
             <Card>
               <CardBody>
-                <h3 className="text-lg font-semibold mb-2">模型配置</h3>
+                <h3 className="text-lg font-semibold mb-2">{t('settings.modelConfigTitle')}</h3>
                 <p className="text-sm text-[var(--color-text-secondary)]">
-                  模型设置由环境变量管理，无法在界面修改。
+                  {t('settings.modelEnvManaged')}
                 </p>
               </CardBody>
             </Card>
@@ -598,11 +602,11 @@ export function SettingsPage() {
             <div className="space-y-6">
               <Card>
                 <CardBody>
-                  <h3 className="text-lg font-semibold mb-4">模型配置</h3>
+                  <h3 className="text-lg font-semibold mb-4">{t('settings.modelConfigTitle')}</h3>
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="text-sm font-medium mb-2 block">模型提供商</label>
+                        <label className="text-sm font-medium mb-2 block">{t('settings.modelProviderLabel')}</label>
                         <select
                           value={modelsConfig.main.provider}
                           onChange={(e) =>
@@ -613,13 +617,13 @@ export function SettingsPage() {
                           }
                           className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
                         >
-                          <option value="ollama">Ollama (本地)</option>
-                          <option value="vllm">vLLM</option>
-                          <option value="openai">OpenAI</option>
+                          <option value="ollama">{t('settings.providerOllama')}</option>
+                          <option value="vllm">{t('settings.providerVllm')}</option>
+                          <option value="openai">{t('settings.providerOpenai')}</option>
                         </select>
                       </div>
                       <div>
-                        <label className="text-sm font-medium mb-2 block">模型名称</label>
+                        <label className="text-sm font-medium mb-2 block">{t('settings.modelNameLabel')}</label>
                         <input
                           type="text"
                           value={modelsConfig.main.model}
@@ -635,7 +639,7 @@ export function SettingsPage() {
                     </div>
                     <div>
                       <label className="text-sm font-medium mb-2 block">
-                        温度: {llmParams.temperature}
+                        {t('settings.temperatureLabel')}: {llmParams.temperature}
                       </label>
                       <input
                         type="range"
@@ -650,10 +654,10 @@ export function SettingsPage() {
                       />
                     </div>
                     <div className="border-t border-[var(--color-border)] pt-4 mt-4">
-                      <h4 className="text-md font-medium mb-3">嵌入模型（Embedding）</h4>
+                      <h4 className="text-md font-medium mb-3">{t('settings.embeddingSectionTitle')}</h4>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="text-sm font-medium mb-2 block">嵌入模型提供商</label>
+                          <label className="text-sm font-medium mb-2 block">{t('settings.embeddingProviderLabel')}</label>
                           <select
                             value={modelsConfig.embedding.provider}
                             onChange={(e) =>
@@ -664,13 +668,13 @@ export function SettingsPage() {
                             }
                             className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
                           >
-                            <option value="ollama">Ollama (本地)</option>
-                            <option value="vllm">vLLM</option>
-                            <option value="openai">OpenAI</option>
+                            <option value="ollama">{t('settings.providerOllama')}</option>
+                            <option value="vllm">{t('settings.providerVllm')}</option>
+                            <option value="openai">{t('settings.providerOpenai')}</option>
                           </select>
                         </div>
                         <div>
-                          <label className="text-sm font-medium mb-2 block">嵌入模型名称</label>
+                          <label className="text-sm font-medium mb-2 block">{t('settings.embeddingNameLabel')}</label>
                           <input
                             type="text"
                             value={modelsConfig.embedding.model}
@@ -686,7 +690,7 @@ export function SettingsPage() {
                         </div>
                       </div>
                       <div className="mt-4">
-                        <label className="text-sm font-medium mb-2 block">嵌入模型服务地址</label>
+                        <label className="text-sm font-medium mb-2 block">{t('settings.embeddingUrlLabel')}</label>
                         <input
                           type="text"
                           value={modelsConfig.embedding.host}
@@ -708,7 +712,7 @@ export function SettingsPage() {
                       loading={saveStatus === 'saving'}
                       disabled={!isBackendRunning}
                     >
-                      {saveStatus === 'saved' ? '已保存' : '保存配置'}
+                      {saveStatus === 'saved' ? t('settings.savedLabel') : t('settings.saveConfig')}
                     </Button>
                   </div>
                 </CardBody>

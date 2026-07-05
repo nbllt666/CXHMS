@@ -1,7 +1,7 @@
 """自动日记摘要任务
 
 定期检查活跃会话，当消息数超过阈值时自动触发日记式摘要并替换上下文。
-参考 SessionCleanupTask 的 async loop 模式。
+采用 async loop 模式定期执行后台任务。
 """
 
 import asyncio

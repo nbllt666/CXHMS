@@ -7,7 +7,9 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => {
       const translations: Record<string, string> = {
+        'nav.dashboard': '仪表盘',
         'nav.chat': '对话',
+        'nav.memoryAgent': '记忆管理助手',
         'agent.title': '助手',
         'memory.title': '记忆',
         'archive.title': '归档',
@@ -55,8 +57,13 @@ describe('Header', () => {
   });
 
   describe('page titles', () => {
-    it('should display chat title on root path', () => {
+    it('should display dashboard title on root path', () => {
       renderWithRouter('/');
+      expect(screen.getByText('仪表盘')).toBeDefined();
+    });
+
+    it('should display chat title on /chat path', () => {
+      renderWithRouter('/chat');
       expect(screen.getByText('对话')).toBeDefined();
     });
 

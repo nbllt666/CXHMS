@@ -8,7 +8,7 @@ logger = get_contextual_logger(__name__)
 
 @router.get("/stats")
 async def get_system_stats():
-    from backend.api.app import get_context_manager, get_memory_manager
+    from backend.dependencies import get_context_manager, get_memory_manager
     from backend.api.routers.agents import _load_agents
 
     try:

@@ -188,7 +188,8 @@ class MemoryRouter:
             page = 0
             page_size = 20
 
-            while recent_count < 50:
+            max_pages = 10
+            while recent_count < 50 and page < max_pages:
                 results = self.memory_manager.search_memories(
                     query=None,
                     memory_type=None,

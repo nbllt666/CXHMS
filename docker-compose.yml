@@ -3,7 +3,7 @@ services:
     image: vllm/vllm-openai:latest
     container_name: vllm-gemma4
     ports:
-      - "8000:8000"
+      - "8002:8000"
     volumes:
       - gemma4-models:/models
     environment:

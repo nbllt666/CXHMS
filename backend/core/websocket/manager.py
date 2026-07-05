@@ -107,7 +107,8 @@ class WebSocketManager:
     async def broadcast(self, message: Dict[str, Any], exclude: Optional[str] = None):
         """广播消息给所有客户端"""
         disconnected = []
-        for client_id, connection in self.connections.items():
+        # snapshot 防止迭代期间 disconnect 并发删键触发 RuntimeError: dictionary changed size
+        for client_id, connection in list(self.connections.items()):
             if client_id == exclude:
                 continue
             try:

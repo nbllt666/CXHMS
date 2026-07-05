@@ -24,6 +24,9 @@ database:
   sessions_db: data/sessions.db
   acp_db: data/acp
   echo: false
+llm:
+  # 工具调用最大轮数（流式与非流式统一），防止无限循环和高成本
+  max_tool_rounds: 10
 models:
   main:
     provider: vllm

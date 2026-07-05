@@ -1,26 +1,21 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '../api/client';
-import { formatDate, truncate, getImportanceColor, getImportanceLabel } from '../lib/utils';
+import { api } from '../api';
+import { formatDate, truncate, getImportanceColor } from '../lib/utils';
 import { PageHeader } from '../components/layout';
 import { Button, Card, CardBody, Input, Badge, Modal, Textarea, Drawer } from '../components/ui';
 import { useHotkey } from '../hooks';
 import { GraphManager } from '../components/GraphManager';
 
-interface Memory {
-  id: number;
-  content: string;
-  type: string;
-  importance: number;
-  tags: string[];
-  created_at: string;
-  is_archived: boolean;
-  emotion_score?: number;
-}
+import type { Memory } from '../types';
+
+// F8: Memory 类型统一到 types/，此处不再重复声明。
 
 type ViewMode = 'card' | 'list';
 
 export function MemoriesPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'memories' | 'graph' | 'diary'>('memories');
   const [searchQuery, setSearchQuery] = useState('');
@@ -47,6 +42,25 @@ export function MemoriesPage() {
   const [batchTags, setBatchTags] = useState('');
   const [batchTagOperation, setBatchTagOperation] = useState<'add' | 'remove' | 'set'>('add');
 
+  // 类型标签移入组件以支持 i18n
+  const typeLabels: Record<string, string> = {
+    permanent: t('memory.typePermanent'),
+    long_term: t('memory.typeLongTerm'),
+    short_term: t('memory.typeShortTerm'),
+  };
+
+  // 重要性标签本地化（替代 lib/utils 的 getImportanceLabel，后者返回中文）
+  const getImportanceText = (importance: number): string => {
+    const labels: Record<number, string> = {
+      1: t('memory.importanceVeryLow'),
+      2: t('memory.importanceLow'),
+      3: t('memory.importanceMedium'),
+      4: t('memory.importanceHigh'),
+      5: t('memory.importanceVeryHigh'),
+    };
+    return labels[importance] ?? t('memory.importanceUnknown');
+  };
+
   useHotkey('Escape', () => {
     if (showDetailDrawer) setShowDetailDrawer(false);
     if (showAddModal) setShowAddModal(false);
@@ -59,11 +73,7 @@ export function MemoriesPage() {
     staleTime: 60000,
   });
 
-  const {
-    data: memories,
-    isLoading,
-    refetch,
-  } = useQuery({
+  const { data: memories, isLoading } = useQuery({
     queryKey: ['memories', filterType, currentAgentId],
     queryFn: async () => {
       const result = await api.getMemories({
@@ -73,7 +83,7 @@ export function MemoriesPage() {
       });
       return result;
     },
-    refetchInterval: 5000,
+    // F9: 移除 5s 强轮询，改为 invalidate-on-mutation（见各 mutation onSuccess）
   });
 
   const { data: diaryData, isLoading: isDiaryLoading } = useQuery({
@@ -91,23 +101,23 @@ export function MemoriesPage() {
         importance: newMemory.importance,
         tags: newMemory.tags
           .split(',')
-          .map((t) => t.trim())
+          .map((tag) => tag.trim())
           .filter(Boolean),
         agent_id: currentAgentId,
       });
       setShowAddModal(false);
       setNewMemory({ content: '', type: 'long_term', importance: 3, tags: '' });
-      refetch();
+      queryClient.invalidateQueries({ queryKey: ['memories'] });
     } catch (error) {
       console.error('创建记忆失败:', error);
     }
   };
 
   const handleDeleteMemory = async (id: number) => {
-    if (!confirm('确定要删除这条记忆吗？')) return;
+    if (!confirm(t('memory.confirmDelete'))) return;
     try {
       await api.deleteMemory(id);
-      refetch();
+      queryClient.invalidateQueries({ queryKey: ['memories'] });
     } catch (error) {
       console.error('删除记忆失败:', error);
     }
@@ -116,7 +126,7 @@ export function MemoriesPage() {
   const handleArchiveMemory = async (id: number) => {
     try {
       await api.archiveMemory(id);
-      refetch();
+      queryClient.invalidateQueries({ queryKey: ['memories'] });
     } catch (error) {
       console.error('归档记忆失败:', error);
     }
@@ -142,7 +152,7 @@ export function MemoriesPage() {
       }, currentAgentId);
       setShowEditModal(false);
       setEditingMemory(null);
-      refetch();
+      queryClient.invalidateQueries({ queryKey: ['memories'] });
     } catch (error) {
       console.error('更新记忆失败:', error);
     }
@@ -207,7 +217,7 @@ export function MemoriesPage() {
 
   const handleBatchDelete = () => {
     if (selectedMemories.size === 0) return;
-    if (!confirm(`确定要删除选中的 ${selectedMemories.size} 条记忆吗？`)) return;
+    if (!confirm(t('memory.confirmBatchDelete', { count: selectedMemories.size }))) return;
     batchDeleteMutation.mutate(Array.from(selectedMemories));
   };
 
@@ -220,7 +230,7 @@ export function MemoriesPage() {
     if (selectedMemories.size === 0) return;
     const tags = batchTags
       .split(',')
-      .map((t) => t.trim())
+      .map((tag) => tag.trim())
       .filter(Boolean);
     if (tags.length === 0) return;
     batchUpdateTagsMutation.mutate({
@@ -240,18 +250,12 @@ export function MemoriesPage() {
       );
     }) || [];
 
-  const typeLabels: Record<string, string> = {
-    permanent: '永久',
-    long_term: '长期',
-    short_term: '短期',
-  };
-
   return (
     <div className="max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <PageHeader
-          title="记忆管理"
-          description="管理和浏览系统存储的记忆与图数据库"
+          title={t('memory.title')}
+          description={t('memory.pageDescription')}
         />
         <div className="flex items-center gap-3">
           <div className="flex bg-[var(--color-bg-tertiary)] rounded-[var(--radius-md)] p-1">
@@ -263,7 +267,7 @@ export function MemoriesPage() {
                   : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
               }`}
             >
-              记忆
+              {t('memory.tabMemories')}
             </button>
             <button
               onClick={() => setActiveTab('diary')}
@@ -273,7 +277,7 @@ export function MemoriesPage() {
                   : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
               }`}
             >
-              记录
+              {t('memory.tabDiary')}
             </button>
             <button
               onClick={() => setActiveTab('graph')}
@@ -283,7 +287,7 @@ export function MemoriesPage() {
                   : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
               }`}
             >
-              图数据库
+              {t('memory.tabGraph')}
             </button>
           </div>
           {activeTab === 'memories' && (
@@ -296,7 +300,7 @@ export function MemoriesPage() {
                   d="M12 4v16m8-8H4"
                 />
               </svg>
-              新建记忆
+              {t('memory.newMemory')}
             </Button>
           )}
         </div>
@@ -314,7 +318,7 @@ export function MemoriesPage() {
       <div className="flex items-center gap-4 mb-6">
         <div className="flex-1">
           <Input
-            placeholder="搜索记忆内容或标签..."
+            placeholder={t('memory.searchContentPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full"
@@ -326,10 +330,10 @@ export function MemoriesPage() {
           onChange={(e) => setFilterType(e.target.value as typeof filterType)}
           className="px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)] text-sm"
         >
-          <option value="all">全部类型</option>
-          <option value="permanent">永久记忆</option>
-          <option value="long_term">长期记忆</option>
-          <option value="short_term">短期记忆</option>
+          <option value="all">{t('memory.filterAllTypes')}</option>
+          <option value="permanent">{t('memory.permanentMemory')}</option>
+          <option value="long_term">{t('memory.longTermMemory')}</option>
+          <option value="short_term">{t('memory.shortTermMemory')}</option>
         </select>
 
         <select
@@ -340,7 +344,7 @@ export function MemoriesPage() {
           }}
           className="px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)] text-sm"
         >
-          <option value="default">默认Agent</option>
+          <option value="default">{t('memory.defaultAgent')}</option>
           {agentTables?.agents
             ?.filter((a: { agent_id: string }) => a.agent_id !== 'default')
             .map((agent: { agent_id: string }) => (
@@ -386,7 +390,7 @@ export function MemoriesPage() {
             if (isBatchMode) clearSelection();
           }}
         >
-          {isBatchMode ? '退出批量' : '批量操作'}
+          {isBatchMode ? t('memory.exitBatch') : t('memory.batchMode')}
         </Button>
       </div>
 
@@ -395,7 +399,7 @@ export function MemoriesPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Button variant="ghost" size="sm" onClick={selectAllMemories}>
-                {selectedMemories.size === filteredMemories.length ? '取消全选' : '全选'}
+                {selectedMemories.size === filteredMemories.length ? t('memory.deselectAll') : t('memory.selectAll')}
                 <span className="ml-2 text-[var(--color-text-secondary)]">
                   ({selectedMemories.size}/{filteredMemories.length})
                 </span>
@@ -405,13 +409,13 @@ export function MemoriesPage() {
               {selectedMemories.size > 0 && (
                 <>
                   <Button variant="secondary" size="sm" onClick={() => setShowBatchTagModal(true)}>
-                    标签
+                    {t('memory.batchTags')}
                   </Button>
                   <Button variant="secondary" size="sm" onClick={handleBatchArchive}>
-                    归档
+                    {t('memory.archiveAction')}
                   </Button>
                   <Button variant="danger" size="sm" onClick={handleBatchDelete}>
-                    删除
+                    {t('common.delete')}
                   </Button>
                 </>
               )}
@@ -440,8 +444,8 @@ export function MemoriesPage() {
                 d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
               />
             </svg>
-            <h3 className="text-lg font-medium mb-2">暂无记忆</h3>
-            <p className="text-sm">点击"新建记忆"按钮添加您的第一条记忆</p>
+            <h3 className="text-lg font-medium mb-2">{t('memory.noMemories')}</h3>
+            <p className="text-sm">{t('memory.noMemoriesHint')}</p>
           </div>
         </Card>
       ) : viewMode === 'card' ? (
@@ -470,7 +474,7 @@ export function MemoriesPage() {
                       }}
                     />
                     <span className="text-xs text-[var(--color-text-secondary)]">
-                      {getImportanceLabel(memory.importance)}
+                      {getImportanceText(memory.importance)}
                     </span>
                     <Badge variant="secondary" size="sm">
                       {typeLabels[memory.type] || memory.type}
@@ -481,7 +485,7 @@ export function MemoriesPage() {
                       <button
                         onClick={() => handleArchiveMemory(memory.id)}
                         className="p-1.5 hover:bg-[var(--color-bg-hover)] rounded-[var(--radius-sm)] transition-colors"
-                        title="归档"
+                        title={t('memory.archiveAction')}
                       >
                         <svg
                           className="w-4 h-4 text-[var(--color-text-secondary)]"
@@ -500,7 +504,7 @@ export function MemoriesPage() {
                       <button
                         onClick={() => handleEditMemory(memory)}
                         className="p-1.5 hover:bg-[var(--color-bg-hover)] rounded-[var(--radius-sm)] transition-colors"
-                        title="编辑"
+                        title={t('common.edit')}
                       >
                         <svg
                           className="w-4 h-4 text-[var(--color-text-secondary)]"
@@ -519,7 +523,7 @@ export function MemoriesPage() {
                       <button
                         onClick={() => handleDeleteMemory(memory.id)}
                         className="p-1.5 hover:bg-[var(--color-error-light)] rounded-[var(--radius-sm)] transition-colors"
-                        title="删除"
+                        title={t('common.delete')}
                       >
                         <svg
                           className="w-4 h-4 text-[var(--color-error)]"
@@ -579,22 +583,22 @@ export function MemoriesPage() {
                     </th>
                   )}
                   <th className="px-4 py-3 text-left text-sm font-medium text-[var(--color-text-secondary)]">
-                    内容
+                    {t('common.content')}
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-[var(--color-text-secondary)] w-24">
-                    类型
+                    {t('common.type')}
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-[var(--color-text-secondary)] w-24">
-                    重要性
+                    {t('memory.importance')}
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-[var(--color-text-secondary)] w-32">
-                    标签
+                    {t('memory.tags')}
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-[var(--color-text-secondary)] w-32">
-                    创建时间
+                    {t('common.createdAt')}
                   </th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-[var(--color-text-secondary)] w-32">
-                    操作
+                    {t('common.actions')}
                   </th>
                 </tr>
               </thead>
@@ -633,7 +637,7 @@ export function MemoriesPage() {
                         {typeLabels[memory.type] || memory.type}
                       </Badge>
                     </td>
-                    <td className="px-4 py-3 text-sm">{getImportanceLabel(memory.importance)}</td>
+                    <td className="px-4 py-3 text-sm">{getImportanceText(memory.importance)}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1 flex-wrap">
                         {memory.tags?.slice(0, 2).map((tag) => (
@@ -702,32 +706,32 @@ export function MemoriesPage() {
         </Card>
       )}
 
-      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="新建记忆">
+      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title={t('memory.newMemory')}>
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium mb-1.5 block">内容</label>
+            <label className="text-sm font-medium mb-1.5 block">{t('common.content')}</label>
             <Textarea
               value={newMemory.content}
               onChange={(e) => setNewMemory({ ...newMemory, content: e.target.value })}
-              placeholder="输入记忆内容..."
+              placeholder={t('memory.contentPlaceholder')}
               className="min-h-[100px]"
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium mb-1.5 block">类型</label>
+              <label className="text-sm font-medium mb-1.5 block">{t('common.type')}</label>
               <select
                 value={newMemory.type}
                 onChange={(e) => setNewMemory({ ...newMemory, type: e.target.value })}
                 className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
               >
-                <option value="long_term">长期记忆</option>
-                <option value="short_term">短期记忆</option>
-                <option value="permanent">永久记忆</option>
+                <option value="long_term">{t('memory.longTermMemory')}</option>
+                <option value="short_term">{t('memory.shortTermMemory')}</option>
+                <option value="permanent">{t('memory.permanentMemory')}</option>
               </select>
             </div>
             <div>
-              <label className="text-sm font-medium mb-1.5 block">重要性</label>
+              <label className="text-sm font-medium mb-1.5 block">{t('memory.importance')}</label>
               <div className="flex items-center gap-1">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button
@@ -754,29 +758,29 @@ export function MemoriesPage() {
             </div>
           </div>
           <div>
-            <label className="text-sm font-medium mb-1.5 block">标签（用逗号分隔）</label>
+            <label className="text-sm font-medium mb-1.5 block">{t('memory.tagsLabel')}</label>
             <Input
               value={newMemory.tags}
               onChange={(e) => setNewMemory({ ...newMemory, tags: e.target.value })}
-              placeholder="标签1, 标签2, 标签3"
+              placeholder={t('memory.tagsPlaceholder')}
             />
           </div>
           <div className="flex justify-end gap-3 pt-4">
             <Button variant="secondary" onClick={() => setShowAddModal(false)}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleCreateMemory} disabled={!newMemory.content.trim()}>
-              创建
+              {t('common.create')}
             </Button>
           </div>
         </div>
       </Modal>
 
-      <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title="编辑记忆">
+      <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title={t('memory.edit')}>
         {editingMemory && (
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium mb-1.5 block">内容</label>
+              <label className="text-sm font-medium mb-1.5 block">{t('common.content')}</label>
               <Textarea
                 value={editingMemory.content}
                 onChange={(e) => setEditingMemory({ ...editingMemory, content: e.target.value })}
@@ -784,7 +788,7 @@ export function MemoriesPage() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium mb-1.5 block">重要性</label>
+              <label className="text-sm font-medium mb-1.5 block">{t('memory.importance')}</label>
               <div className="flex items-center gap-1">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button
@@ -810,7 +814,7 @@ export function MemoriesPage() {
               </div>
             </div>
             <div>
-              <label className="text-sm font-medium mb-1.5 block">标签（用逗号分隔）</label>
+              <label className="text-sm font-medium mb-1.5 block">{t('memory.tagsLabel')}</label>
               <Input
                 value={editingMemory.tags.join(', ')}
                 onChange={(e) =>
@@ -818,7 +822,7 @@ export function MemoriesPage() {
                     ...editingMemory,
                     tags: e.target.value
                       .split(',')
-                      .map((t) => t.trim())
+                      .map((tag) => tag.trim())
                       .filter(Boolean),
                   })
                 }
@@ -826,19 +830,19 @@ export function MemoriesPage() {
             </div>
             <div className="flex justify-end gap-3 pt-4">
               <Button variant="secondary" onClick={() => setShowEditModal(false)}>
-                取消
+                {t('common.cancel')}
               </Button>
-              <Button onClick={handleUpdateMemory}>保存</Button>
+              <Button onClick={handleUpdateMemory}>{t('common.save')}</Button>
             </div>
           </div>
         )}
       </Modal>
 
-      <Drawer isOpen={showDetailDrawer} onClose={() => setShowDetailDrawer(false)} title="记忆详情">
+      <Drawer isOpen={showDetailDrawer} onClose={() => setShowDetailDrawer(false)} title={t('memory.detailTitle')}>
         {selectedMemory && (
           <div className="space-y-4">
             <div>
-              <h3 className="text-sm font-medium text-[var(--color-text-secondary)] mb-2">内容</h3>
+              <h3 className="text-sm font-medium text-[var(--color-text-secondary)] mb-2">{t('common.content')}</h3>
               <p className="text-[var(--color-text-primary)] whitespace-pre-wrap">
                 {selectedMemory.content}
               </p>
@@ -846,7 +850,7 @@ export function MemoriesPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <h3 className="text-sm font-medium text-[var(--color-text-secondary)] mb-2">
-                  类型
+                  {t('common.type')}
                 </h3>
                 <Badge variant="secondary">
                   {typeLabels[selectedMemory.type] || selectedMemory.type}
@@ -854,13 +858,13 @@ export function MemoriesPage() {
               </div>
               <div>
                 <h3 className="text-sm font-medium text-[var(--color-text-secondary)] mb-2">
-                  重要性
+                  {t('memory.importance')}
                 </h3>
-                <span>{getImportanceLabel(selectedMemory.importance)}</span>
+                <span>{getImportanceText(selectedMemory.importance)}</span>
               </div>
             </div>
             <div>
-              <h3 className="text-sm font-medium text-[var(--color-text-secondary)] mb-2">标签</h3>
+              <h3 className="text-sm font-medium text-[var(--color-text-secondary)] mb-2">{t('memory.tags')}</h3>
               <div className="flex gap-2 flex-wrap">
                 {selectedMemory.tags?.map((tag) => (
                   <Badge key={tag} variant="primary">
@@ -868,13 +872,13 @@ export function MemoriesPage() {
                   </Badge>
                 ))}
                 {(!selectedMemory.tags || selectedMemory.tags.length === 0) && (
-                  <span className="text-[var(--color-text-tertiary)]">无标签</span>
+                  <span className="text-[var(--color-text-tertiary)]">{t('memory.noTags')}</span>
                 )}
               </div>
             </div>
             <div>
               <h3 className="text-sm font-medium text-[var(--color-text-secondary)] mb-2">
-                创建时间
+                {t('common.createdAt')}
               </h3>
               <span className="text-[var(--color-text-primary)]">
                 {formatDate(selectedMemory.created_at)}
@@ -888,7 +892,7 @@ export function MemoriesPage() {
                   handleEditMemory(selectedMemory);
                 }}
               >
-                编辑
+                {t('common.edit')}
               </Button>
               <Button
                 variant="secondary"
@@ -897,7 +901,7 @@ export function MemoriesPage() {
                   setShowDetailDrawer(false);
                 }}
               >
-                归档
+                {t('memory.archiveAction')}
               </Button>
               <Button
                 variant="danger"
@@ -906,7 +910,7 @@ export function MemoriesPage() {
                   setShowDetailDrawer(false);
                 }}
               >
-                删除
+                {t('common.delete')}
               </Button>
             </div>
           </div>
@@ -916,38 +920,38 @@ export function MemoriesPage() {
       <Modal
         isOpen={showBatchTagModal}
         onClose={() => setShowBatchTagModal(false)}
-        title="批量更新标签"
+        title={t('memory.batchUpdateTagsTitle')}
       >
         <div className="space-y-4">
           <p className="text-sm text-[var(--color-text-secondary)]">
-            将对选中的 {selectedMemories.size} 条记忆进行标签操作
+            {t('memory.batchTagOperationDesc', { count: selectedMemories.size })}
           </p>
           <div>
-            <label className="text-sm font-medium mb-1.5 block">操作类型</label>
+            <label className="text-sm font-medium mb-1.5 block">{t('memory.operationType')}</label>
             <select
               value={batchTagOperation}
               onChange={(e) => setBatchTagOperation(e.target.value as typeof batchTagOperation)}
               className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
             >
-              <option value="add">添加标签</option>
-              <option value="remove">移除标签</option>
-              <option value="set">设置标签（覆盖现有）</option>
+              <option value="add">{t('memory.addTags')}</option>
+              <option value="remove">{t('memory.removeTags')}</option>
+              <option value="set">{t('memory.setTags')}</option>
             </select>
           </div>
           <div>
-            <label className="text-sm font-medium mb-1.5 block">标签（用逗号分隔）</label>
+            <label className="text-sm font-medium mb-1.5 block">{t('memory.tagsLabel')}</label>
             <Input
               value={batchTags}
               onChange={(e) => setBatchTags(e.target.value)}
-              placeholder="标签1, 标签2, 标签3"
+              placeholder={t('memory.tagsPlaceholder')}
             />
           </div>
           <div className="flex justify-end gap-3 pt-4">
             <Button variant="secondary" onClick={() => setShowBatchTagModal(false)}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleBatchUpdateTags} disabled={!batchTags.trim()}>
-              确认
+              {t('common.confirm')}
             </Button>
           </div>
         </div>
@@ -989,6 +993,7 @@ interface TimelineEntry extends DiaryEntry {
 }
 
 function DiaryView({ diaryData, isLoading }: DiaryViewProps) {
+  const { t } = useTranslation();
   const [expandedEntryIds, setExpandedEntryIds] = useState<Set<number>>(new Set());
 
   const groups = diaryData?.diary_groups || [];
@@ -1041,8 +1046,8 @@ function DiaryView({ diaryData, isLoading }: DiaryViewProps) {
               d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
             />
           </svg>
-          <h3 className="text-lg font-medium mb-2">暂无记录</h3>
-          <p className="text-sm">对话摘要后会自动生成记录条目</p>
+          <h3 className="text-lg font-medium mb-2">{t('memory.noDiary')}</h3>
+          <p className="text-sm">{t('memory.noDiaryHint')}</p>
         </div>
       </Card>
     );
@@ -1127,7 +1132,7 @@ function DiaryView({ diaryData, isLoading }: DiaryViewProps) {
                     <div className="mt-3 pt-3 border-t border-[var(--color-border)] space-y-2">
                       {meta.summarized_message_range && (
                         <div className="flex items-center gap-2 text-xs text-[var(--color-text-tertiary)]">
-                          <span className="font-medium">消息范围:</span>
+                          <span className="font-medium">{t('memory.messageRange')}</span>
                           <span>{meta.summarized_message_range}</span>
                         </div>
                       )}
@@ -1145,7 +1150,7 @@ function DiaryView({ diaryData, isLoading }: DiaryViewProps) {
                             d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                           />
                         </svg>
-                        <span className="font-medium">完整时间:</span>
+                        <span className="font-medium">{t('memory.fullTime')}</span>
                         <span>{formatDate(entry.created_at)}</span>
                       </div>
                     </div>

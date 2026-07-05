@@ -65,7 +65,7 @@ class ACPGroupMessageRequest(BaseModel):
 @router.post("/acp/discover")
 async def discover_agents(request: ACPDiscoverRequest = None):
     """发现Agents"""
-    from backend.api.app import get_acp_manager
+    from backend.dependencies import get_acp_manager
     from backend.core.acp.discover import ACPLanDiscovery
 
     try:
@@ -87,7 +87,7 @@ async def discover_agents(request: ACPDiscoverRequest = None):
 
 @router.get("/acp/agents")
 async def list_agents(online_only: bool = False):
-    from backend.api.app import get_acp_manager
+    from backend.dependencies import get_acp_manager
 
     try:
         acp_mgr = get_acp_manager()
@@ -100,7 +100,7 @@ async def list_agents(online_only: bool = False):
 
 @router.post("/acp/connect")
 async def connect_to_agent(request: ACPConnectRequest):
-    from backend.api.app import get_acp_manager
+    from backend.dependencies import get_acp_manager
     from backend.core.acp.manager import ACPConnectionInfo
 
     try:
@@ -131,7 +131,7 @@ async def connect_to_agent(request: ACPConnectRequest):
 
 @router.delete("/acp/connect/{connection_id}")
 async def disconnect_from_agent(connection_id: str):
-    from backend.api.app import get_acp_manager
+    from backend.dependencies import get_acp_manager
 
     try:
         acp_mgr = get_acp_manager()
@@ -151,7 +151,7 @@ async def disconnect_from_agent(connection_id: str):
 @router.get("/acp/connections")
 async def list_connections(local_only: bool = True):
     """列出连接"""
-    from backend.api.app import get_acp_manager
+    from backend.dependencies import get_acp_manager
 
     try:
         acp_mgr = get_acp_manager()
@@ -167,7 +167,7 @@ async def list_connections(local_only: bool = True):
 @router.post("/acp/groups")
 async def create_group(request: ACPGroupCreateRequest):
     """创建群组"""
-    from backend.api.app import get_acp_manager
+    from backend.dependencies import get_acp_manager
     from backend.core.acp.group import ACPGroupManager
 
     try:
@@ -192,7 +192,7 @@ async def create_group(request: ACPGroupCreateRequest):
 
 @router.get("/acp/groups")
 async def list_groups():
-    from backend.api.app import get_acp_manager
+    from backend.dependencies import get_acp_manager
     from backend.core.acp.group import ACPGroupManager
 
     try:
@@ -208,7 +208,7 @@ async def list_groups():
 
 @router.post("/acp/groups/{group_id}/join")
 async def join_group(group_id: str):
-    from backend.api.app import get_acp_manager
+    from backend.dependencies import get_acp_manager
     from backend.core.acp.group import ACPGroupManager
 
     try:
@@ -234,7 +234,7 @@ async def join_group(group_id: str):
 
 @router.post("/acp/groups/{group_id}/leave")
 async def leave_group(group_id: str):
-    from backend.api.app import get_acp_manager
+    from backend.dependencies import get_acp_manager
     from backend.core.acp.group import ACPGroupManager
 
     try:
@@ -256,7 +256,7 @@ async def leave_group(group_id: str):
 
 @router.post("/acp/send")
 async def send_message(request: ACPSendMessageRequest):
-    from backend.api.app import get_acp_manager
+    from backend.dependencies import get_acp_manager
     from backend.core.acp.manager import ACPMessageInfo
 
     try:
@@ -284,7 +284,7 @@ async def send_message(request: ACPSendMessageRequest):
 
 @router.post("/acp/send/group")
 async def send_group_message(request: ACPGroupMessageRequest):
-    from backend.api.app import get_acp_manager
+    from backend.dependencies import get_acp_manager
     from backend.core.acp.group import ACPGroupManager
 
     try:
@@ -308,7 +308,7 @@ async def send_group_message(request: ACPGroupMessageRequest):
 async def get_messages(
     agent_id: Optional[str] = None, group_id: Optional[str] = None, limit: int = 50
 ):
-    from backend.api.app import get_acp_manager
+    from backend.dependencies import get_acp_manager
 
     try:
         acp_mgr = get_acp_manager()
@@ -324,7 +324,7 @@ async def get_messages(
 
 @router.get("/acp/stats")
 async def get_acp_stats():
-    from backend.api.app import get_acp_manager
+    from backend.dependencies import get_acp_manager
 
     try:
         acp_mgr = get_acp_manager()

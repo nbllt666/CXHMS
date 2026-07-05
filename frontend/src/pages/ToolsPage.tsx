@@ -22,32 +22,12 @@ import {
   Copy,
   Check,
 } from 'lucide-react';
-import { api } from '../api/client';
+import { useTranslation } from 'react-i18next';
+import { api } from '../api';
 import { cn } from '../lib/utils';
 
-interface Tool {
-  id: string;
-  name: string;
-  description: string;
-  type: 'builtin' | 'mcp' | 'custom';
-  status: 'active' | 'inactive' | 'error';
-  config: Record<string, unknown>;
-  icon?: string;
-  created_at: string;
-  last_used?: string;
-  use_count: number;
-  parameters?: Record<string, unknown>;
-  examples?: string[];
-  tags?: string[];
-}
-
-interface ToolStats {
-  total_tools: number;
-  active_tools: number;
-  mcp_tools: number;
-  native_tools: number;
-  total_calls: number;
-}
+// F8: Tool / ToolStats 类型统一到 types/，此处不再重复声明。
+import type { Tool, ToolStats } from '../types';
 
 const toolIcons: Record<string, React.ElementType> = {
   terminal: Terminal,
@@ -59,69 +39,8 @@ const toolIcons: Record<string, React.ElementType> = {
   settings: Settings,
 };
 
-// 预设的工具模板
-const toolTemplates = {
-  custom: {
-    name: '',
-    description: '',
-    parameters: {
-      type: 'object',
-      properties: {},
-      required: [],
-    },
-    examples: [],
-  },
-  mcp: {
-    name: '',
-    description: 'MCP 服务器工具',
-    parameters: {
-      type: 'object',
-      properties: {
-        server_name: {
-          type: 'string',
-          description: 'MCP 服务器名称',
-        },
-      },
-      required: ['server_name'],
-    },
-    config: {
-      server_name: '',
-      tool_name: '',
-    },
-  },
-  calculator: {
-    name: 'calculator',
-    description: '数学计算工具，支持基本运算、三角函数、对数等',
-    parameters: {
-      type: 'object',
-      properties: {
-        expression: {
-          type: 'string',
-          description: '数学表达式，如 "1 + 2" 或 "sin(30)"',
-        },
-      },
-      required: ['expression'],
-    },
-    examples: ['1 + 2', 'sin(30)', 'log(100)'],
-  },
-  datetime: {
-    name: 'datetime',
-    description: '获取当前日期和时间',
-    parameters: {
-      type: 'object',
-      properties: {
-        format: {
-          type: 'string',
-          description: '日期格式，如 "YYYY-MM-DD HH:mm:ss"',
-        },
-      },
-      required: [],
-    },
-    examples: ['', 'YYYY-MM-DD'],
-  },
-};
-
 export function ToolsPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -144,7 +63,6 @@ export function ToolsPage() {
     queryKey: ['tools', filter],
     queryFn: async () => {
       const response = await api.getTools(filter === 'all' ? undefined : filter);
-      // 将工具对象转换为数组
       const toolsObj = response.tools || {};
       return Object.values(toolsObj) as Tool[];
     },
@@ -211,29 +129,29 @@ export function ToolsPage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Wrench className="w-6 h-6 text-primary" />
-            工具管理
+            {t('tools.title')}
           </h1>
-          <p className="text-muted-foreground mt-1">管理 MCP 工具、原生工具和自定义工具</p>
+          <p className="text-muted-foreground mt-1">{t('tools.description')}</p>
         </div>
         <button
           onClick={() => setIsCreateModalOpen(true)}
           className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
         >
           <Plus className="w-4 h-4" />
-          添加工具
+          {t('tools.addTool')}
         </button>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard
-          title="总工具数"
+          title={t('tools.totalTools')}
           value={stats?.total_tools || 0}
           icon={Wrench}
           loading={statsLoading}
         />
         <StatCard
-          title="活跃工具"
+          title={t('tools.activeTools')}
           value={stats?.active_tools || 0}
           icon={CheckCircle2}
           loading={statsLoading}
@@ -242,13 +160,13 @@ export function ToolsPage() {
           }
         />
         <StatCard
-          title="MCP 工具"
+          title={t('tools.mcp')}
           value={stats?.mcp_tools || 0}
           icon={Code}
           loading={statsLoading}
         />
         <StatCard
-          title="总调用次数"
+          title={t('tools.totalCalls')}
           value={stats?.total_calls || 0}
           icon={Terminal}
           loading={statsLoading}
@@ -269,12 +187,12 @@ export function ToolsPage() {
             )}
           >
             {type === 'all'
-              ? '全部'
+              ? t('common.all')
               : type === 'builtin'
-                ? '内置'
+                ? t('tools.builtinLabel')
                 : type === 'mcp'
                   ? 'MCP'
-                  : '自定义'}
+                  : t('tools.customLabel')}
           </button>
         ))}
       </div>
@@ -317,7 +235,7 @@ export function ToolsPage() {
                     <button
                       onClick={() => toggleToolStatus(tool)}
                       className="p-1.5 hover:bg-accent rounded-lg transition-colors"
-                      title={tool.status === 'active' ? '停用' : '启用'}
+                      title={tool.status === 'active' ? t('tools.disable') : t('tools.enable')}
                     >
                       {tool.status === 'active' ? (
                         <ToggleRight className="w-5 h-5 text-green-500" />
@@ -329,14 +247,14 @@ export function ToolsPage() {
                 </div>
 
                 <p className="text-sm text-muted-foreground mt-3 line-clamp-2">
-                  {tool.description || '暂无描述'}
+                  {tool.description || t('tools.noDescription')}
                 </p>
 
                 <div className="mt-4 pt-4 border-t border-border">
                   <div className="flex items-center justify-between text-sm text-muted-foreground">
-                    <span>调用次数: {tool.use_count}</span>
+                    <span>{t('tools.callCount')}: {tool.use_count}</span>
                     {tool.last_used && (
-                      <span>最后使用: {new Date(tool.last_used).toLocaleDateString()}</span>
+                      <span>{t('tools.lastUsed')}: {new Date(tool.last_used).toLocaleDateString()}</span>
                     )}
                   </div>
                   <div className="flex gap-2 mt-3">
@@ -348,7 +266,7 @@ export function ToolsPage() {
                       className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm bg-muted rounded-lg hover:bg-accent transition-colors"
                     >
                       <Play className="w-4 h-4" />
-                      测试
+                      {t('tools.test')}
                     </button>
                     <button
                       onClick={() => {
@@ -361,7 +279,7 @@ export function ToolsPage() {
                     </button>
                     <button
                       onClick={() => {
-                        if (confirm('确定要删除此工具吗？')) {
+                        if (confirm(t('tools.confirmDelete'))) {
                           deleteToolMutation.mutate(tool.id);
                         }
                       }}
@@ -377,12 +295,12 @@ export function ToolsPage() {
         ) : (
           <div className="col-span-full text-center py-12 text-muted-foreground">
             <Wrench className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p>暂无工具</p>
+            <p>{t('tools.noTools')}</p>
             <button
               onClick={() => setIsCreateModalOpen(true)}
               className="mt-4 text-primary hover:underline"
             >
-              添加第一个工具
+              {t('tools.addFirstTool')}
             </button>
           </div>
         )}
@@ -391,7 +309,7 @@ export function ToolsPage() {
       {/* Create Modal */}
       {isCreateModalOpen && (
         <ToolModal
-          title="添加工具"
+          title={t('tools.addTool')}
           onClose={() => setIsCreateModalOpen(false)}
           onSubmit={(data) => createToolMutation.mutate(data)}
           isLoading={createToolMutation.isPending}
@@ -401,7 +319,7 @@ export function ToolsPage() {
       {/* Edit Modal */}
       {isEditModalOpen && selectedTool && (
         <ToolModal
-          title="编辑工具"
+          title={t('tools.editTool')}
           tool={selectedTool}
           onClose={() => {
             setIsEditModalOpen(false);
@@ -477,9 +395,72 @@ interface ToolModalProps {
 }
 
 function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps) {
+  const { t } = useTranslation();
   const [selectedTemplate, setSelectedTemplate] = useState<string>('custom');
   const [activeTab, setActiveTab] = useState<'basic' | 'params' | 'advanced'>('basic');
   const [copied, setCopied] = useState(false);
+
+  // 预设的工具模板（移入组件以支持 i18n）
+  const toolTemplates = {
+    custom: {
+      name: '',
+      description: '',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+      examples: [],
+    },
+    mcp: {
+      name: '',
+      description: t('tools.templateMcpDesc'),
+      parameters: {
+        type: 'object',
+        properties: {
+          server_name: {
+            type: 'string',
+            description: t('tools.templateMcpServerName'),
+          },
+        },
+        required: ['server_name'],
+      },
+      config: {
+        server_name: '',
+        tool_name: '',
+      },
+    },
+    calculator: {
+      name: 'calculator',
+      description: t('tools.templateCalculatorDesc'),
+      parameters: {
+        type: 'object',
+        properties: {
+          expression: {
+            type: 'string',
+            description: t('tools.templateMathExpression'),
+          },
+        },
+        required: ['expression'],
+      },
+      examples: ['1 + 2', 'sin(30)', 'log(100)'],
+    },
+    datetime: {
+      name: 'datetime',
+      description: t('tools.templateDatetimeDesc'),
+      parameters: {
+        type: 'object',
+        properties: {
+          format: {
+            type: 'string',
+            description: t('tools.templateDateFormat'),
+          },
+        },
+        required: [],
+      },
+      examples: ['', 'YYYY-MM-DD'],
+    },
+  };
 
   const [formData, setFormData] = useState({
     name: tool?.name || '',
@@ -539,7 +520,7 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
         config,
       });
     } catch {
-      alert('JSON 格式错误，请检查参数或配置');
+      alert(t('tools.jsonFormatError'));
     }
   };
 
@@ -556,7 +537,7 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
         {/* Template Selector */}
         {!tool && (
           <div className="mb-6">
-            <label className="block text-sm font-medium mb-2">选择模板</label>
+            <label className="block text-sm font-medium mb-2">{t('tools.selectTemplate')}</label>
             <div className="grid grid-cols-4 gap-2">
               {Object.keys(toolTemplates).map((key) => (
                 <button
@@ -570,12 +551,12 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
                   )}
                 >
                   {key === 'custom'
-                    ? '自定义'
+                    ? t('tools.customLabel')
                     : key === 'mcp'
                       ? 'MCP'
                       : key === 'calculator'
-                        ? '计算器'
-                        : '时间'}
+                        ? t('tools.calculatorLabel')
+                        : t('tools.datetimeLabel')}
                 </button>
               ))}
             </div>
@@ -595,7 +576,7 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
                   : 'text-muted-foreground hover:text-foreground'
               )}
             >
-              {tab === 'basic' ? '基本信息' : tab === 'params' ? '参数定义' : '高级配置'}
+              {tab === 'basic' ? t('tools.basicInfo') : tab === 'params' ? t('tools.paramsDef') : t('tools.advancedConfig')}
             </button>
           ))}
         </div>
@@ -606,30 +587,30 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">
-                  名称 <span className="text-red-500">*</span>
+                  {t('common.name')} <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  placeholder="例如：calculator"
+                  placeholder={t('tools.namePlaceholder')}
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">描述</label>
+                <label className="block text-sm font-medium mb-1">{t('common.description')}</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                   rows={2}
-                  placeholder="描述这个工具的用途..."
+                  placeholder={t('tools.descPlaceholder')}
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">类型</label>
+                  <label className="block text-sm font-medium mb-1">{t('common.type')}</label>
                   <select
                     value={formData.type}
                     onChange={(e) =>
@@ -640,30 +621,30 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
                     }
                     className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                   >
-                    <option value="custom">自定义</option>
+                    <option value="custom">{t('tools.customLabel')}</option>
                     <option value="mcp">MCP</option>
-                    <option value="native">原生</option>
+                    <option value="native">{t('tools.nativeLabel')}</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">图标</label>
+                  <label className="block text-sm font-medium mb-1">{t('tools.icon')}</label>
                   <select
                     value={formData.icon}
                     onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
                     className="w-full px-3 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                   >
-                    <option value="wrench">工具</option>
-                    <option value="terminal">终端</option>
-                    <option value="globe">网络</option>
-                    <option value="database">数据库</option>
-                    <option value="file">文件</option>
-                    <option value="code">代码</option>
-                    <option value="settings">设置</option>
+                    <option value="wrench">{t('tools.iconWrench')}</option>
+                    <option value="terminal">{t('tools.iconTerminal')}</option>
+                    <option value="globe">{t('tools.iconGlobe')}</option>
+                    <option value="database">{t('tools.iconDatabase')}</option>
+                    <option value="file">{t('tools.iconFile')}</option>
+                    <option value="code">{t('tools.iconCode')}</option>
+                    <option value="settings">{t('tools.iconSettings')}</option>
                   </select>
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">标签（用逗号分隔）</label>
+                <label className="block text-sm font-medium mb-1">{t('tools.tagsLabel')}</label>
                 <input
                   type="text"
                   value={formData.tags}
@@ -680,7 +661,7 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <label className="block text-sm font-medium">
-                  参数定义 (JSON Schema) <span className="text-red-500">*</span>
+                  {t('tools.paramsSchema')} <span className="text-red-500">*</span>
                 </label>
                 <button
                   type="button"
@@ -688,7 +669,7 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
                   className="text-xs flex items-center gap-1 text-muted-foreground hover:text-foreground"
                 >
                   {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                  {copied ? '已复制' : '复制'}
+                  {copied ? t('tools.copied') : t('common.copy')}
                 </button>
               </div>
               <textarea
@@ -701,14 +682,14 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
   "properties": {
     "expression": {
       "type": "string",
-      "description": "数学表达式"
+      "description": "${t('tools.mathExpression')}"
     }
   },
   "required": ["expression"]
 }`}
               />
               <div>
-                <label className="block text-sm font-medium mb-1">示例（每行一个）</label>
+                <label className="block text-sm font-medium mb-1">{t('tools.examplesLabel')}</label>
                 <textarea
                   value={formData.examples}
                   onChange={(e) => setFormData({ ...formData, examples: e.target.value })}
@@ -724,7 +705,7 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
           {activeTab === 'advanced' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-1">配置 (JSON)</label>
+                <label className="block text-sm font-medium mb-1">{t('tools.configJson')}</label>
                 <textarea
                   value={formData.config}
                   onChange={(e) => setFormData({ ...formData, config: e.target.value })}
@@ -742,7 +723,7 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
               onClick={onClose}
               className="px-4 py-2 text-muted-foreground hover:text-foreground transition-colors"
             >
-              取消
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
@@ -750,7 +731,7 @@ function ToolModal({ title, tool, onClose, onSubmit, isLoading }: ToolModalProps
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
             >
               {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {tool ? '保存' : '添加'}
+              {tool ? t('common.save') : t('tools.addTool')}
             </button>
           </div>
         </form>
@@ -766,6 +747,7 @@ interface TestToolModalProps {
 }
 
 function TestToolModal({ tool, onClose }: TestToolModalProps) {
+  const { t } = useTranslation();
   const [params, setParams] = useState('{}');
   const [result, setResult] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState(false);
@@ -782,7 +764,7 @@ function TestToolModal({ tool, onClose }: TestToolModalProps) {
       const response = await api.testTool(tool.id, parsedParams);
       setResult(JSON.stringify(response, null, 2));
     } catch (e) {
-      setError(e instanceof Error ? e.message : '测试失败');
+      setError(e instanceof Error ? e.message : t('tools.testFailed'));
     } finally {
       setIsTesting(false);
     }
@@ -828,7 +810,7 @@ function TestToolModal({ tool, onClose }: TestToolModalProps) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-card rounded-lg border border-border w-full max-w-2xl p-6 max-h-[90vh] overflow-auto">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold">测试工具: {tool.name}</h2>
+          <h2 className="text-xl font-semibold">{t('tools.testToolTitle', { name: tool.name })}</h2>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
             ✕
           </button>
@@ -841,7 +823,7 @@ function TestToolModal({ tool, onClose }: TestToolModalProps) {
               onClick={() => setShowParamsHelp(!showParamsHelp)}
               className="flex items-center justify-between w-full text-sm font-medium"
             >
-              <span>参数说明</span>
+              <span>{t('tools.paramsHelp')}</span>
               {showParamsHelp ? (
                 <ChevronUp className="w-4 h-4" />
               ) : (
@@ -866,11 +848,11 @@ function TestToolModal({ tool, onClose }: TestToolModalProps) {
                     ))}
                   </ul>
                 ) : (
-                  <p>暂无参数说明</p>
+                  <p>{t('tools.noParamsHelp')}</p>
                 )}
                 {tool.examples && tool.examples.length > 0 && (
                   <div className="mt-2">
-                    <span className="font-medium">示例值:</span>
+                    <span className="font-medium">{t('tools.exampleValues')}:</span>
                     <ul className="mt-1 space-y-1">
                       {tool.examples.map((ex, i) => (
                         <li key={i} className="font-mono text-xs bg-background px-2 py-1 rounded">
@@ -886,12 +868,12 @@ function TestToolModal({ tool, onClose }: TestToolModalProps) {
 
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="block text-sm font-medium">参数 (JSON)</label>
+              <label className="block text-sm font-medium">{t('tools.paramsJson')}</label>
               <button
                 onClick={() => setParams(generateExampleParams())}
                 className="text-xs text-primary hover:underline"
               >
-                填入示例
+                {t('tools.fillExample')}
               </button>
             </div>
             <textarea
@@ -913,7 +895,7 @@ function TestToolModal({ tool, onClose }: TestToolModalProps) {
             ) : (
               <Play className="w-4 h-4" />
             )}
-            {isTesting ? '测试中...' : '执行测试'}
+            {isTesting ? t('tools.testing') : t('tools.executeTest')}
           </button>
 
           {error && (
@@ -925,7 +907,7 @@ function TestToolModal({ tool, onClose }: TestToolModalProps) {
 
           {result && (
             <div>
-              <label className="block text-sm font-medium mb-1">执行结果</label>
+              <label className="block text-sm font-medium mb-1">{t('tools.executionResult')}</label>
               <pre className="w-full px-3 py-2 bg-muted rounded-lg font-mono text-sm overflow-auto max-h-60">
                 {result}
               </pre>

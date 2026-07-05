@@ -23,7 +23,7 @@ class AgentContextManager:
         Args:
             db_path: 兼容参数，已忽略
         """
-        from backend.api.app import get_context_manager
+        from backend.dependencies import get_context_manager
 
         self._ctx = get_context_manager()
         logger.debug("AgentContextManager 转发层已初始化，指向全局 ContextManager")

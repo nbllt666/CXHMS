@@ -154,7 +154,7 @@ def _generate_agent_id() -> str:
     description="获取系统中所有 Agent 的配置列表，包括默认 Agent 和自定义 Agent。",
     response_description="返回 Agent 列表和总数",
 )
-async def get_agents():
+async def list_agents():
     """获取所有 Agent
     
     Returns:
@@ -224,6 +224,40 @@ async def create_agent(request: AgentCreateRequest):
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
+@router.get(
+    "/agents/default",
+    summary="获取默认 Agent",
+    description="获取系统中标记为 is_default 的 Agent 配置。",
+)
+async def get_default_agent():
+    """获取默认 Agent 配置。
+
+    对齐 public/interface_stub/agent_service.pyi 的 get_default_agent() 契约。
+    优先返回 is_default=True 的 Agent；若无则回退到 id="default"；
+    均无则抛 404。
+
+    Returns:
+        dict: 包含 status 和 default agent 配置
+    """
+    try:
+        agents = _load_agents()
+        # 优先 is_default=True
+        default_agent = next((a for a in agents if a.get("is_default", False)), None)
+        # 回退到 id="default"
+        if default_agent is None:
+            default_agent = next((a for a in agents if a.get("id") == "default"), None)
+
+        if not default_agent:
+            raise HTTPException(status_code=404, detail="未配置默认 Agent")
+
+        return {"status": "success", "agent": default_agent}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取默认Agent失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="内部服务器错误")
+
+
 @router.get("/agents/{agent_id}")
 async def get_agent(agent_id: str):
     """获取单个 Agent"""
@@ -258,8 +292,9 @@ async def update_agent(agent_id: str, request: AgentUpdateRequest):
         update_data = request.dict(exclude_unset=True)
         for key, value in update_data.items():
             if value is not None:
-                # 处理空模型字符串 - 空字符串表示使用默value and 认模型
-                if key == "model" and value and isinstance(value, str) and not value.strip():
+                # B4: 空模型字符串（含纯空白）回退到默认模型 "main"
+                # 旧逻辑 `value and not value.strip()` 在 value="" 时短路为 False，导致空字符串不回退
+                if key == "model" and isinstance(value, str) and not value.strip():
                     value = "main"
                 agent[key] = value
 
@@ -355,7 +390,7 @@ async def clone_agent(agent_id: str):
 @router.get("/agents/{agent_id}/stats")
 async def get_agent_stats(agent_id: str):
     """获取 Agent 统计信息"""
-    from backend.api.app import get_context_manager
+    from backend.dependencies import get_context_manager
 
     try:
         agents = _load_agents()
@@ -389,7 +424,7 @@ async def get_agent_context(agent_id: str, limit: int = 20):
         agent_id: Agent唯一标识
         limit: 返回的最大消息数量
     """
-    from backend.api.app import get_context_manager
+    from backend.dependencies import get_context_manager
 
     try:
         agents = _load_agents()
@@ -428,7 +463,7 @@ async def clear_agent_context(agent_id: str):
     Args:
         agent_id: Agent唯一标识
     """
-    from backend.api.app import get_context_manager
+    from backend.dependencies import get_context_manager
 
     try:
         agents = _load_agents()

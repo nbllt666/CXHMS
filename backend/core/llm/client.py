@@ -1,12 +1,12 @@
 import asyncio
 import json
+import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import httpx
-import requests
 
 from backend.core.logging_config import get_contextual_logger
 
@@ -318,7 +318,7 @@ class VLLMClient(LLMClient):
         embedding_model: str = None,
         api_key: Optional[str] = None,
         supports_tools: bool = True,
-        max_concurrent: int = 1,
+        max_concurrent: int = 4,
     ):
         self.host = host.rstrip("/")
         # 如果 host 已包含 /v1 后缀，去掉以避免拼接时重复
@@ -333,16 +333,19 @@ class VLLMClient(LLMClient):
         self.embedding_model = embedding_model or self.model
         self.api_key = api_key
         self.supports_tools = supports_tools
-        # Docker Desktop Windows 端口代理无法处理并发连接（返回 502）
-        # 用信号量串行化 vLLM HTTP 请求；若后端运行在 Docker 内可调大
+        # 信号量控制并发上限（默认 4）；用户请求通过 _user_waiting 优先于后台任务
+        # 注意：不再使用 _http_lock 全局串行，避免 locked()+release() 竞态与并发瓶颈
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._bg_semaphore = asyncio.Semaphore(max_concurrent)
-        self._http_lock = asyncio.Lock()
         self._user_waiting = 0
         self._user_count_lock = asyncio.Lock()
 
     async def _acquire_http(self, is_background: bool = False):
-        """获取 HTTP 访问权。用户请求优先于后台任务。"""
+        """获取 HTTP 访问权。用户请求优先于后台任务。
+
+        通过 _semaphore / _bg_semaphore 控制并发上限；
+        不再使用 _http_lock 全局串行，避免 locked()+release() 之间的竞态。
+        """
         if is_background:
             await self._bg_semaphore.acquire()
             try:
@@ -351,7 +354,6 @@ class VLLMClient(LLMClient):
                         if self._user_waiting == 0:
                             break
                     await asyncio.sleep(0.05)
-                await self._http_lock.acquire()
             except BaseException:
                 self._bg_semaphore.release()
                 raise
@@ -364,16 +366,13 @@ class VLLMClient(LLMClient):
                 acquired_semaphore = True
                 async with self._user_count_lock:
                     self._user_waiting -= 1
-                await self._http_lock.acquire()
             except BaseException:
                 if acquired_semaphore:
                     self._semaphore.release()
                 raise
 
     def _release_http(self, is_background: bool = False):
-        """释放 HTTP 访问权。"""
-        if self._http_lock.locked():
-            self._http_lock.release()
+        """释放 HTTP 访问权。仅释放信号量，不再操作 _http_lock。"""
         if is_background:
             self._bg_semaphore.release()
         else:
@@ -435,64 +434,57 @@ class VLLMClient(LLMClient):
             url = f"{self.host}/v1/chat/completions"
             logger.info(f"VLLM请求: {url}, model={self.model}, supports_tools={self.supports_tools}, has_tools={bool(tools)}")
 
-            def _do_post(req_body):
-                return requests.post(
-                    url,
-                    json=req_body,
-                    headers=headers,
-                    timeout=120.0,
-                )
+            async with httpx.AsyncClient(timeout=120.0, trust_env=False) as http_client:
+                response = await http_client.post(url, json=request_body, headers=headers)
 
-            response = await asyncio.to_thread(_do_post, request_body)
+                if response.status_code == 200:
+                    result = response.json()
+                    choice = result["choices"][0]
+                    content = choice["message"].get("content")
+                    if not content:
+                        content = choice["message"].get("reasoning_content")
+                    return LLMResponse(
+                        content=content,
+                        finish_reason=choice.get("finish_reason", "stop"),
+                        usage=result.get("usage", {}),
+                        tool_calls=choice["message"].get("tool_calls"),
+                    )
+                else:
+                    # 如果带 tools 请求失败，尝试不带 tools 降级请求（复用同一 client）
+                    if tools and response.status_code in (400, 422, 500):
+                        err_body = response.text[:800] if response.text else ""
+                        logger.warning(f"带 tools 请求失败 (HTTP {response.status_code})，尝试不带 tools 降级请求。错误体: {err_body}")
+                        request_body_fallback = {k: v for k, v in request_body.items() if k != "tools"}
+                        response = await http_client.post(url, json=request_body_fallback, headers=headers)
+                        if response.status_code == 200:
+                            result = response.json()
+                            choice = result["choices"][0]
+                            content = choice["message"].get("content")
+                            if not content:
+                                content = choice["message"].get("reasoning_content")
+                            return LLMResponse(
+                                content=content,
+                                finish_reason=choice.get("finish_reason", "stop"),
+                                usage=result.get("usage", {}),
+                            )
 
-            if response.status_code == 200:
-                result = response.json()
-                choice = result["choices"][0]
-                content = choice["message"].get("content")
-                if not content:
-                    content = choice["message"].get("reasoning_content")
-                return LLMResponse(
-                    content=content,
-                    finish_reason=choice.get("finish_reason", "stop"),
-                    usage=result.get("usage", {}),
-                    tool_calls=choice["message"].get("tool_calls"),
-                )
-            else:
-                # 如果带 tools 请求失败，尝试不带 tools 降级请求
-                if tools and response.status_code in (400, 422, 500):
-                    err_body = response.text[:800] if response.text else ""
-                    logger.warning(f"带 tools 请求失败 (HTTP {response.status_code})，尝试不带 tools 降级请求。错误体: {err_body}")
-                    request_body_fallback = {k: v for k, v in request_body.items() if k != "tools"}
-                    response = await asyncio.to_thread(_do_post, request_body_fallback)
-                    if response.status_code == 200:
-                        result = response.json()
-                        choice = result["choices"][0]
-                        content = choice["message"].get("content")
-                        if not content:
-                            content = choice["message"].get("reasoning_content")
-                        return LLMResponse(
-                            content=content,
-                            finish_reason=choice.get("finish_reason", "stop"),
-                            usage=result.get("usage", {}),
-                        )
+                    # 详细的错误处理
+                    error_text = response.text[:500] if response.text else "无响应内容"
+                    logger.error(f"VLLM错误: HTTP {response.status_code}, {error_text}")
 
-                # 详细的错误处理
-                error_text = response.text[:500] if response.text else "无响应内容"
-                logger.error(f"VLLM错误: HTTP {response.status_code}, {error_text}")
+                    return LLMResponse(
+                        content="",
+                        finish_reason="error",
+                        error=f"HTTP {response.status_code}",
+                        error_details={
+                            "status_code": response.status_code,
+                            "response_text": error_text,
+                            "model": self.model,
+                            "host": self.host,
+                        },
+                    )
 
-                return LLMResponse(
-                    content="",
-                    finish_reason="error",
-                    error=f"HTTP {response.status_code}",
-                    error_details={
-                        "status_code": response.status_code,
-                        "response_text": error_text,
-                        "model": self.model,
-                        "host": self.host,
-                    },
-                )
-
-        except requests.ConnectionError as e:
+        except httpx.ConnectError as e:
             error_msg = f"无法连接到VLLM服务器: {self.host}"
             logger.error(f"{error_msg}, {e}")
             return LLMResponse(
@@ -501,24 +493,25 @@ class VLLMClient(LLMClient):
                 error=error_msg,
                 error_details={"exception": str(e), "host": self.host},
             )
-        except requests.Timeout as e:
-            # 如果带 tools 请求超时，尝试不带 tools 降级请求
+        except httpx.TimeoutException as e:
+            # 如果带 tools 请求超时，尝试不带 tools 降级请求（新建独立 client）
             if tools:
                 logger.warning(f"带 tools 请求超时，尝试不带 tools 降级请求")
                 try:
                     request_body_fallback = {k: v for k, v in request_body.items() if k != "tools"}
-                    response = await asyncio.to_thread(_do_post, request_body_fallback)
-                    if response.status_code == 200:
-                        result = response.json()
-                        choice = result["choices"][0]
-                        content = choice["message"].get("content")
-                        if not content:
-                            content = choice["message"].get("reasoning_content")
-                        return LLMResponse(
-                            content=content,
-                            finish_reason=choice.get("finish_reason", "stop"),
-                            usage=result.get("usage", {}),
-                        )
+                    async with httpx.AsyncClient(timeout=120.0, trust_env=False) as fallback_client:
+                        response = await fallback_client.post(url, json=request_body_fallback, headers=headers)
+                        if response.status_code == 200:
+                            result = response.json()
+                            choice = result["choices"][0]
+                            content = choice["message"].get("content")
+                            if not content:
+                                content = choice["message"].get("reasoning_content")
+                            return LLMResponse(
+                                content=content,
+                                finish_reason=choice.get("finish_reason", "stop"),
+                                usage=result.get("usage", {}),
+                            )
                 except Exception as fallback_err:
                     logger.error(f"降级请求也失败: {fallback_err}")
 
@@ -668,15 +661,14 @@ class VLLMClient(LLMClient):
             if self.api_key:
                 headers["Authorization"] = f"Bearer {self.api_key}"
             # 先尝试 /health（本地 vLLM），再尝试 /models（NVIDIA NIM 等云服务）
-            for endpoint in [f"{self.host}/health", f"{self.host}/models"]:
-                try:
-                    def _do_get(ep=endpoint):
-                        return requests.get(ep, headers=headers, timeout=10.0)
-                    response = await asyncio.to_thread(_do_get)
-                    if response.status_code == 200:
-                        return True
-                except Exception:
-                    continue
+            async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
+                for endpoint in [f"{self.host}/health", f"{self.host}/models"]:
+                    try:
+                        response = await client.get(endpoint, headers=headers)
+                        if response.status_code == 200:
+                            return True
+                    except Exception:
+                        continue
             return False
         except Exception:
             return False
@@ -729,24 +721,21 @@ class VLLMClient(LLMClient):
         使用独立的 embedding_host 和 embedding_model 配置
         """
         try:
-            def _do_post():
-                return requests.post(
+            async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
+                response = await client.post(
                     f"{self.embedding_host}/v1/embeddings",
                     json={"model": self.embedding_model, "input": text},
-                    timeout=30.0,
                 )
 
-            response = await asyncio.to_thread(_do_post)
-
-            if response.status_code == 200:
-                result = response.json()
-                # OpenAI 格式返回 embedding 在 data[0].embedding
-                if "data" in result and len(result["data"]) > 0:
-                    return result["data"][0].get("embedding")
-                return None
-            else:
-                logger.warning(f"VLLM获取embedding失败: HTTP {response.status_code} - {response.text[:200]}")
-                return None
+                if response.status_code == 200:
+                    result = response.json()
+                    # OpenAI 格式返回 embedding 在 data[0].embedding
+                    if "data" in result and len(result["data"]) > 0:
+                        return result["data"][0].get("embedding")
+                    return None
+                else:
+                    logger.warning(f"VLLM获取embedding失败: HTTP {response.status_code} - {response.text[:200]}")
+                    return None
 
         except Exception as e:
             logger.error(f"VLLM获取embedding失败: {e}")
@@ -755,23 +744,26 @@ class VLLMClient(LLMClient):
 
 class LLMFactory:
     _clients: Dict[str, LLMClient] = {}
+    _clients_lock = threading.Lock()
 
     @classmethod
     def create_client(cls, provider: str = "ollama", **kwargs) -> LLMClient:
         key = f"{provider}:{kwargs.get('model', 'default')}"
 
-        if key in cls._clients:
-            return cls._clients[key]
+        # 线程安全保护 _clients 字典（双重检查锁定，避免并发重复实例化）
+        with cls._clients_lock:
+            if key in cls._clients:
+                return cls._clients[key]
 
-        if provider == "ollama":
-            client = OllamaClient(**kwargs)
-        elif provider == "vllm":
-            client = VLLMClient(**kwargs)
-        else:
-            raise ValueError(f"不支持的LLM提供商: {provider}")
+            if provider == "ollama":
+                client = OllamaClient(**kwargs)
+            elif provider == "vllm":
+                client = VLLMClient(**kwargs)
+            else:
+                raise ValueError(f"不支持的LLM提供商: {provider}")
 
-        cls._clients[key] = client
-        return client
+            cls._clients[key] = client
+            return client
 
     @classmethod
     def get_client(cls, provider: str = "ollama", **kwargs) -> LLMClient:
@@ -779,4 +771,5 @@ class LLMFactory:
 
     @classmethod
     def clear_cache(cls):
-        cls._clients.clear()
+        with cls._clients_lock:
+            cls._clients.clear()

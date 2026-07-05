@@ -2,35 +2,13 @@ import { useState, useRef, useEffect } from 'react';
 import { Send, Database, Brain, ChevronDown, ChevronUp, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { api } from '../api/client';
+import { useTranslation } from 'react-i18next';
+import { api } from '../api';
 import { formatRelativeTime } from '../lib/utils';
 
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: string;
-  tool_calls?: ToolCall[];
-  thinking?: string;
-}
+import type { Message, ToolCall, StreamToolCall } from '../types';
 
-interface ToolCall {
-  id: string;
-  name: string;
-  arguments?: Record<string, unknown>;
-  result?: unknown;
-  status?: 'pending' | 'executing' | 'completed' | 'failed';
-}
-
-interface StreamToolCall {
-  id?: string;
-  name?: string;
-  arguments?: Record<string, unknown>;
-  function?: {
-    name?: string;
-    arguments?: Record<string, unknown>;
-  };
-}
+// F8: Message / ToolCall / StreamToolCall 类型统一到 types/，此处不再重复声明。
 
 interface CodeProps {
   inline?: boolean;
@@ -72,6 +50,7 @@ function MarkdownContent({ content }: { content: string }) {
 
 // 思考过程折叠组件
 function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls?: ToolCall[] }) {
+  const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
 
   if (!thinking && (!toolCalls || toolCalls.length === 0)) return null;
@@ -79,7 +58,7 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
   // 根据内容类型决定标题
   const hasThinking = Boolean(thinking);
   const hasToolCalls = Boolean(toolCalls && toolCalls.length > 0);
-  const title = hasThinking ? '思考过程' : '工具调用';
+  const title = hasThinking ? t('memoryAgent.thinkingProcess') : t('memoryAgent.toolCalls');
 
   return (
     <div className="mt-2 border border-border/50 rounded-lg overflow-hidden">
@@ -92,7 +71,7 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
           {title}
           {hasToolCalls && (
             <span className="px-1.5 py-0.5 bg-primary/10 text-primary rounded-full text-[10px]">
-              {toolCalls!.length} 个工具调用
+              {t('memoryAgent.toolCallsCount', { count: toolCalls!.length })}
             </span>
           )}
         </span>
@@ -104,7 +83,7 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
           {hasThinking && (
             <div>
               {hasToolCalls && (
-                <div className="text-foreground font-medium mb-1">思考过程</div>
+                <div className="text-foreground font-medium mb-1">{t('memoryAgent.thinkingProcess')}</div>
               )}
               <div className="text-muted-foreground whitespace-pre-wrap">{thinking}</div>
             </div>
@@ -113,28 +92,28 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
           {hasToolCalls && (
             <div className={hasThinking ? 'space-y-2 mt-2' : 'space-y-2'}>
               {hasThinking && (
-                <div className="text-foreground font-medium mb-1">工具调用</div>
+                <div className="text-foreground font-medium mb-1">{t('memoryAgent.toolCalls')}</div>
               )}
               {toolCalls!.map((toolCall, idx) => (
                 <div key={idx} className="p-2 bg-muted/50 rounded border border-border/50">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="font-medium text-foreground">🔧 {toolCall.name}</span>
                     {toolCall.status === 'executing' && (
-                      <span className="animate-pulse text-blue-500">执行中...</span>
+                      <span className="animate-pulse text-blue-500">{t('memoryAgent.executing')}</span>
                     )}
                     {toolCall.status === 'completed' && (
-                      <span className="text-green-500">✓ 完成</span>
+                      <span className="text-green-500">{t('memoryAgent.completed')}</span>
                     )}
-                    {toolCall.status === 'failed' && <span className="text-red-500">✗ 失败</span>}
+                    {toolCall.status === 'failed' && <span className="text-red-500">{t('memoryAgent.failed')}</span>}
                   </div>
                   {toolCall.arguments && (
                     <div className="text-muted-foreground font-mono text-[10px] mb-1">
-                      参数: {JSON.stringify(toolCall.arguments, null, 2)}
+                      {t('memoryAgent.parameters')}: {JSON.stringify(toolCall.arguments, null, 2)}
                     </div>
                   )}
                   {toolCall.result !== undefined && (
                     <div className="text-muted-foreground font-mono text-[10px]">
-                      结果: {JSON.stringify(toolCall.result, null, 2)}
+                      {t('memoryAgent.result')}: {JSON.stringify(toolCall.result, null, 2)}
                     </div>
                   )}
                 </div>
@@ -148,6 +127,7 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
 }
 
 export function MemoryAgentPage() {
+  const { t } = useTranslation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -319,14 +299,14 @@ export function MemoryAgentPage() {
                 ...prev.slice(0, -1),
                 {
                   ...lastMsg,
-                  content: lastMsg.content || '响应已完成',
+                  content: lastMsg.content || t('memoryAgent.responseComplete'),
                 },
               ];
             }
             return prev;
           });
         } else if (chunk.type === 'error') {
-          throw new Error(chunk.error || '未知错误');
+          throw new Error(chunk.error || t('memoryAgent.unknownError'));
         }
       }, abortController.signal);
     } catch (error) {
@@ -338,7 +318,7 @@ export function MemoryAgentPage() {
             ...prev.slice(0, -1),
             {
               ...lastMsg,
-              content: '抱歉，服务暂时不可用，请稍后重试。',
+              content: t('memoryAgent.serviceUnavailable'),
             },
           ];
         }
@@ -383,8 +363,8 @@ export function MemoryAgentPage() {
             <Database className="w-4 h-4 text-primary" />
           </div>
           <div>
-            <h2 className="font-semibold">记忆管理助手</h2>
-            <p className="text-xs text-muted-foreground">通过自然语言管理记忆库</p>
+            <h2 className="font-semibold">{t('nav.memoryAgent')}</h2>
+            <p className="text-xs text-muted-foreground">{t('memoryAgent.subtitle')}</p>
           </div>
         </div>
         <button
@@ -392,7 +372,7 @@ export function MemoryAgentPage() {
           className="flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
         >
           <X className="w-4 h-4" />
-          清空对话
+          {t('memoryAgent.clearConversation')}
         </button>
       </div>
 
@@ -403,18 +383,18 @@ export function MemoryAgentPage() {
             <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
               <Database className="w-8 h-8 text-primary" />
             </div>
-            <h3 className="text-xl font-semibold mb-2">记忆管理助手</h3>
+            <h3 className="text-xl font-semibold mb-2">{t('nav.memoryAgent')}</h3>
             <p className="text-muted-foreground max-w-md mb-4">
-              通过自然语言与记忆管理模型交流，执行搜索、更新、删除、导出等记忆管理操作。
+              {t('memoryAgent.introDesc')}
             </p>
             <div className="max-w-md p-4 bg-muted rounded-lg text-sm text-muted-foreground">
-              <div className="font-medium mb-2">示例指令：</div>
+              <div className="font-medium mb-2">{t('memoryAgent.exampleCommands')}</div>
               <ul className="space-y-1 text-left">
-                <li>• "搜索关于工作的记忆"</li>
-                <li>• "删除记忆ID为123的内容"</li>
-                <li>• "导出所有记忆为JSON格式"</li>
-                <li>• "显示记忆库统计信息"</li>
-                <li>• "清理过期的已删除记忆"</li>
+                <li>{t('memoryAgent.example1')}</li>
+                <li>{t('memoryAgent.example2')}</li>
+                <li>{t('memoryAgent.example3')}</li>
+                <li>{t('memoryAgent.example4')}</li>
+                <li>{t('memoryAgent.example5')}</li>
               </ul>
             </div>
           </div>
@@ -430,7 +410,7 @@ export function MemoryAgentPage() {
                 }`}
               >
                 {message.role === 'user' ? (
-                  <span className="text-sm font-medium">我</span>
+                  <span className="text-sm font-medium">{t('memoryAgent.me')}</span>
                 ) : (
                   <Database className="w-5 h-5" />
                 )}
@@ -476,7 +456,7 @@ export function MemoryAgentPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="输入记忆管理指令..."
+            placeholder={t('memoryAgent.inputPlaceholder')}
             className="flex-1 resize-none bg-muted rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[48px] max-h-[200px]"
             rows={1}
             disabled={isLoading}
@@ -490,7 +470,7 @@ export function MemoryAgentPage() {
           </button>
         </div>
         <p className="text-xs text-muted-foreground mt-2 text-center">
-          按 Enter 发送，Shift + Enter 换行
+          {t('memoryAgent.enterToSend')}
         </p>
       </div>
     </div>

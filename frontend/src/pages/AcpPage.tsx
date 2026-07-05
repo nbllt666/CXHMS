@@ -11,7 +11,8 @@ import {
   Loader2,
   Network,
 } from 'lucide-react';
-import { api } from '../api/client';
+import { useTranslation } from 'react-i18next';
+import { api } from '../api';
 import { cn } from '../lib/utils';
 
 interface AcpAgent {
@@ -35,6 +36,7 @@ interface AcpStats {
 }
 
 export function AcpPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [selectedAgent, setSelectedAgent] = useState<AcpAgent | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -82,28 +84,28 @@ export function AcpPage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Network className="w-6 h-6 text-primary" />
-            ACP 管理
+            {t('acp.pageTitle')}
           </h1>
-          <p className="text-muted-foreground mt-1">管理 AI 代理和协调协议</p>
+          <p className="text-muted-foreground mt-1">{t('acp.description')}</p>
         </div>
         <button
           onClick={() => setIsCreateModalOpen(true)}
           className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
         >
           <Plus className="w-4 h-4" />
-          连接代理
+          {t('acp.connectAgent')}
         </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard
-          title="总代理数"
+          title={t('acp.totalAgents')}
           value={stats?.total_agents || 0}
           icon={Bot}
           loading={statsLoading}
         />
         <StatCard
-          title="活跃代理"
+          title={t('acp.activeAgents')}
           value={stats?.active_agents || 0}
           icon={Activity}
           loading={statsLoading}
@@ -114,13 +116,13 @@ export function AcpPage() {
           }
         />
         <StatCard
-          title="总会话数"
+          title={t('acp.totalConversations')}
           value={stats?.total_conversations || 0}
           icon={MessageSquare}
           loading={statsLoading}
         />
         <StatCard
-          title="平均响应时间"
+          title={t('acp.avgResponseTime')}
           value={`${stats?.avg_response_time?.toFixed(2) || 0}ms`}
           icon={RefreshCw}
           loading={statsLoading}
@@ -131,12 +133,12 @@ export function AcpPage() {
         <div className="p-4 border-b border-border flex items-center justify-between">
           <h2 className="font-semibold flex items-center gap-2">
             <Users className="w-5 h-5" />
-            代理列表
+            {t('acp.agents')}
           </h2>
           <button
             onClick={() => queryClient.invalidateQueries({ queryKey: ['acp-agents'] })}
             className="p-2 hover:bg-accent rounded-lg transition-colors"
-            title="刷新"
+            title={t('common.refresh')}
           >
             <RefreshCw className="w-4 h-4" />
           </button>
@@ -197,10 +199,10 @@ export function AcpPage() {
                           )}
                         >
                           {agent.status === 'active'
-                            ? '活跃'
+                            ? t('agent.status.active')
                             : agent.status === 'error'
-                              ? '错误'
-                              : '停用'}
+                              ? t('agent.status.error')
+                              : t('agent.status.inactive')}
                         </span>
                         <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600">
                           {agent.host}:{agent.port}
@@ -220,12 +222,12 @@ export function AcpPage() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (confirm('确定要断开此代理吗？')) {
+                        if (confirm(t('acp.confirmDisconnect'))) {
                           deleteAgentMutation.mutate(agent.id);
                         }
                       }}
                       className="p-2 hover:bg-red-500/10 hover:text-red-500 rounded-lg transition-colors"
-                      title="断开连接"
+                      title={t('chat.disconnect')}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -237,12 +239,12 @@ export function AcpPage() {
         ) : (
           <div className="p-8 text-center text-muted-foreground">
             <Bot className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p>暂无代理</p>
+            <p>{t('acp.noAgentsYet')}</p>
             <button
               onClick={() => setIsCreateModalOpen(true)}
               className="mt-4 text-primary hover:underline"
             >
-              连接第一个代理
+              {t('acp.connectFirst')}
             </button>
           </div>
         )}
@@ -250,7 +252,7 @@ export function AcpPage() {
 
       {isCreateModalOpen && (
         <AcpAgentModal
-          title="连接 ACP 代理"
+          title={t('acp.connectAcpAgent')}
           onClose={() => setIsCreateModalOpen(false)}
           onSubmit={(data) => createAgentMutation.mutate(data)}
           isLoading={createAgentMutation.isPending}
@@ -303,6 +305,7 @@ interface AcpAgentModalProps {
 }
 
 function AcpAgentModal({ title, onClose, onSubmit, isLoading }: AcpAgentModalProps) {
+  const { t } = useTranslation();
   const [formData, setFormData] = useState({
     agent_id: '',
     host: 'localhost',
@@ -324,7 +327,7 @@ function AcpAgentModal({ title, onClose, onSubmit, isLoading }: AcpAgentModalPro
         <h2 className="text-xl font-semibold mb-4">{title}</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1">代理 ID <span className="text-red-500">*</span></label>
+            <label className="block text-sm font-medium mb-1">{t('acp.agentId')} <span className="text-red-500">*</span></label>
             <input
               type="text"
               value={formData.agent_id}
@@ -335,7 +338,7 @@ function AcpAgentModal({ title, onClose, onSubmit, isLoading }: AcpAgentModalPro
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">主机地址 <span className="text-red-500">*</span></label>
+            <label className="block text-sm font-medium mb-1">{t('acp.hostLabel')} <span className="text-red-500">*</span></label>
             <input
               type="text"
               value={formData.host}
@@ -346,7 +349,7 @@ function AcpAgentModal({ title, onClose, onSubmit, isLoading }: AcpAgentModalPro
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">端口 <span className="text-red-500">*</span></label>
+            <label className="block text-sm font-medium mb-1">{t('acp.portLabel')} <span className="text-red-500">*</span></label>
             <input
               type="number"
               value={formData.port}
@@ -364,7 +367,7 @@ function AcpAgentModal({ title, onClose, onSubmit, isLoading }: AcpAgentModalPro
               onClick={onClose}
               className="px-4 py-2 text-muted-foreground hover:text-foreground transition-colors"
             >
-              取消
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
@@ -372,7 +375,7 @@ function AcpAgentModal({ title, onClose, onSubmit, isLoading }: AcpAgentModalPro
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
             >
               {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-              连接
+              {t('acp.connect')}
             </button>
           </div>
         </form>

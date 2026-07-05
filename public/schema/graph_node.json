@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cxhms.local/schema/graph_node.json",
+  "title": "GraphNode",
+  "description": "图节点实体契约。对应 backend/core/graph/models.py 的 GraphNode dataclass。承载图数据库中的节点，按 agent_id 隔离图空间。",
+  "type": "object",
+  "required": ["id", "type", "agent_id"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "节点唯一标识（UUID）"
+    },
+    "type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "节点类型，如 concept/entity/event"
+    },
+    "properties": {
+      "type": "object",
+      "description": "节点扩展属性",
+      "additionalProperties": true
+    },
+    "text_content": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "节点文本内容（用于语义检索）"
+    },
+    "vector_id": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "向量库中的引用 ID"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "创建时间（ISO 8601）"
+    },
+    "updated_at": {
+      "type": ["string", "null"],
+      "description": "更新时间（ISO 8601），未更新时为 null"
+    },
+    "agent_id": {
+      "type": "string",
+      "default": "default",
+      "description": "所属 Agent ID，用于图空间隔离"
+    }
+  }
+}

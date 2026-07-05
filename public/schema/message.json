@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cxhms.local/schema/message.json",
+  "title": "ChatMessage",
+  "description": "聊天消息实体契约。对应 backend/models/context.py 的 Message dataclass。承载会话中的一条消息（user/assistant/system/tool）。",
+  "type": "object",
+  "required": ["id", "session_id", "role", "content"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "消息唯一标识（UUID）"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "所属会话 ID"
+    },
+    "role": {
+      "type": "string",
+      "enum": ["user", "assistant", "system", "tool"],
+      "description": "消息角色"
+    },
+    "content": {
+      "type": "string",
+      "description": "消息正文。tool 角色时为工具结果 JSON 字符串"
+    },
+    "content_type": {
+      "type": "string",
+      "enum": ["text", "json", "image", "tool_call"],
+      "default": "text",
+      "description": "内容类型"
+    },
+    "thinking": {
+      "type": ["string", "null"],
+      "description": "思维链内容（assistant 角色），不支持思考的模型为 null"
+    },
+    "tool_calls": {
+      "type": ["array", "null"],
+      "description": "工具调用列表（assistant 角色）",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "arguments"],
+        "properties": {
+          "id": {"type": "string", "description": "调用 ID"},
+          "name": {"type": "string", "description": "工具名"},
+          "arguments": {"type": "object", "description": "调用参数"}
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "扩展元数据，如 {model, finish_reason, tokens}",
+      "additionalProperties": true
+    },
+    "tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "消息 token 数"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "消息时间戳"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "创建时间（ISO 8601）"
+    },
+    "is_deleted": {
+      "type": "boolean",
+      "default": false,
+      "description": "软删除标记"
+    }
+  }
+}

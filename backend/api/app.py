@@ -8,12 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.api.exceptions import (
-    CXHMSError,
     cxhms_exception_handler,
     generic_exception_handler,
     http_exception_handler,
     validation_exception_handler,
 )
+from backend.core.exceptions import CXHMSException
 from backend.api.middleware.performance import PerformanceMiddleware
 from backend.api.response import APIResponse, HealthResponse
 from backend.api.routers import (
@@ -62,24 +62,12 @@ setup_logging(
 
 logger = get_contextual_logger(__name__)
 
-memory_manager = None
-context_manager = None
-acp_manager = None
-llm_client = None
-secondary_router = None
-mcp_manager = None
-model_router = None
-async_memory_manager = None
-graph_database = None
-graph_store = None
-cxfc_manager = None
-
 
 async def _build_sim_service_state(app: FastAPI):
     """模拟模式装配：用假实现构造 ServiceState，返回 (service_state, tmpdir)。
 
     在 ``CXHMS_SIMULATION`` 环境变量被设置时由 lifespan 调用，使用
-    ``backend.tests.simulation.fakes`` 下的假实现驱动真实业务逻辑，
+    ``tests.fakes`` 下的假实现驱动真实业务逻辑，
     不依赖任何外部服务（vLLM/Ollama/Chroma/Milvus 等）。
     """
     import os
@@ -99,20 +87,19 @@ async def _build_sim_service_state(app: FastAPI):
     )
     from backend.core.tools.graph_tools import set_graph_dependencies
     from backend.dependencies import ServiceState, set_service_state
-    from backend.tests.simulation.fakes.fake_embedding import FakeEmbeddingModel
-    from backend.tests.simulation.fakes.fake_graph import make_in_memory_graph_store
-    from backend.tests.simulation.fakes.fake_llm import FakeLLMClient, FakeModelRouter
-    from backend.tests.simulation.fakes.fake_vector_store import InMemoryVectorStore
+    from tests.fakes.fake_embedding import FakeEmbeddingModel
+    from tests.fakes.fake_graph import make_in_memory_graph_store
+    from tests.fakes.fake_llm import FakeLLMClient, FakeModelRouter
+    from tests.fakes.fake_vector_store import InMemoryVectorStore
 
     import backend.dependencies as _deps
 
     tmpdir = tempfile.mkdtemp(prefix="cxhms_sim_")
     logger.info(f"模拟模式：使用临时目录 {tmpdir}")
 
-    # 1. 重置 MemoryManager 单例（防止残留），用临时文件 db
+    # 1. 用临时文件 db 构造 MemoryManager（每次实例化独立，无需重置单例）
     #    注意：不能用 :memory:，因为 MemoryManager 用每线程 sqlite 连接池，
     #    不同线程会看到不同的内存库。
-    MemoryManager._instance = None
     memory_manager = MemoryManager(db_path=os.path.join(tmpdir, "memories.db"))
     memory_manager.enable_vector_search(
         embedding_model=FakeEmbeddingModel(),
@@ -211,25 +198,11 @@ async def _build_sim_service_state(app: FastAPI):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global memory_manager, context_manager, acp_manager, llm_client, secondary_router, mcp_manager, model_router, async_memory_manager, graph_database, graph_store, cxfc_manager
-
     import os as _os
 
     # 模拟模式分支：用假实现装配，跳过所有真实外部连接
     if _os.environ.get("CXHMS_SIMULATION"):
         service_state, _sim_tmpdir = await _build_sim_service_state(app)
-        # 同步模块级全局变量（app.py 的 get_* 函数依赖它们）
-        memory_manager = service_state.memory_manager
-        context_manager = service_state.context_manager
-        acp_manager = service_state.acp_manager
-        llm_client = service_state.llm_client
-        secondary_router = service_state.secondary_router
-        mcp_manager = service_state.mcp_manager
-        model_router = service_state.model_router
-        async_memory_manager = service_state.async_memory_manager
-        cxfc_manager = service_state.cxfc_manager
-        graph_database = None
-        graph_store = None
         app.state.services = service_state
         set_service_state(service_state)
         app.state._sim_tmpdir = _sim_tmpdir
@@ -245,8 +218,14 @@ async def lifespan(app: FastAPI):
         # shutdown：清理模拟资源
         logger.info("正在关闭CXHMS模拟服务...")
         try:
-            if memory_manager:
-                memory_manager.shutdown()
+            if service_state.memory_manager:
+                service_state.memory_manager.shutdown()
+        except Exception:
+            pass
+        # T11: 关闭 ContextManager 后台 flush 线程，避免 lifespan 退出时 daemon 线程被强杀
+        try:
+            if service_state.context_manager:
+                service_state.context_manager.shutdown()
         except Exception:
             pass
         try:
@@ -262,8 +241,8 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
         try:
-            if model_router:
-                await model_router.close()
+            if service_state.model_router:
+                await service_state.model_router.close()
         except Exception:
             pass
         try:
@@ -555,7 +534,9 @@ async def lifespan(app: FastAPI):
             """离线时保存上下文到长期记忆，并清理旧消息"""
             try:
                 session_id = f"agent-{agent_id}"
-                cm = get_context_manager()
+                cm = app.state.services.context_manager
+                if cm is None:
+                    return
 
                 all_messages = cm.get_messages(session_id, limit=1000)
 
@@ -638,9 +619,12 @@ async def lifespan(app: FastAPI):
     try:
         from backend.core.memory.async_manager import AsyncMemoryManager
         async_memory_manager = AsyncMemoryManager(db_path=db_config.memories_db)
+        # B1: 必须显式 initialize()，否则 _pool 永远为 None，get_async_memory_manager() 后任何调用都会抛 AttributeError
+        await async_memory_manager.initialize()
         logger.info("异步记忆管理器已启动")
     except Exception as e:
         logger.warning(f"异步记忆管理器启动失败: {e}")
+        async_memory_manager = None
 
     # 图数据库改为按助手按需创建，启动时不再全局初始化
 
@@ -691,6 +675,7 @@ async def lifespan(app: FastAPI):
     service_state.model_router = model_router
     service_state.cxfc_manager = cxfc_manager
     app.state.services = service_state
+    set_service_state(service_state)
 
     # vLLM 预热：触发模型加载与 kernel 编译，消除首请求冷启动延迟
     try:
@@ -751,6 +736,20 @@ async def lifespan(app: FastAPI):
 
     if memory_manager:
         memory_manager.shutdown()
+
+    # T11: 关闭 ContextManager 后台 flush 线程，避免 lifespan 退出时 daemon 线程被强杀
+    if context_manager:
+        try:
+            context_manager.shutdown()
+        except Exception:
+            pass
+
+    # B1: 关闭异步记忆管理器连接池
+    if async_memory_manager:
+        try:
+            await async_memory_manager.close()
+        except Exception:
+            pass
 
     # 关闭备份管理器
     try:
@@ -816,7 +815,8 @@ app.include_router(vector_router.router, prefix="/api")
 app.include_router(graph_router.router, prefix="/api")
 app.include_router(cxfc_router.router, prefix="/api")
 
-app.add_exception_handler(CXHMSError, cxhms_exception_handler)
+# B3: 单一 handler 覆盖所有 CXHMSException 子类（core 层与 api 层共享基类）
+app.add_exception_handler(CXHMSException, cxhms_exception_handler)
 app.add_exception_handler(HTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, generic_exception_handler)
@@ -824,15 +824,20 @@ app.add_exception_handler(Exception, generic_exception_handler)
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
+    services = getattr(app.state, "services", None)
+
+    def _ok(attr: str) -> bool:
+        return services is not None and getattr(services, attr, None) is not None
+
     components = {
-        "memory_manager": memory_manager is not None,
-        "context_manager": context_manager is not None,
-        "acp_manager": acp_manager is not None,
-        "llm_client": llm_client is not None,
-        "model_router": model_router is not None,
-        "async_memory_manager": async_memory_manager is not None,
-        "graph_database": graph_database is not None,
-        "cxfc_manager": cxfc_manager is not None,
+        "memory_manager": _ok("memory_manager"),
+        "context_manager": _ok("context_manager"),
+        "acp_manager": _ok("acp_manager"),
+        "llm_client": _ok("llm_client"),
+        "model_router": _ok("model_router"),
+        "async_memory_manager": _ok("async_memory_manager"),
+        "graph_database": False,  # 图数据库按助手按需创建，无全局实例
+        "cxfc_manager": _ok("cxfc_manager"),
     }
     return HealthResponse(
         status="healthy" if all(components.values()) else "degraded",
@@ -852,43 +857,8 @@ async def root():
     }
 
 
-def get_memory_manager():
-    if memory_manager is None:
-        raise HTTPException(status_code=503, detail="记忆服务不可用")
-    return memory_manager
-
-
-def get_context_manager():
-    if context_manager is None:
-        raise HTTPException(status_code=503, detail="上下文服务不可用")
-    return context_manager
-
-
-def get_acp_manager():
-    if acp_manager is None:
-        raise HTTPException(status_code=503, detail="ACP服务不可用")
-    return acp_manager
-
-
-def get_llm_client():
-    if llm_client is None:
-        raise HTTPException(status_code=503, detail="LLM服务不可用")
-    return llm_client
-
-
-def get_secondary_router():
-    if secondary_router is None:
-        raise HTTPException(status_code=503, detail="副模型路由器不可用")
-    return secondary_router
-
-
-def get_mcp_manager():
-    if mcp_manager is None:
-        raise HTTPException(status_code=503, detail="MCP管理器不可用")
-    return mcp_manager
-
-
-def get_model_router():
-    if model_router is None:
-        raise HTTPException(status_code=503, detail="模型路由器不可用")
-    return model_router
+# 依赖注入函数（get_memory_manager / get_context_manager / get_acp_manager /
+# get_llm_client / get_secondary_router / get_mcp_manager / get_model_router）
+# 已统一至 backend.dependencies，通过 ServiceState + FastAPI Depends 提供。
+# 路由层应使用 ``from backend.dependencies import get_xxx`` 注入依赖；
+# 直接调用时由 ``_resolve_state`` 回退到 ``_service_state`` 全局。

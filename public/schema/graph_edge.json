@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cxhms.local/schema/graph_edge.json",
+  "title": "GraphEdge",
+  "description": "图边（关系）实体契约。对应 backend/core/graph/models.py 的 GraphEdge dataclass。承载图中两个节点间的关系，按 agent_id 隔离图空间。",
+  "type": "object",
+  "required": ["id", "source_id", "target_id", "relation_type", "agent_id"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "边唯一标识（UUID）"
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "起始节点 ID"
+    },
+    "target_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "目标节点 ID"
+    },
+    "relation_type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "关系类型，如 related_to/depends_on"
+    },
+    "properties": {
+      "type": "object",
+      "description": "边扩展属性",
+      "additionalProperties": true
+    },
+    "text_content": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "边文本内容"
+    },
+    "vector_id": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "向量库中的引用 ID"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "创建时间（ISO 8601）"
+    },
+    "agent_id": {
+      "type": "string",
+      "default": "default",
+      "description": "所属 Agent ID，用于图空间隔离"
+    }
+  }
+}

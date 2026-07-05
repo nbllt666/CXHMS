@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import {
   Archive,
   Merge,
@@ -10,7 +11,7 @@ import {
   AlertCircle,
   CheckCircle2,
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api } from '../api';
 import { cn } from '../lib/utils';
 
 interface ArchiveStats {
@@ -28,6 +29,7 @@ interface DuplicateGroup {
 }
 
 export function ArchivePage() {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'overview' | 'duplicates' | 'settings'>('overview');
   const [isProcessing, setIsProcessing] = useState(false);
   const [processResult, setProcessResult] = useState<string | null>(null);
@@ -54,11 +56,14 @@ export function ArchivePage() {
     try {
       const result = await api.autoArchiveProcess();
       setProcessResult(
-        `归档完成：归档 ${result.results?.archived?.length ?? 0} 条，合并 ${result.results?.merged?.length ?? 0} 条`
+        t('archive.archiveComplete', {
+          archived: result.results?.archived?.length ?? 0,
+          merged: result.results?.merged?.length ?? 0,
+        })
       );
       refetchStats();
     } catch {
-      setProcessResult('归档处理失败');
+      setProcessResult(t('archive.archiveFailed'));
     } finally {
       setIsProcessing(false);
     }
@@ -74,7 +79,7 @@ export function ArchivePage() {
   };
 
   const handleMergeGroup = async (group: DuplicateGroup) => {
-    if (!confirm(`确定要合并这 ${group.memory_ids.length} 个记忆吗？`)) return;
+    if (!confirm(t('archive.confirmMerge', { count: group.memory_ids.length }))) return;
 
     setIsProcessing(true);
     try {
@@ -93,9 +98,9 @@ export function ArchivePage() {
       {/* Tabs */}
       <div className="flex items-center gap-1 mb-6 border-b border-border">
         {[
-          { id: 'overview', label: '概览', icon: BarChart3 },
-          { id: 'duplicates', label: '去重管理', icon: Search },
-          { id: 'settings', label: '设置', icon: Settings },
+          { id: 'overview', label: t('archive.overview'), icon: BarChart3 },
+          { id: 'duplicates', label: t('archive.duplicatesManagement'), icon: Search },
+          { id: 'settings', label: t('common.settings'), icon: Settings },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -124,7 +129,7 @@ export function ArchivePage() {
                   <Archive className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">总归档数</p>
+                  <p className="text-sm text-muted-foreground">{t('archive.totalArchivedLabel')}</p>
                   <p className="text-2xl font-semibold">{stats?.total_archived || 0}</p>
                 </div>
               </div>
@@ -136,7 +141,7 @@ export function ArchivePage() {
                   <Merge className="w-5 h-5 text-green-500" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">合并记录</p>
+                  <p className="text-sm text-muted-foreground">{t('archive.mergeRecords')}</p>
                   <p className="text-2xl font-semibold">{stats?.merge_count || 0}</p>
                 </div>
               </div>
@@ -148,7 +153,7 @@ export function ArchivePage() {
                   <AlertCircle className="w-5 h-5 text-yellow-500" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">重复检测</p>
+                  <p className="text-sm text-muted-foreground">{t('archive.duplicateDetection')}</p>
                   <p className="text-2xl font-semibold">{stats?.duplicate_count || 0}</p>
                 </div>
               </div>
@@ -160,7 +165,7 @@ export function ArchivePage() {
                   <Layers className="w-5 h-5 text-blue-500" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">归档层级</p>
+                  <p className="text-sm text-muted-foreground">{t('archive.archiveLevels')}</p>
                   <p className="text-2xl font-semibold">
                     {Object.keys(stats?.archive_level_counts || {}).length}
                   </p>
@@ -171,12 +176,14 @@ export function ArchivePage() {
 
           {/* Archive Levels */}
           <div className="bg-card border border-border rounded-xl p-6">
-            <h3 className="font-semibold mb-4">归档层级分布</h3>
+            <h3 className="font-semibold mb-4">{t('archive.archiveLevelDistribution')}</h3>
             <div className="space-y-3">
               {stats?.archive_level_counts &&
                 Object.entries(stats.archive_level_counts).map(([level, count]) => (
                   <div key={level} className="flex items-center gap-4">
-                    <span className="w-16 text-sm font-medium">级别 {level}</span>
+                    <span className="w-16 text-sm font-medium">
+                      {t('archive.level')} {level}
+                    </span>
                     <div className="flex-1 h-6 bg-muted rounded-full overflow-hidden">
                       <div
                         className="h-full bg-primary rounded-full transition-all"
@@ -189,14 +196,14 @@ export function ArchivePage() {
                   </div>
                 ))}
               {!stats?.archive_level_counts && (
-                <p className="text-muted-foreground text-center py-4">暂无归档数据</p>
+                <p className="text-muted-foreground text-center py-4">{t('archive.noArchiveData')}</p>
               )}
             </div>
           </div>
 
           {/* Quick Actions */}
           <div className="bg-card border border-border rounded-xl p-6">
-            <h3 className="font-semibold mb-4">快速操作</h3>
+            <h3 className="font-semibold mb-4">{t('archive.quickActions')}</h3>
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={handleAutoArchive}
@@ -204,14 +211,14 @@ export function ArchivePage() {
                 className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
               >
                 <Archive className="w-4 h-4" />
-                {isProcessing ? '处理中...' : '自动归档'}
+                {isProcessing ? t('archive.processing') : t('archive.autoArchive')}
               </button>
               <button
                 onClick={() => setActiveTab('duplicates')}
                 className="flex items-center gap-2 px-4 py-2 bg-muted rounded-lg hover:bg-accent transition-colors"
               >
                 <Search className="w-4 h-4" />
-                检测重复
+                {t('archive.detectDuplicates')}
               </button>
             </div>
             {processResult && (
@@ -229,7 +236,7 @@ export function ArchivePage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">
-              重复记忆组 ({duplicates?.duplicate_groups?.length || 0})
+              {t('archive.duplicateGroups')} ({duplicates?.duplicate_groups?.length || 0})
             </h3>
             <button
               onClick={handleDetectDuplicates}
@@ -237,15 +244,15 @@ export function ArchivePage() {
               className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
             >
               <Search className="w-4 h-4" />
-              {isProcessing ? '检测中...' : '重新检测'}
+              {isProcessing ? t('archive.detecting') : t('archive.reDetect')}
             </button>
           </div>
 
           {duplicates?.duplicate_groups?.length === 0 ? (
             <div className="text-center py-12">
               <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4" />
-              <h3 className="text-lg font-medium">未发现重复记忆</h3>
-              <p className="text-muted-foreground mt-1">系统已为您完成去重检测</p>
+              <h3 className="text-lg font-medium">{t('archive.noDuplicates')}</h3>
+              <p className="text-muted-foreground mt-1">{t('archive.dedupDone')}</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -253,9 +260,9 @@ export function ArchivePage() {
                 <div key={group.group_id} className="bg-card border border-border rounded-xl p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <span className="text-sm font-medium">重复组</span>
+                      <span className="text-sm font-medium">{t('archive.duplicateGroup')}</span>
                       <span className="text-xs text-muted-foreground ml-2">
-                        {group.memory_ids.length} 个记忆
+                        {t('archive.memoriesCount', { count: group.memory_ids.length })}
                       </span>
                     </div>
                     <button
@@ -264,7 +271,7 @@ export function ArchivePage() {
                       className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground text-sm rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
                     >
                       <Merge className="w-4 h-4" />
-                      合并
+                      {t('archive.merge')}
                     </button>
                   </div>
 
@@ -280,7 +287,7 @@ export function ArchivePage() {
                         <span className="text-sm font-medium">ID: {id}</span>
                         {id === group.canonical_id && (
                           <span className="text-xs px-2 py-0.5 bg-primary/10 text-primary rounded-full">
-                            代表记忆
+                            {t('archive.representative')}
                           </span>
                         )}
                       </div>
@@ -289,7 +296,7 @@ export function ArchivePage() {
 
                   {Object.keys(group.similarity_matrix).length > 0 && (
                     <div className="mt-3 pt-3 border-t border-border">
-                      <p className="text-xs text-muted-foreground mb-2">相似度矩阵</p>
+                      <p className="text-xs text-muted-foreground mb-2">{t('archive.similarityMatrix')}</p>
                       <div className="flex flex-wrap gap-2">
                         {Object.entries(group.similarity_matrix).map(([pair, score]) => (
                           <span key={pair} className="text-xs px-2 py-1 bg-muted rounded-full">
@@ -310,12 +317,12 @@ export function ArchivePage() {
       {activeTab === 'settings' && (
         <div className="max-w-2xl">
           <div className="bg-card border border-border rounded-xl p-6 space-y-6">
-            <h3 className="font-semibold">归档设置</h3>
+            <h3 className="font-semibold">{t('archive.archiveSettings')}</h3>
 
             <div>
-              <label className="text-sm font-medium mb-2 block">去重相似度阈值</label>
+              <label className="text-sm font-medium mb-2 block">{t('archive.similarityThreshold')}</label>
               <p className="text-xs text-muted-foreground mb-3">
-                当两个记忆的相似度超过此阈值时，将被视为重复记忆
+                {t('archive.similarityThresholdDesc')}
               </p>
               <input
                 type="range"
@@ -334,17 +341,17 @@ export function ArchivePage() {
             </div>
 
             <div>
-              <label className="text-sm font-medium mb-2 block">自动归档天数</label>
-              <p className="text-xs text-muted-foreground mb-3">超过此天数的未使用记忆将自动归档</p>
+              <label className="text-sm font-medium mb-2 block">{t('archive.autoArchiveDays')}</label>
+              <p className="text-xs text-muted-foreground mb-3">{t('archive.autoArchiveDaysDesc')}</p>
               <select
                 value={autoArchiveDays}
                 onChange={(e) => setAutoArchiveDays(parseInt(e.target.value))}
                 className="w-full px-3 py-2 bg-muted rounded-lg"
               >
-                <option value="30">30 天</option>
-                <option value="60">60 天</option>
-                <option value="90">90 天</option>
-                <option value="180">180 天</option>
+                <option value="30">{t('archive.days', { count: 30 })}</option>
+                <option value="60">{t('archive.days', { count: 60 })}</option>
+                <option value="90">{t('archive.days', { count: 90 })}</option>
+                <option value="180">{t('archive.days', { count: 180 })}</option>
               </select>
             </div>
           </div>

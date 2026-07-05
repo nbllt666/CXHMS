@@ -1,0 +1,76 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cxhms.local/config_template/llm_config.json",
+  "title": "LLMConfig",
+  "description": "LLM 模型配置契约。对应 config/default.yaml 的 models 段与 llm_params 段。配置加载时自动补充缺失字段为默认值。",
+  "type": "object",
+  "required": ["models"],
+  "additionalProperties": false,
+  "properties": {
+    "models": {
+      "type": "object",
+      "description": "模型槽位定义，键为 main/embedding/summary/memory",
+      "required": ["main"],
+      "additionalProperties": {"$ref": "#/$defs/modelSlot"},
+      "properties": {
+        "main": {"$ref": "#/$defs/modelSlot"},
+        "embedding": {"$ref": "#/$defs/modelSlot"},
+        "summary": {"$ref": "#/$defs/modelSlot"},
+        "memory": {"$ref": "#/$defs/modelSlot"}
+      }
+    },
+    "model_defaults": {
+      "type": "object",
+      "description": "模型槽位默认映射",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {"type": "string", "default": "main"},
+        "memory": {"type": "string", "default": "main"}
+      }
+    },
+    "llm_params": {
+      "type": "object",
+      "description": "全局 LLM 调用参数（向后兼容）",
+      "additionalProperties": false,
+      "properties": {
+        "temperature": {"type": "number", "default": 1.3, "minimum": 0, "maximum": 2},
+        "maxTokens": {"type": "integer", "default": 0, "minimum": 0},
+        "topP": {"type": "number", "default": 0.9, "minimum": 0, "maximum": 1},
+        "timeout": {"type": "integer", "default": 30, "minimum": 1}
+      }
+    },
+    "max_tool_rounds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "default": 10,
+      "description": "工具调用最大轮数，防止无限循环"
+    },
+    "max_concurrent": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 32,
+      "default": 4,
+      "description": "最大并发请求数"
+    }
+  },
+  "$defs": {
+    "modelSlot": {
+      "type": "object",
+      "required": ["provider", "host", "model"],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {"type": "string", "enum": ["vllm", "ollama", "openai", "anthropic"]},
+        "host": {"type": "string", "default": "http://localhost:8002"},
+        "model": {"type": "string", "minLength": 1},
+        "apiKey": {"type": "string", "default": ""},
+        "api_key": {"type": "string", "default": ""},
+        "enabled": {"type": "boolean", "default": false},
+        "port": {"type": "integer", "default": 8002, "minimum": 1, "maximum": 65535},
+        "temperature": {"type": "number", "default": 0.7, "minimum": 0, "maximum": 2},
+        "max_tokens": {"type": "integer", "default": 0, "minimum": 0},
+        "timeout": {"type": "integer", "default": 60, "minimum": 1}
+      }
+    }
+  }
+}

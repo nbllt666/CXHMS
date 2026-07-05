@@ -2,7 +2,8 @@
 
 ## 测试架构概览
 
-本项目包含完整的测试套件，覆盖前端和后端的所有主要功能，并包含 LLM 端到端质量评判框架。
+本项目包含完整的测试套件，覆盖前端和后端的所有主要功能。测试结构按 AC范式v6 规范组织：
+后端测试位于 `tests/`，契约测试位于 `public/test_cases/`，前端测试位于 `frontend/src/`，Playwright E2E 位于 `frontend/e2e/`。
 
 ## 前端测试
 
@@ -13,14 +14,29 @@
 
 ### 测试文件
 
+API 域测试（按域拆分，覆盖 client.ts 基础设施 + 各业务域）：
+
 | 文件 | 描述 |
 |------|------|
-| `frontend/src/api/client.test.ts` | API 客户端测试 |
-| `frontend/src/store/chatStore.test.ts` | 聊天状态管理测试 |
-| `frontend/src/store/themeStore.test.ts` | 主题状态管理测试 |
-| `frontend/src/components/Header.test.tsx` | Header 组件测试 |
-| `frontend/src/components/ErrorBoundary.test.tsx` | ErrorBoundary 组件测试 |
-| `frontend/src/components/AppLayout.test.tsx` | AppLayout 组件测试 |
+| `frontend/src/api/client.test.ts` | client.ts 基础设施测试（health / control / admin / Base URL / B9 写操作不重试） |
+| `frontend/src/api/memory.test.ts` | 记忆 CRUD / 搜索 / 归档 / 批量 / 记忆聊天 |
+| `frontend/src/api/chat.test.ts` | 聊天 / Session / History / B9 写方法契约 |
+| `frontend/src/api/chatStream.test.ts` | 流式聊天 SSE 解析 |
+| `frontend/src/api/agent.test.ts` | Agent / Tools / ACP（含 G4 updateTool 对齐 PUT 端点） |
+
+组件与状态测试：
+
+| 文件 | 描述 |
+|------|------|
+| `frontend/src/store/chatStore.test.ts` | 聊天状态管理 |
+| `frontend/src/store/themeStore.test.ts` | 主题状态管理 |
+| `frontend/src/components/Header.test.tsx` | Header 组件 |
+| `frontend/src/components/ErrorBoundary.test.tsx` | ErrorBoundary 错误边界 |
+| `frontend/src/components/AppLayout.test.tsx` | AppLayout 布局 |
+| `frontend/src/components/RouteErrorBoundary.test.tsx` | 路由错误边界 |
+| `frontend/src/App.test.tsx` | 路由懒加载与错误边界 |
+| `frontend/src/pages/ChatPage.test.tsx` | 聊天页面集成 |
+| `frontend/src/hooks/useWebSocket.test.ts` | WebSocket hook |
 
 ### 运行前端测试
 
@@ -30,8 +46,8 @@ cd frontend
 # 安装依赖
 npm install
 
-# 运行测试
-npm test
+# 运行测试（一次性）
+npm test -- --run
 
 # 监视模式
 npm run test:watch
@@ -46,124 +62,152 @@ npm run test:coverage
 - **pytest**: Python 测试框架
 - **pytest-asyncio**: 异步测试支持（asyncio_mode = auto）
 - **FastAPI TestClient**: API 测试客户端
-- **httpx**: 异步 HTTP 客户端（性能测试 & LLM E2E）
 
 ### 测试结构
 
 ```
-backend/tests/
-├── conftest.py              # 测试配置和fixtures（client, async_client, mock_settings）
-├── performance_test.py      # 性能测试（httpx异步基准，非pytest标准格式）
-├── test_memory_manager.py   # 记忆管理器基础测试
-├── test_thread_safety.py    # 线程安全测试
-├── test_tool_calling.py     # 工具调用测试
-├── test_api/                # API端点测试（8个文件）
-│   ├── test_agents.py       # Agent API测试
-│   ├── test_archive.py      # 归档API测试
-│   ├── test_backup.py       # 备份API测试
-│   ├── test_chat.py         # 聊天API测试
-│   ├── test_context.py      # 上下文API测试
-│   ├── test_health.py       # 健康检查测试
-│   ├── test_memory.py       # 记忆API测试
-│   └── test_tools.py        # 工具API测试
-├── test_core/               # 核心模块测试（6个文件）
-│   ├── test_chroma_store.py # Chroma向量存储测试
-│   ├── test_hybrid_search.py# 混合搜索测试
-│   ├── test_llm_client.py   # LLM客户端测试
-│   ├── test_memory_manager.py# 记忆管理器测试
-│   ├── test_utils.py        # 工具函数测试
-│   └── test_vector_sync.py  # 向量同步测试
-├── test_integration/        # 集成测试
-│   └── test_chat_flow.py    # 聊天流程测试
-└── llm_e2e/                 # LLM端到端测试框架（8个文件）
-    ├── config.py            # 测试配置（TestConfig, CXHMS_TEST_前缀环境变量）
-    ├── client.py            # CXHMS API客户端（httpx异步，支持流式）
-    ├── judge.py             # LLM评判代理（vLLM + gemma4）
-    ├── judge_tools.py       # 评判工具定义（OpenAI function calling格式）
-    ├── scenarios.py         # 内置测试场景
-    ├── runner.py            # 测试运行器（TestRunner, StepResult, ScenarioResult）
-    ├── metrics.py           # 性能指标收集器
-    ├── report.py            # 报告生成器（控制台+JSON）
-    └── main.py              # 主入口脚本
+tests/
+├── conftest.py                  # 全局 fixtures（10 个：fakes / sim_app / sim_client / sim_actor / vllm_available / real_app / real_actor 等）
+├── fakes/                       # 确定性假实现（零外部依赖）
+│   ├── __init__.py
+│   ├── fake_embedding.py        # FakeEmbeddingModel（256 维 n-gram + sha1 哈希 + L2 归一化）
+│   ├── fake_vector_store.py     # InMemoryVectorStore（真实余弦相似度 + 线程安全）
+│   ├── fake_llm.py              # FakeLLMClient + FakeModelRouter（脚本化回复 / 流式 / 工具调用）
+│   └── fake_graph.py            # InMemoryGraphStore + InMemoryGraphDatabase
+├── units/                       # 后端单元测试（87 项，覆盖 B1-B8 回归 + C1-C5 性能优化）
+│   ├── test_fakes_smoke.py
+│   ├── test_fixtures_smoke.py
+│   ├── test_memory_manager.py   # B2/B3/B4 回归
+│   ├── test_async_manager.py    # B1 初始化
+│   ├── test_context_manager.py  # C3 增量持久化
+│   ├── test_llm_client.py       # B6 锁竞态 + C1 并发
+│   ├── test_hybrid_search.py    # B5 agent 隔离
+│   ├── test_router.py           # B8 上界 + D5 max_tool_rounds
+│   └── test_websocket_manager.py # B7 字典并发
+├── simulation/scenarios/        # 行为测试（47 项，覆盖 C4 流式取消 / B4 并发隔离 / C3 长对话 / B5 HybridSearch / C5 3D 排序 + C6 FTS5 中文分词）
+│   ├── test_basic_chat.py
+│   ├── test_multi_turn_context.py
+│   ├── test_memory_write_search.py  # C6 FTS5 trigram 中文分词（3 个原 xfail 已转 passed）
+│   ├── test_tool_calling.py
+│   ├── test_memory_agent_chat.py
+│   ├── test_concurrent_chat.py
+│   ├── test_long_conversation.py
+│   ├── test_semantic_search.py
+│   ├── test_stream_cancel.py              # C4 流式取消
+│   ├── test_concurrent_isolation.py       # B4 并发隔离
+│   ├── test_long_conversation_100.py      # C3 长对话
+│   ├── test_hybrid_search_agent_isolation.py # B5 HybridSearch 隔离
+│   └── test_3d_search_ranking.py          # C5 3D 搜索排序
+├── contracts/                   # 契约测试（三层契约校验，416 项）
+│   ├── test_data_schema.py      # 数据契约校验（jsonschema）
+│   ├── test_interface_stub.py   # 接口契约签名匹配（.pyi 存根）
+│   └── test_config_template.py  # 配置契约默认值填充
+└── e2e/                         # 端到端测试（12 项，标记 slow，依赖真实 vLLM）
+    ├── test_chat_flow.py        # 非流式 / 流式 / 多轮上下文 / 历史回溯
+    ├── test_memory_lifecycle.py # 写入搜索 / 标签 / 时间范围 / decay_score / 删除404
+    └── test_agent_isolation.py # 记忆隔离 / 上下文隔离 / memory-agent 流式
 ```
 
-### conftest.py 配置
+### conftest.py 全局 fixtures
 
-**Fixtures:**
-- `client` — 基于 session 的 `TestClient`，用于同步 API 测试
-- `async_client` — 基于 session 的 `AsyncClient`，用于异步 API 测试
-- `mock_settings` — 函数级 fixture，用于模拟应用设置
-
-**atexit 清理:**
-- `_restore_agents()` — 恢复 `agents.json` 备份
-- `_cleanup_alarm_manager()` — 重置闹钟管理器
+| Fixture | 作用域 | 描述 |
+|---------|--------|------|
+| `sim_app` | function | 设置 CXHMS_SIMULATION=1、重置单例、yield TestClient(app) |
+| `sim_client` | function | 依赖 sim_app，返回 TestClient |
+| `sim_actor` | function | 依赖 sim_client，返回 SimUserActor |
+| `vllm_available` | session | 探测真实 vLLM 服务可用性，不可用则 skip slow 测试 |
+| `real_app` | session | 不设 CXHMS_SIMULATION 的真实 app（依赖真实 vLLM） |
+| `real_actor` | session | SimUserActor 包裹 real_app |
 
 ### 运行后端测试
 
 ```bash
-# 运行所有测试
-python -m pytest backend/tests -v
+# 运行默认测试套件（不含 slow）
+python -m pytest
 
-# 运行特定模块
-python -m pytest backend/tests/test_api -v
-python -m pytest backend/tests/test_core -v
-python -m pytest backend/tests/test_integration -v
+# 运行特定目录
+python -m pytest tests/units/ -v
+python -m pytest tests/simulation/scenarios/ -v
+python -m pytest tests/contracts/ -v
+
+# 运行契约测试（public/test_cases/）
+python -m pytest public/test_cases/ -v
 
 # 按标记运行
-python -m pytest -m unit          # 只运行单元测试
-python -m pytest -m api           # 只运行API测试
-python -m pytest -m integration   # 只运行集成测试
-python -m pytest -m "not slow"    # 跳过慢速测试
+python -m pytest -m "not slow"    # 默认，跳过慢速 E2E
+python -m pytest -m slow           # 仅运行 slow E2E（依赖真实 vLLM）
+python -m pytest -m unit           # 仅单元测试
+python -m pytest -m integration    # 仅集成测试
+
+# 运行全量（含 slow）
+python -m pytest tests/
 
 # 生成覆盖率报告
-python -m pytest backend/tests --cov=backend --cov-report=html
-
-# 使用 pytest.ini 配置
-python -m pytest
+python -m pytest --cov=backend --cov-report=html
 ```
 
-## LLM 端到端测试
+## 契约测试
 
 ### 概述
 
-LLM E2E 测试框架独立于 pytest 运行，用于自动化评估 CXHMS 的对话质量。它使用 vLLM + gemma4 作为评判代理，通过 OpenAI function calling 格式定义评判工具，自动对聊天响应进行质量评判。
+契约测试位于 `public/test_cases/`，校验三层契约（数据 / 接口 / 配置）的符合性。GN-004 交付前审查依赖此套件验证 D6.5 闭合信号。
 
-### 特性
-
-- 独立于 pytest 运行，不依赖 pytest 框架
-- 使用 vLLM + gemma4 作为评判代理
-- 支持自动化质量评判（基于预定义场景）
-- 包含性能指标收集（响应时间、首 token 时间等）
-- 生成控制台摘要 + JSON 详细报告
-- 通过 `CXHMS_TEST_` 前缀环境变量配置
-
-### 运行 LLM E2E 测试
-
-```bash
-cd backend/tests/llm_e2e
-python main.py
-```
-
-### 框架组件
+### 测试文件
 
 | 文件 | 描述 |
 |------|------|
-| `config.py` | 测试配置（`TestConfig` 类，`CXHMS_TEST_` 前缀环境变量） |
-| `client.py` | CXHMS API 客户端（httpx 异步，支持流式响应） |
-| `judge.py` | LLM 评判代理（vLLM + gemma4） |
-| `judge_tools.py` | 评判工具定义（OpenAI function calling 格式） |
-| `scenarios.py` | 内置测试场景定义 |
-| `runner.py` | 测试运行器（`TestRunner`, `StepResult`, `ScenarioResult`） |
-| `metrics.py` | 性能指标收集器 |
-| `report.py` | 报告生成器（控制台摘要 + JSON 详细报告） |
+| `public/test_cases/test_data_schema.py` | 数据契约校验（jsonschema，14 项） |
+| `public/test_cases/test_interface_stub.py` | 接口契约签名匹配（.pyi 存根，11 项） |
+| `public/test_cases/test_config_template.py` | 配置契约默认值填充（9 项） |
+| `public/test_cases/rubric.md` | 合规 rubric（通过 / 失败判据清单） |
+
+### 运行契约测试
+
+```bash
+python -m pytest public/test_cases/ -v
+```
+
+## Playwright 前端 E2E 测试
+
+### 概述
+
+Playwright E2E 测试位于 `frontend/e2e/`，覆盖真实 React UI 渲染与流式聊天交互。测试启动时自动串起两个 webServer：模拟后端（FastAPI + FakeLLMClient）+ Vite 前端。
+
+### 测试文件
+
+| 文件 | 描述 |
+|------|------|
+| `frontend/e2e/chat.spec.ts` | 流式聊天 UI 渲染、多轮上下文保持、新会话清空上下文 |
+| `frontend/e2e/memory_agent.spec.ts` | 记忆 agent 页面加载、聊天响应 |
+
+### 运行 Playwright 测试
+
+```bash
+cd frontend
+
+# 安装 Playwright 浏览器（首次运行前）
+npx playwright install chromium
+
+# 运行 E2E（自动启动模拟后端 + Vite 前端）
+npx playwright test --project=chromium
+
+# 有头模式（可视化调试）
+npm run e2e:headed
+```
+
+### 配置
+
+`frontend/playwright.config.ts` 配置了两个 webServer：
+1. 模拟后端：`CXHMS_SIMULATION=1` 环境变量启动 `uvicorn backend.api.app:app`
+2. Vite 前端：`npm run dev`（端口 3000，已配置 `/api`、`/health`、`/ws` 代理到 8001）
+
+由于模拟后端是单例（内存状态），强制 `workers: 1` 与 `fullyParallel: false` 避免并发请求互相污染上下文。
 
 ## 模拟化端到端测试
 
 ### 概述
 
-模拟化 E2E 测试系统补齐了"单元测试之上、真实端到端之下"的集成测试死区：用确定性的假实现替换所有外部依赖（LLM、向量库、嵌入模型、图数据库、前端），驱动**真实 FastAPI 应用**执行完整用户操作流程，在 CI 中零外部依赖运行。
-
-与 `llm_e2e/`（依赖真实 vLLM + 真实模型，CI 无法运行）互补：本套件验证**业务逻辑集成**（路由、状态管理、上下文持久化、工具调用循环、记忆写入检索等），`llm_e2e/` 验证**对话质量**。
+模拟化 E2E 测试系统补齐了"单元测试之上、真实端到端之下"的集成测试死区：用确定性的假实现替换所有外部依赖（LLM、向量库、嵌入模型、图数据库），驱动真实 FastAPI 应用执行完整用户操作流程，在 CI 中零外部依赖运行。
 
 ### 特性
 
@@ -172,88 +216,28 @@ python main.py
 - **确定性**：FakeLLMClient 基于关键词规则，FakeEmbeddingModel 基于 n-gram 哈希，相同输入永远产生相同输出
 - **语义性**：FakeEmbeddingModel 的 n-gram 词袋使"我喜欢猫"与"我喜爱猫咪"余弦相似度高于无关文本，让向量检索在测试中真实有效
 - **隔离性**：每个测试函数通过 `sim_app` fixture 重置 `MemoryManager` 单例与图注册表，互不污染
-- **双轨前端覆盖**：Python 无头用户演员（`SimUserActor`）覆盖后端集成；Playwright 覆盖真实 React UI 渲染
 
 ### 模拟依赖包
 
-位于 `backend/tests/simulation/fakes/`：
-
-| 文件 | 描述 |
-|------|------|
-| `fake_embedding.py` | `FakeEmbeddingModel`（实现 `EmbeddingModel` ABC），256 维字符 n-gram + sha1 哈希分桶 + L2 归一化 |
-| `fake_vector_store.py` | `InMemoryVectorStore`（实现 `VectorStoreBase` ABC），内存 list + 真实余弦相似度 + 线程安全 |
-| `fake_llm.py` | `FakeLLMClient`（实现 `LLMClient` ABC）+ `FakeModelRouter`，支持脚本化回复/流式/工具调用/上下文感知 |
-| `fake_graph.py` | `InMemoryGraphStore`（实现 `GraphStoreBase` ABC）+ `InMemoryGraphDatabase` + `make_in_memory_graph_store()` |
+位于 `tests/fakes/`（详见上表）。
 
 ### 无头用户演员
 
-`backend/tests/simulation/actor.py` 提供 `SimUserActor(client)`，以业务语义封装真实前端对后端的调用：
+`SimUserActor(client)` 以业务语义封装真实前端对后端的调用：
 
 - `send_message(message, agent_id)` — 非流式 POST /api/chat
-- `send_streaming_message(message, agent_id)` — 流式 POST /api/chat/stream，聚合 SSE 为 `{session_id, content, thinking, tool_calls, tool_results, events, raw, error}`
+- `send_streaming_message(message, agent_id)` — 流式 POST /api/chat/stream，聚合 SSE
 - `memory_agent_chat(message)` — POST /api/memory-agent/chat/stream
 - `search_memory(query, ...)` — POST /api/memories/search
 - `list_agents()` / `create_agent(payload)` / `list_tools()` / `get_history(session_id)`
 
-### 端到端场景套件
+### 端到端冒烟脚本
 
-位于 `backend/tests/simulation/scenarios/`（8 个文件，30 个测试用例，约 5 秒运行完毕）：
-
-| 文件 | 覆盖死区 |
-|------|----------|
-| `test_basic_chat.py` | 基础聊天响应内容（非仅状态码）、流式聚合、thinking chunk、session_id |
-| `test_multi_turn_context.py` | 多轮上下文保持（"我叫X"→"我叫什么"返回"你叫X"）、上一条消息回显 |
-| `test_memory_write_search.py` | POST /api/memories 写入 → /api/memories/search 命中、memory_type 过滤 |
-| `test_tool_calling.py` | 工具触发（calculator/datetime）、参数正确性、结果整合、无工具时不触发 |
-| `test_memory_agent_chat.py` | /api/memory-agent/chat/stream 流程、thinking、session 稳定性 |
-| `test_concurrent_chat.py` | 多 agent_id 并发不串扰、顺序会话隔离 |
-| `test_long_conversation.py` | 50+ 轮混合交互稳定性、上下文不丢失、响应不退化、流式长对话 |
-| `test_semantic_search.py` | FakeEmbedding 语义性、向量库 ranking、min_score 过滤、API 语义搜索 |
-
-### Playwright 前端测试
-
-位于 `frontend/e2e/`（2 个文件，5 个测试用例 + 1 个 skip，约 15 秒运行完毕）：
-
-| 文件 | 覆盖死区 |
-|------|----------|
-| `chat.spec.ts` | 流式聊天 UI 渲染、多轮上下文保持、新会话清空上下文 |
-| `memory_agent.spec.ts` | 记忆 agent 页面加载、聊天响应（agent 切换因 UI 无该组件而 skip） |
-
-`frontend/playwright.config.ts` 配置了两个 `webServer`，测试启动时自动串起：
-1. 模拟后端：`python -m backend.tests.simulation.server --host 127.0.0.1 --port 8001`
-2. Vite 前端：`npm run dev`（端口 3000，已配置 `/api`、`/health`、`/ws` 代理到 8001）
-
-### 运行模拟测试
+`scripts/smoke_e2e.py`：模拟前端完成 10 步骤全链路冒烟（I2 闭合产物），用于验证前后端集成无回归。
 
 ```bash
-# 后端模拟套件（零外部依赖，约 5 秒）
-cd c:\CXHMS
-python -m pytest backend/tests/simulation/ -v
-
-# 仅运行场景套件
-python -m pytest backend/tests/simulation/scenarios/ -v
-
-# 启动模拟后端服务器（手动测试或供 Playwright 连接）
-python -m backend.tests.simulation.server --host 127.0.0.1 --port 8001
-
-# Playwright 前端测试（自动启动模拟后端 + Vite 前端，约 15 秒）
-cd frontend
-npx playwright test --project=chromium
-
-# Playwright 有头模式（可视化调试）
-npm run e2e:headed
-
-# 安装 Playwright 浏览器（首次运行前）
-npx playwright install chromium
+python scripts/smoke_e2e.py
 ```
-
-### conftest.py 模拟 fixtures
-
-| Fixture | 作用域 | 描述 |
-|---------|--------|------|
-| `sim_app` | function | 设置 `CXHMS_SIMULATION=1`、重置 `MemoryManager` 单例与图注册表、yield `TestClient(app)`、teardown 清理 |
-| `sim_client` | function | 依赖 `sim_app`，返回 `TestClient` |
-| `sim_actor` | function | 依赖 `sim_client`，返回 `SimUserActor(sim_client)` |
 
 ### 环境变量
 
@@ -261,101 +245,9 @@ npx playwright install chromium
 |------|------|------|
 | `CXHMS_SIMULATION` | `1` | 触发 `lifespan` 模拟分支，装配假实现而非真实外部客户端 |
 
-## 统一测试运行器
-
-使用 `run_tests.py` 运行所有测试：
-
-```bash
-# 运行所有测试
-python run_tests.py
-
-# 只运行前端测试
-python run_tests.py --frontend-only
-
-# 只运行后端测试
-python run_tests.py --backend-only
-
-# 带覆盖率报告
-python run_tests.py --coverage
-
-# 运行特定测试
-python run_tests.py --test backend/tests/test_api/test_health.py
-```
-
-### 数据保护
-
-`run_tests.py` 在运行测试前自动备份关键数据文件，测试完成后恢复：
-
-- **备份目录**: `.test_backup/`
-- **备份文件**:
-  - `cxhms.db`
-  - `memories.db`
-  - `sessions.db`
-  - `milvus_lite.db`
-  - `agents.json`
-  - `acp/`
-
-## 测试覆盖范围
-
-### 前端测试覆盖
-
-1. **API 客户端** (`client.test.ts`)
-   - 健康检查
-   - 聊天 API
-   - Agent API
-   - 记忆 API
-   - 错误处理
-
-2. **状态管理** (`chatStore.test.ts`, `themeStore.test.ts`)
-   - 初始状态验证
-   - 状态更新操作
-   - 异步操作
-   - 错误处理
-   - 本地存储持久化
-
-3. **组件测试** (`Header.test.tsx`, `ErrorBoundary.test.tsx`, `AppLayout.test.tsx`)
-   - Header 组件渲染与交互
-   - ErrorBoundary 错误边界捕获
-   - AppLayout 布局组件渲染
-
-### 后端测试覆盖
-
-1. **API 测试** (`test_api/` - 8个文件)
-   - 健康检查端点 (`test_health.py`)
-   - 聊天端点 (`test_chat.py`) - 发送消息、流式响应、历史记录
-   - Agent 端点 (`test_agents.py`) - CRUD 操作
-   - 归档端点 (`test_archive.py`) - 归档操作
-   - 备份端点 (`test_backup.py`) - 备份操作
-   - 上下文端点 (`test_context.py`) - 上下文管理
-   - 记忆端点 (`test_memory.py`) - CRUD、搜索、统计
-   - 工具端点 (`test_tools.py`) - 工具调用
-   - 参数验证
-   - 错误处理
-
-2. **核心模块测试** (`test_core/` - 6个文件)
-   - Chroma 向量存储 (`test_chroma_store.py`) - 向量存储操作
-   - 混合搜索 (`test_hybrid_search.py`) - 混合搜索功能
-   - LLM 客户端 (`test_llm_client.py`) - LLM 调用与响应
-   - 记忆管理器 (`test_memory_manager.py`) - 添加、获取、更新、删除
-   - 工具函数 (`test_utils.py`) - 通用工具函数
-   - 向量同步 (`test_vector_sync.py`) - 向量同步操作
-
-3. **根级测试** (3个文件)
-   - 记忆管理器测试 (`test_memory_manager.py`) - 记忆管理器基础测试
-   - 线程安全测试 (`test_thread_safety.py`) - 并发安全验证
-   - 工具调用测试 (`test_tool_calling.py`) - 工具调用流程
-
-4. **性能测试** (1个文件)
-   - 性能测试 (`performance_test.py`) - httpx 异步基准测试（非 pytest 标准格式）
-
-5. **集成测试** (`test_integration/` - 1个文件)
-   - 端到端聊天流程 (`test_chat_flow.py`)
-   - 多端点协调
-   - API 文档访问
-
 ## 测试配置
 
-### 前端配置 (`vitest.config.ts`)
+### 前端配置 (`frontend/vitest.config.ts`)
 
 ```typescript
 import { defineConfig } from 'vitest/config';
@@ -387,13 +279,17 @@ export default defineConfig({
 ```ini
 [pytest]
 asyncio_mode = auto
-testpaths = backend/tests
+testpaths = tests public/test_cases
 python_files = test_*.py
 python_classes = Test*
 python_functions = test_*
-addopts = -v --tb=short --strict-markers -ra
+addopts =
+    -v
+    --tb=short
+    --strict-markers
+    -ra
 markers =
-    asyncio: asyncio tests
+    asyncio: Async test marker
     unit: Unit tests
     integration: Integration tests
     api: API tests
@@ -419,18 +315,28 @@ describe('MyModule', () => {
 })
 ```
 
-### 后端测试示例
+### 后端单元测试示例
 
 ```python
 import pytest
 from fastapi.testclient import TestClient
 
-def test_my_endpoint(client: TestClient):
-    """Test my endpoint."""
-    response = client.get("/api/my-endpoint")
+def test_my_endpoint(sim_client: TestClient):
+    """Test my endpoint using sim_client fixture."""
+    response = sim_client.get("/api/my-endpoint")
     assert response.status_code == 200
     data = response.json()
     assert "expected_field" in data
+```
+
+### 后端契约测试示例
+
+```python
+def test_my_interface_matches_stub():
+    """校验 backend 实现匹配 public/interface_stub/ 下的 .pyi 存根。"""
+    from public.interface_stub.my_service import MyService
+    from backend.api.routers.my_router import my_endpoint
+    # 签名匹配校验...
 ```
 
 ## 持续集成建议
@@ -459,19 +365,44 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Run all tests
-        run: python run_tests.py
+      - name: Install backend deps
+        run: pip install -r requirements.txt
+
+      - name: Install frontend deps
+        run: cd frontend && npm install
+
+      - name: Run backend tests
+        run: python -m pytest -m "not slow"
+
+      - name: Run contract tests
+        run: python -m pytest public/test_cases/
+
+      - name: Run frontend tests
+        run: cd frontend && npm test -- --run
 ```
 
 ## 测试状态
 
-- ✅ 前端测试: 6 个测试文件
-- ✅ 后端 API 测试: 8 个测试文件
-- ✅ 后端核心测试: 6 个测试文件
-- ✅ 后端根级测试: 3 个测试文件（test_tool_calling, test_thread_safety, test_memory_manager）
-- ✅ 性能测试: 1 个文件
-- ✅ 集成测试: 1 个文件
-- ✅ LLM E2E 测试: 8 个文件（依赖真实栈，CI 不可运行）
-- ✅ 模拟化 E2E 测试: 8 个场景文件（30 个测试用例，零外部依赖，约 5 秒）+ 2 个 Playwright 前端测试文件（5 个用例 + 1 skip，约 15 秒）
+- ✅ 后端单元测试：8 个文件（87 项，覆盖 B1-B8 回归 + C1-C5 性能优化）
+- ✅ 后端行为测试：13 个场景文件（47 项，覆盖 C4/B4/C3/B5/C5 + C6 FTS5 中文分词）
+- ✅ 后端契约测试：3 个文件（416 项，三层契约校验）
+- ✅ 后端 E2E 测试：3 个文件（12 项，标记 slow，依赖真实 vLLM）
+- ✅ 前端单元测试：19 个文件（299 项）
+- ✅ Playwright E2E：2 个文件（5 项 + 1 skip）
+- ✅ 端到端冒烟脚本：scripts/smoke_e2e.py（10 步骤全绿）
 
-总计: **19 个后端测试文件 + 6 个前端测试文件 + LLM E2E 框架 + 模拟化 E2E 套件（8 后端场景 + 2 Playwright）** 覆盖所有主要功能模块
+### 默认测试套件
+
+```bash
+# 后端默认（不含 slow）
+python -m pytest -m "not slow"
+# 预期：587 passed, 1 skipped, 0 failed
+
+# 前端默认
+cd frontend && npm test -- --run
+# 预期：19 files, 299 passed, 0 failed
+
+# 契约测试
+python -m pytest public/test_cases/
+# 预期：34 passed
+```

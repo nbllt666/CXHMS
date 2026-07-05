@@ -97,6 +97,8 @@ class DecayCalculator:
     def calculate_days_elapsed(self, created_at: str) -> float:
         try:
             created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
             delta = self.current_time - created
             return delta.total_seconds() / 86400.0
         except Exception as e:

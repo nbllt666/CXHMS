@@ -1,44 +1,23 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { api } from '../api/client';
+import { useTranslation } from 'react-i18next';
+import { api } from '../api';
 import { useChatStore } from '../store/chatStore';
 import { formatRelativeTime } from '../lib/utils';
 import { SummaryModal } from '../components/SummaryModal';
 import { Button, Textarea, Card } from '../components/ui';
 import { PageHeader } from '../components/layout';
 import { useWebSocket } from '../hooks/useWebSocket';
+import {
+  applyStreamChunk,
+  isStreamFinished,
+  type Message,
+  type ToolCall,
+  type StreamChunk,
+} from './chatStreamReducer';
 
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: string;
-  memory_refs?: number[];
-  tool_calls?: ToolCall[];
-  thinking?: string;
-  images?: string[]; // base64 encoded images
-}
-
-interface ToolCall {
-  id: string;
-  name: string;
-  arguments?: unknown;
-  result?: unknown;
-  status?: 'pending' | 'executing' | 'completed' | 'failed';
-}
-
-interface StreamToolCall {
-  id?: string;
-  name?: string;
-  arguments?: unknown;
-  function?: {
-    name?: string;
-    arguments?: unknown;
-  };
-}
-
-function MarkdownContent({ content }: { content: string }) {
+const MarkdownContent = memo(function MarkdownContent({ content }: { content: string }) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -93,9 +72,10 @@ function MarkdownContent({ content }: { content: string }) {
       {content}
     </ReactMarkdown>
   );
-}
+});
 
 function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls?: ToolCall[] }) {
+  const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
 
   if (!thinking && (!toolCalls || toolCalls.length === 0)) return null;
@@ -103,7 +83,7 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
   // 根据内容类型决定标题
   const hasThinking = Boolean(thinking);
   const hasToolCalls = Boolean(toolCalls && toolCalls.length > 0);
-  const title = hasThinking ? '思考过程' : '工具调用';
+  const title = hasThinking ? t('chat.thinkingProcess') : t('chat.toolCalls');
 
   return (
     <div className="mt-3 border border-[var(--color-border)] rounded-[var(--radius-md)] overflow-hidden">
@@ -123,7 +103,7 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
           {title}
           {hasToolCalls && (
             <span className="px-1.5 py-0.5 bg-[var(--color-accent-light)] text-[var(--color-accent)] rounded-full text-[10px]">
-              {toolCalls!.length} 个工具调用
+              {t('chat.toolCallsCount', { count: toolCalls!.length })}
             </span>
           )}
         </span>
@@ -142,7 +122,7 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
           {hasThinking && (
             <div>
               {hasToolCalls && (
-                <div className="text-[var(--color-text-secondary)] font-medium mb-1">思考过程</div>
+                <div className="text-[var(--color-text-secondary)] font-medium mb-1">{t('chat.thinkingProcess')}</div>
               )}
               <div className="text-[var(--color-text-tertiary)] whitespace-pre-wrap">{thinking}</div>
             </div>
@@ -151,7 +131,7 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
           {hasToolCalls && (
             <div className={hasThinking ? 'space-y-2 mt-2' : 'space-y-2'}>
               {hasThinking && (
-                <div className="text-[var(--color-text-secondary)] font-medium mb-1">工具调用</div>
+                <div className="text-[var(--color-text-secondary)] font-medium mb-1">{t('chat.toolCalls')}</div>
               )}
               {toolCalls!.map((toolCall, idx) => (
                 <div
@@ -163,23 +143,23 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
                       🔧 {toolCall.name}
                     </span>
                     {toolCall.status === 'executing' && (
-                      <span className="animate-pulse text-[var(--color-info)]">执行中...</span>
+                      <span className="animate-pulse text-[var(--color-info)]">{t('chat.executing')}</span>
                     )}
                     {toolCall.status === 'completed' && (
-                      <span className="text-[var(--color-success)]">✓ 完成</span>
+                      <span className="text-[var(--color-success)]">{t('chat.completed')}</span>
                     )}
                     {toolCall.status === 'failed' && (
-                      <span className="text-[var(--color-error)]">✗ 失败</span>
+                      <span className="text-[var(--color-error)]">{t('chat.failed')}</span>
                     )}
                   </div>
                   {Boolean(toolCall.arguments) && (
                     <div className="text-[var(--color-text-tertiary)] font-mono text-[10px] mb-1">
-                      参数: {JSON.stringify(toolCall.arguments, null, 2)}
+                      {t('chat.parameters')}: {JSON.stringify(toolCall.arguments, null, 2)}
                     </div>
                   )}
                   {toolCall.result !== undefined && (
                     <div className="text-[var(--color-text-tertiary)] font-mono text-[10px]">
-                      结果: {JSON.stringify(toolCall.result, null, 2)}
+                      {t('chat.result')}: {JSON.stringify(toolCall.result, null, 2)}
                     </div>
                   )}
                 </div>
@@ -192,7 +172,87 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
   );
 }
 
+// F1: 消息列表项 memo 化——仅当 message 引用或 isStreaming 变化时重渲染。
+// 配合 reducer 的结构性共享（slice + push），流式期间仅最后一条消息重渲染，
+// 前序项因 message 引用不变被 memo 跳过，满足 200+ 条会话 < 16ms/chunk。
+const MessageItem = memo(
+  function MessageItem({ message, isStreaming }: { message: Message; isStreaming: boolean }) {
+    const { t } = useTranslation();
+    return (
+      <div className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}>
+        <div
+          className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+            message.role === 'user'
+              ? 'bg-[var(--color-accent)] text-white'
+              : 'bg-[var(--color-bg-tertiary)]'
+          }`}
+        >
+          {message.role === 'user' ? (
+            <span className="text-sm font-medium">{t('chat.me')}</span>
+          ) : (
+            <svg
+              className="w-5 h-5 text-[var(--color-text-secondary)]"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+              />
+            </svg>
+          )}
+        </div>
+        <div
+          className={`max-w-[80%] ${message.role === 'user' ? 'items-end' : 'items-start'}`}
+        >
+          <div
+            className={`px-4 py-3 rounded-2xl ${
+              message.role === 'user'
+                ? 'bg-[var(--color-accent)] text-white'
+                : 'bg-[var(--color-bg-primary)] border border-[var(--color-border)]'
+            }`}
+          >
+            {message.role === 'user' ? (
+              <p className="whitespace-pre-wrap">{message.content}</p>
+            ) : (
+              <MarkdownContent content={message.content} />
+            )}
+            {message.role === 'assistant' && isStreaming && (
+              <span className="inline-block w-2 h-4 ml-1 bg-[var(--color-accent)] animate-pulse" />
+            )}
+          </div>
+          <span className="text-xs text-[var(--color-text-tertiary)] mt-1 px-1">
+            {formatRelativeTime(message.timestamp)}
+          </span>
+
+          {message.role === 'assistant' && (
+            <ThinkingProcess thinking={message.thinking} toolCalls={message.tool_calls} />
+          )}
+
+          {message.memory_refs && message.memory_refs.length > 0 && (
+            <div className="mt-2 flex gap-2">
+              {message.memory_refs.map((ref) => (
+                <span
+                  key={ref}
+                  className="text-xs px-2 py-1 bg-[var(--color-accent-light)] text-[var(--color-accent)] rounded-full"
+                >
+                  {t('chat.memoryRef', { ref })}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  },
+  (prev, next) => prev.message === next.message && prev.isStreaming === next.isStreaming
+);
+
 export function ChatPage() {
+  const { t, i18n } = useTranslation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -208,147 +268,10 @@ export function ChatPage() {
   const { agents, currentAgentId, currentSessionId, fetchAgents } = useChatStore();
 
   const handleWebSocketMessage = useCallback(
-    (data: {
-      type: string;
-      content?: string;
-      done?: boolean;
-      error?: string;
-      tool_call?: Record<string, unknown>;
-      tool_name?: string;
-      result?: unknown;
-      thinking?: string;
-    }) => {
-      if (data.type === 'content' && data.content) {
-        setMessages((prev) => {
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && lastMsg.id === tempAssistantIdRef.current) {
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...lastMsg,
-                content: lastMsg.content + data.content!,
-              },
-            ];
-          }
-          return prev;
-        });
-      } else if (data.type === 'tool_call' && data.tool_call) {
-        const tc = data.tool_call as StreamToolCall;
-        setMessages((prev) => {
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && lastMsg.id === tempAssistantIdRef.current) {
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...lastMsg,
-                tool_calls: [
-                  ...(lastMsg.tool_calls || []),
-                  {
-                    id: tc.id || crypto.randomUUID(),
-                    name: tc.name || tc.function?.name || 'unknown',
-                    arguments: tc.arguments || tc.function?.arguments,
-                    status: 'pending',
-                  },
-                ],
-              },
-            ];
-          }
-          return prev;
-        });
-      } else if (data.type === 'tool_start' && data.tool_name) {
-        setMessages((prev) => {
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && lastMsg.id === tempAssistantIdRef.current && lastMsg.tool_calls) {
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...lastMsg,
-                tool_calls: lastMsg.tool_calls.map((tc) =>
-                  tc.name === data.tool_name ? { ...tc, status: 'executing' } : tc
-                ),
-              },
-            ];
-          }
-          return prev;
-        });
-      } else if (data.type === 'tool_result' && data.tool_name && data.result !== undefined) {
-        setMessages((prev) => {
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && lastMsg.id === tempAssistantIdRef.current && lastMsg.tool_calls) {
-            const updatedToolCalls: ToolCall[] = lastMsg.tool_calls.map((tc) =>
-              tc.name === data.tool_name
-                ? { ...tc, status: 'completed' as const, result: data.result }
-                : tc
-            );
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...lastMsg,
-                tool_calls: updatedToolCalls,
-              },
-            ];
-          }
-          return prev;
-        });
-      } else if (data.type === 'thinking' && data.content) {
-        setMessages((prev) => {
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && lastMsg.id === tempAssistantIdRef.current) {
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...lastMsg,
-                thinking: (lastMsg.thinking || '') + data.content,
-              },
-            ];
-          }
-          return prev;
-        });
-      } else if (data.type === 'done') {
+    (data: StreamChunk) => {
+      setMessages((prev) => applyStreamChunk(prev, data, tempAssistantIdRef.current));
+      if (isStreamFinished(data)) {
         setIsLoading(false);
-        setMessages((prev) => {
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && lastMsg.id === tempAssistantIdRef.current) {
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...lastMsg,
-                content: lastMsg.content || '响应已完成',
-              },
-            ];
-          }
-          return prev;
-        });
-      } else if (data.type === 'error') {
-        setIsLoading(false);
-        setMessages((prev) => {
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && lastMsg.id === tempAssistantIdRef.current) {
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...lastMsg,
-                content: `抱歉，发生错误：${data.error || '未知错误'}`,
-              },
-            ];
-          }
-          return prev;
-        });
-      } else if (data.type === 'cancelled') {
-        setIsLoading(false);
-        setMessages((prev) => {
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && lastMsg.id === tempAssistantIdRef.current) {
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...lastMsg,
-                content: lastMsg.content || '响应已取消',
-              },
-            ];
-          }
-          return prev;
-        });
       }
     },
     []
@@ -376,6 +299,10 @@ export function ChatPage() {
       console.error('WebSocket error:', error);
       setIsLoading(false);
     },
+    // WS 断开时清除加载态，避免 done/error/cancelled 未送达时 UI 卡在 loading
+    onDisconnect: () => {
+      setIsLoading(false);
+    },
   });
 
   useEffect(() => {
@@ -387,7 +314,9 @@ export function ChatPage() {
 
   const loadAgentHistory = useCallback(async (agentId: string) => {
     try {
-      const data = await api.getChatHistory(agentId);
+      // 统一口径：优先真实 sessionId，回退到 `agent-${agentId}`，与 handleClearContext 保持一致
+      const sessionKey = currentSessionId || `agent-${agentId}`;
+      const data = await api.getChatHistory(sessionKey);
       if (data.messages) {
         const formattedMessages = data.messages.map(
           (msg: {
@@ -415,7 +344,7 @@ export function ChatPage() {
       console.error('加载历史消息失败:', error);
       setMessages([]);
     }
-  }, []);
+  }, [currentSessionId]);
 
   useEffect(() => {
     if (currentAgentId) {
@@ -423,7 +352,7 @@ export function ChatPage() {
     } else {
       setMessages([]);
     }
-  }, [currentAgentId, loadAgentHistory]);
+  }, [currentAgentId, currentSessionId, loadAgentHistory]);
 
   useEffect(() => {
     return () => {
@@ -451,7 +380,7 @@ export function ChatPage() {
     if (!files) return;
 
     if (selectedImages.length >= 4) {
-      alert('最多只能上传4张图片');
+      alert(t('chat.maxImagesAlert'));
       e.target.value = '';
       return;
     }
@@ -461,7 +390,7 @@ export function ChatPage() {
     const filesToAdd = imageFiles.slice(0, remaining);
 
     if (imageFiles.length > remaining) {
-      alert('最多只能上传4张图片');
+      alert(t('chat.maxImagesAlert'));
     }
 
     filesToAdd.forEach((file) => {
@@ -517,112 +446,10 @@ export function ChatPage() {
         await api.sendMessageStream(
           userMessage.content,
           (chunk) => {
-            if (chunk.type === 'content' && chunk.content) {
-              setMessages((prev) => {
-                const lastMsg = prev[prev.length - 1];
-                if (lastMsg && lastMsg.id === tempAssistantId) {
-                  return [
-                    ...prev.slice(0, -1),
-                    {
-                      ...lastMsg,
-                      content: lastMsg.content + chunk.content!,
-                    },
-                  ];
-                }
-                return prev;
-              });
-            } else if (chunk.type === 'tool_call' && chunk.tool_call) {
-              const tc = chunk.tool_call as StreamToolCall;
-              setMessages((prev) => {
-                const lastMsg = prev[prev.length - 1];
-                if (lastMsg && lastMsg.id === tempAssistantId) {
-                  return [
-                    ...prev.slice(0, -1),
-                    {
-                      ...lastMsg,
-                      tool_calls: [
-                        ...(lastMsg.tool_calls || []),
-                        {
-                          id: tc.id || crypto.randomUUID(),
-                          name: tc.name || tc.function?.name || 'unknown',
-                          arguments: tc.arguments || tc.function?.arguments,
-                          status: 'pending',
-                        },
-                      ],
-                    },
-                  ];
-                }
-                return prev;
-              });
-            } else if (chunk.type === 'tool_start' && chunk.tool_name) {
-              setMessages((prev) => {
-                const lastMsg = prev[prev.length - 1];
-                if (lastMsg && lastMsg.id === tempAssistantId && lastMsg.tool_calls) {
-                  return [
-                    ...prev.slice(0, -1),
-                    {
-                      ...lastMsg,
-                      tool_calls: lastMsg.tool_calls.map((tc) =>
-                        tc.name === chunk.tool_name ? { ...tc, status: 'executing' } : tc
-                      ),
-                    },
-                  ];
-                }
-                return prev;
-              });
-            } else if (
-              chunk.type === 'tool_result' &&
-              chunk.tool_name &&
-              chunk.result !== undefined
-            ) {
-              setMessages((prev) => {
-                const lastMsg = prev[prev.length - 1];
-                if (lastMsg && lastMsg.id === tempAssistantId && lastMsg.tool_calls) {
-                  const updatedToolCalls: ToolCall[] = lastMsg.tool_calls.map((tc) =>
-                    tc.name === chunk.tool_name
-                      ? { ...tc, status: 'completed' as const, result: chunk.result }
-                      : tc
-                  );
-                  return [
-                    ...prev.slice(0, -1),
-                    {
-                      ...lastMsg,
-                      tool_calls: updatedToolCalls,
-                    },
-                  ];
-                }
-                return prev;
-              });
-            } else if (chunk.type === 'thinking' && chunk.content) {
-              setMessages((prev) => {
-                const lastMsg = prev[prev.length - 1];
-                if (lastMsg && lastMsg.id === tempAssistantId) {
-                  return [
-                    ...prev.slice(0, -1),
-                    {
-                      ...lastMsg,
-                      thinking: (lastMsg.thinking || '') + chunk.content,
-                    },
-                  ];
-                }
-                return prev;
-              });
-            } else if (chunk.type === 'done') {
-              setMessages((prev) => {
-                const lastMsg = prev[prev.length - 1];
-                if (lastMsg && lastMsg.id === tempAssistantId) {
-                  return [
-                    ...prev.slice(0, -1),
-                    {
-                      ...lastMsg,
-                      content: lastMsg.content || '响应已完成',
-                    },
-                  ];
-                }
-                return prev;
-              });
-            } else if (chunk.type === 'error') {
-              throw new Error(chunk.error || '未知错误');
+            // F2: WS/SSE 共用 reducer，行为一致（含 error 分支不再 throw，统一写入消息内容）
+            setMessages((prev) => applyStreamChunk(prev, chunk, tempAssistantId));
+            if (isStreamFinished(chunk)) {
+              setIsLoading(false);
             }
           },
           currentAgentId || 'default',
@@ -638,7 +465,7 @@ export function ChatPage() {
               ...prev.slice(0, -1),
               {
                 ...lastMsg,
-                content: '抱歉，服务暂时不可用，请稍后重试。',
+                content: t('chat.serviceUnavailable'),
               },
             ];
           }
@@ -662,7 +489,7 @@ export function ChatPage() {
     const formatTime = (timestamp: string) => {
       try {
         const date = new Date(timestamp);
-        return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+        return date.toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
       } catch {
         return '';
       }
@@ -670,36 +497,39 @@ export function ChatPage() {
 
     return messages.map((m) => {
       const time = m.timestamp ? formatTime(m.timestamp) : '';
-      return `[${time} ${m.role === 'user' ? '用户' : '助手'}] ${m.content}`;
+      return `[${time} ${m.role === 'user' ? t('chat.contextUser') : t('chat.contextAssistant')}] ${m.content}`;
     }).join('\n\n');
   };
 
   const handleClearContext = async () => {
-    if (!confirm('确定要清空当前对话的上下文吗？这将清除所有对话历史。')) return;
+    if (!confirm(t('chat.confirmClearContext'))) return;
 
     try {
       const sessionId = currentSessionId || `agent-${currentAgentId || 'default'}`;
       await api.clearSessionMessages(sessionId);
       // 清空后重新加载历史（会创建新的空会话）
       await loadAgentHistory(currentAgentId || 'default');
-      alert('上下文已清空');
+      alert(t('chat.contextCleared'));
     } catch (error) {
       console.error('清空上下文失败:', error);
-      alert('清空上下文失败');
+      alert(t('chat.clearContextFailed'));
     }
   };
 
   const handleArchiveMemory = async () => {
-    if (!confirm('确定要执行记忆归档吗？这将归档旧的记忆数据。')) return;
+    if (!confirm(t('chat.confirmArchive'))) return;
 
     try {
       const result = await api.autoArchiveProcess();
       alert(
-        `记忆归档完成：归档 ${result.results?.archived?.length || 0} 条，合并 ${result.results?.merged?.length || 0} 条`
+        t('chat.archiveComplete', {
+          archived: result.results?.archived?.length || 0,
+          merged: result.results?.merged?.length || 0,
+        })
       );
     } catch (error) {
       console.error('记忆归档失败:', error);
-      alert('记忆归档失败');
+      alert(t('chat.archiveFailed'));
     }
   };
 
@@ -711,7 +541,7 @@ export function ChatPage() {
   return (
     <div className="w-full h-[calc(100vh-var(--header-height)-3rem)] flex flex-col">
       <PageHeader
-        title={currentAgent?.name || '对话'}
+        title={currentAgent?.name || t('chat.defaultTitle')}
         description={currentAgent?.description}
         className="flex-shrink-0"
         actions={
@@ -731,7 +561,7 @@ export function ChatPage() {
                 </svg>
               }
             >
-              记忆归档
+              {t('chat.archiveMemory')}
             </Button>
             <Button
               variant="secondary"
@@ -748,7 +578,7 @@ export function ChatPage() {
                 </svg>
               }
             >
-              清空上下文
+              {t('chat.clearContext')}
             </Button>
             {messages.length > 0 && (
               <>
@@ -767,7 +597,7 @@ export function ChatPage() {
                     </svg>
                   }
                 >
-                  自动摘要
+                  {t('chat.autoSummary')}
                 </Button>
                 <Button
                   variant="secondary"
@@ -784,7 +614,7 @@ export function ChatPage() {
                     </svg>
                   }
                 >
-                  自定义摘要
+                  {t('chat.customSummary')}
                 </Button>
               </>
             )}
@@ -811,15 +641,15 @@ export function ChatPage() {
               </svg>
             </div>
             <h3 className="text-xl font-semibold text-[var(--color-text-primary)] mb-2">
-              开始对话
+              {t('chat.startConversation')}
             </h3>
             <p className="text-[var(--color-text-secondary)] max-w-md mb-4">
-              与 AI 助手进行对话，系统会自动检索相关记忆来辅助回答您的问题。
+              {t('chat.conversationIntro')}
             </p>
             {currentAgent?.system_prompt && (
               <Card className="max-w-md p-3">
                 <div className="text-sm font-medium text-[var(--color-text-secondary)] mb-1">
-                  系统提示词:
+                  {t('chat.systemPromptLabel')}
                 </div>
                 <div className="text-sm text-[var(--color-text-tertiary)] line-clamp-3">
                   {currentAgent.system_prompt}
@@ -828,79 +658,12 @@ export function ChatPage() {
             )}
           </div>
         ) : (
-          messages.map((message) => (
-            <div
+          messages.map((message, index) => (
+            <MessageItem
               key={message.id}
-              className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
-            >
-              <div
-                className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                  message.role === 'user'
-                    ? 'bg-[var(--color-accent)] text-white'
-                    : 'bg-[var(--color-bg-tertiary)]'
-                }`}
-              >
-                {message.role === 'user' ? (
-                  <span className="text-sm font-medium">我</span>
-                ) : (
-                  <svg
-                    className="w-5 h-5 text-[var(--color-text-secondary)]"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                    />
-                  </svg>
-                )}
-              </div>
-              <div
-                className={`max-w-[80%] ${message.role === 'user' ? 'items-end' : 'items-start'}`}
-              >
-                <div
-                  className={`px-4 py-3 rounded-2xl ${
-                    message.role === 'user'
-                      ? 'bg-[var(--color-accent)] text-white'
-                      : 'bg-[var(--color-bg-primary)] border border-[var(--color-border)]'
-                  }`}
-                >
-                  {message.role === 'user' ? (
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                  ) : (
-                    <MarkdownContent content={message.content} />
-                  )}
-                  {message.role === 'assistant' &&
-                    isLoading &&
-                    message.id === messages[messages.length - 1]?.id && (
-                      <span className="inline-block w-2 h-4 ml-1 bg-[var(--color-accent)] animate-pulse" />
-                    )}
-                </div>
-                <span className="text-xs text-[var(--color-text-tertiary)] mt-1 px-1">
-                  {formatRelativeTime(message.timestamp)}
-                </span>
-
-                {message.role === 'assistant' && (
-                  <ThinkingProcess thinking={message.thinking} toolCalls={message.tool_calls} />
-                )}
-
-                {message.memory_refs && message.memory_refs.length > 0 && (
-                  <div className="mt-2 flex gap-2">
-                    {message.memory_refs.map((ref) => (
-                      <span
-                        key={ref}
-                        className="text-xs px-2 py-1 bg-[var(--color-accent-light)] text-[var(--color-accent)] rounded-full"
-                      >
-                        引用记忆 #{ref}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+              message={message}
+              isStreaming={isLoading && index === messages.length - 1}
+            />
           ))
         )}
         <div ref={messagesEndRef} />
@@ -914,7 +677,7 @@ export function ChatPage() {
               <div key={index} className="relative">
                 <img
                   src={img}
-                  alt={`预览 ${index + 1}`}
+                  alt={t('chat.imagePreview', { index: index + 1 })}
                   className="w-16 h-16 object-cover rounded border border-[var(--color-border)]"
                 />
                 <button
@@ -946,7 +709,7 @@ export function ChatPage() {
               onClick={() => fileInputRef.current?.click()}
               disabled={isLoading || selectedImages.length >= 4}
               className="self-end"
-              title="上传图片（最多4张）"
+              title={t('chat.uploadImageTitle')}
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
@@ -962,7 +725,7 @@ export function ChatPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={`给 ${currentAgent?.name || '助手'} 发送消息...`}
+            placeholder={t('chat.messagePlaceholder', { name: currentAgent?.name || t('chat.assistant') })}
             className="flex-1 min-h-[48px] max-h-[200px]"
             disabled={isLoading}
           />
@@ -971,7 +734,7 @@ export function ChatPage() {
               variant="secondary"
               onClick={cancelGeneration}
               className="self-end"
-              title="停止生成"
+              title={t('chat.stopGeneration')}
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
@@ -1007,8 +770,8 @@ export function ChatPage() {
         </div>
         <div className="flex items-center justify-between mt-2">
           <p className="text-xs text-[var(--color-text-tertiary)]">
-            按 Enter 发送，Shift + Enter 换行
-            {currentAgent?.vision_enabled && ' · 支持图片上传'}
+            {t('chat.enterToSend')}
+            {currentAgent?.vision_enabled && t('chat.supportsImageUpload')}
           </p>
           <div className="flex items-center gap-1 text-xs">
             <span
@@ -1044,7 +807,7 @@ export function ChatPage() {
                   />
                 </svg>
                 <div>
-                  <p className="font-medium">提醒</p>
+                  <p className="font-medium">{t('chat.alarmTitle')}</p>
                   <p className="text-sm opacity-90">{alarm.message}</p>
                 </div>
               </div>

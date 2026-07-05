@@ -10,7 +10,7 @@ import {
   Lightbulb,
   Calendar,
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api } from '../api';
 import { Card, Modal, Button, Badge, EmptyState, EmptyStateIcon } from './ui';
 import type { BadgeVariant } from './ui/Badge';
 import { formatRelativeTime, truncate } from '../lib/utils';
@@ -255,20 +255,17 @@ export function GraphManager() {
     }
   }, [selectedAgentId]);
 
+  // F10: 合并 4 个数据加载 effect 为单一 effect。
+  // - selectedAgentId 变化 → loadStats + loadNodes 各调用一次（原 effect1+effect4 重复调 loadStats 已消除）
+  // - activeTab 变化 → handleTabChange 重置 offset，offset 变化触发 loadNodes
+  // - offset 变化 → loadNodes
   useEffect(() => {
     loadStats();
-  }, [loadStats]);
-
-  useEffect(() => {
-    setOffset(0);
     loadNodes();
-  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAgentId, activeTab, offset]);
 
-  useEffect(() => {
-    loadNodes();
-  }, [offset]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 加载 Agent 列表
+  // 加载 Agent 列表（仅挂载时）
   useEffect(() => {
     const loadAgents = async () => {
       try {
@@ -281,12 +278,6 @@ export function GraphManager() {
     };
     loadAgents();
   }, []);
-
-  // 当 selectedAgentId 变化时，重新加载统计数据和节点列表
-  useEffect(() => {
-    loadStats();
-    loadNodes();
-  }, [selectedAgentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ========== 事件处理 ==========
 
@@ -391,6 +382,8 @@ export function GraphManager() {
 
   const handleTabChange = (tabKey: GraphTabKey) => {
     setActiveTab(tabKey);
+    // F10: 切换 tab 时重置分页（offset 变化会触发主 effect 重新加载节点）
+    setOffset(0);
     setSearchVisible(false);
     setSearchResults(null);
     setSearchQuery('');

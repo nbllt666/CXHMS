@@ -271,6 +271,44 @@ class ToolRegistry:
             return True
         return False
 
+    def update_tool(
+        self,
+        name: str,
+        updates: Dict[str, Any],
+    ) -> Optional[Tool]:
+        """更新工具配置（启用/禁用/描述/参数 schema 等）。
+
+        仅更新提供的字段，未提供字段保持原值。
+        内置工具的 name 与 function 不可变更。
+
+        Args:
+            name: 工具名
+            updates: 待更新字段字典，支持 enabled/description/parameters/
+                     version/category/tags/examples
+
+        Returns:
+            更新后的 Tool；工具不存在时返回 None
+        """
+        if name not in self._tools:
+            return None
+        tool = self._tools[name]
+        if "enabled" in updates:
+            tool.enabled = bool(updates["enabled"])
+        if "description" in updates and updates["description"] is not None:
+            tool.description = str(updates["description"])
+        if "parameters" in updates and updates["parameters"] is not None:
+            tool.parameters = dict(updates["parameters"])
+        if "version" in updates and updates["version"] is not None:
+            tool.version = str(updates["version"])
+        if "category" in updates and updates["category"] is not None:
+            tool.category = str(updates["category"])
+        if "tags" in updates and updates["tags"] is not None:
+            tool.tags = list(updates["tags"])
+        if "examples" in updates and updates["examples"] is not None:
+            tool.examples = list(updates["examples"])
+        tool.updated_at = datetime.now().isoformat()
+        return tool
+
     def delete_tool(self, name: str) -> bool:
         """删除工具"""
         if name in self._tools:

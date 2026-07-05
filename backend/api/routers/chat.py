@@ -13,6 +13,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from config.settings import settings
+
 from backend.api.routers.agents import _load_agents
 from backend.core.chat.stream import ChatStreamState, generate_chat_stream
 from backend.core.llm.tools import is_empty_tool_args, parse_text_tool_calls, strip_text_tool_calls
@@ -93,168 +95,6 @@ SUMMARY_AGENT_HIDDEN_SYSTEM_PROMPT = """<role>
 </rules>"""
 
 
-THOUGHT_MARKER = "thought\n"
-FINAL_MARKER = "final\n"
-
-
-class ThinkTagStreamParser:
-    """流式解析内嵌在 content 中的思考标签。
-
-    支持三种格式：
-    1. 标准标签：<think>...</think>（Qwen3、DeepSeek 等）
-    2. Gemma 4 channel 分隔符：`<|channel|>thought` 换行 ... `<|channel|>final` 换行
-       - `<|channel|>thought\n` 开启思考模式
-       - 下一个 `<|channel|>...`（如 `<|channel|>final\n`）关闭思考模式
-
-    本解析器将这些标签内容分离为 thinking 通道，其余作为 content 通道，
-    支持标签跨 chunk 拆分的情况。
-
-    3. 无前缀裸标记（tokenizer 剥离 <|channel|> 后的残余）：
-       - 响应开头出现 `thought\n` → 进入思考模式
-       - 思考中出现 `final\n` → 退出思考模式
-    """
-
-    THOUGHT_MARKER = THOUGHT_MARKER
-    FINAL_MARKER = FINAL_MARKER
-
-    OPEN_TAG = "<think>"
-    CLOSE_TAG = "</think>"
-    # Gemma 4 channel 分隔符
-    GEMMA_CHANNEL_PREFIX = "<|channel|>"
-    GEMMA_THOUGHT_OPEN = "thought\n"  # 紧跟在 GEMMA_CHANNEL_PREFIX 之后，表示开启思考模式
-
-    def __init__(self):
-        self.buffer = ""
-        self.in_think = False
-        self.seen_content = False
-
-    def feed(self, content: str) -> tuple:
-        """喂入新 content，返回 (thinking_output, content_output)。"""
-        if not content:
-            return ("", "")
-        self.buffer += content
-        thinking_parts = []
-        content_parts = []
-
-        while True:
-            if not self.in_think:
-                candidates = []
-                think_idx = self.buffer.find(self.OPEN_TAG)
-                if think_idx != -1:
-                    candidates.append((think_idx, "think_open"))
-                gemma_idx = self.buffer.find(self.GEMMA_CHANNEL_PREFIX)
-                if gemma_idx != -1:
-                    candidates.append((gemma_idx, "gemma"))
-                if not self.seen_content:
-                    thought_idx = self.buffer.find(self.THOUGHT_MARKER)
-                    if thought_idx == 0:
-                        candidates.append((thought_idx, "thought_bare"))
-
-                if not candidates:
-                    pending = [self.OPEN_TAG, self.GEMMA_CHANNEL_PREFIX]
-                    if not self.seen_content:
-                        pending.append(self.THOUGHT_MARKER)
-                    safe = self._safe_emit_length_multi(pending)
-                    if safe > 0:
-                        content_parts.append(self.buffer[:safe])
-                        self.seen_content = True
-                        self.buffer = self.buffer[safe:]
-                    break
-
-                idx, kind = min(candidates)
-                if idx > 0:
-                    content_parts.append(self.buffer[:idx])
-                    self.seen_content = True
-
-                if kind == "think_open":
-                    self.buffer = self.buffer[idx + len(self.OPEN_TAG):]
-                    self.in_think = True
-                elif kind == "thought_bare":
-                    self.buffer = self.buffer[idx + len(self.THOUGHT_MARKER):]
-                    self.in_think = True
-                    self.seen_content = True
-                else:
-                    rest = self.buffer[idx + len(self.GEMMA_CHANNEL_PREFIX):]
-                    if rest.startswith(self.GEMMA_THOUGHT_OPEN):
-                        self.buffer = rest[len(self.GEMMA_THOUGHT_OPEN):]
-                        self.in_think = True
-                    else:
-                        nl_idx = rest.find("\n")
-                        if nl_idx == -1:
-                            self.buffer = self.buffer[idx:]
-                            break
-                        self.buffer = rest[nl_idx + 1:]
-            else:
-                candidates = []
-                think_close_idx = self.buffer.find(self.CLOSE_TAG)
-                if think_close_idx != -1:
-                    candidates.append((think_close_idx, "think_close"))
-                gemma_idx = self.buffer.find(self.GEMMA_CHANNEL_PREFIX)
-                if gemma_idx != -1:
-                    candidates.append((gemma_idx, "gemma"))
-                final_idx = self.buffer.find(self.FINAL_MARKER)
-                if final_idx != -1:
-                    candidates.append((final_idx, "final_bare"))
-
-                if not candidates:
-                    safe = self._safe_emit_length_multi(
-                        [self.CLOSE_TAG, self.GEMMA_CHANNEL_PREFIX, self.FINAL_MARKER]
-                    )
-                    if safe > 0:
-                        thinking_parts.append(self.buffer[:safe])
-                        self.buffer = self.buffer[safe:]
-                    break
-
-                idx, kind = min(candidates)
-                if idx > 0:
-                    thinking_parts.append(self.buffer[:idx])
-
-                if kind == "think_close":
-                    self.buffer = self.buffer[idx + len(self.CLOSE_TAG):]
-                    self.in_think = False
-                    self.seen_content = True
-                elif kind == "final_bare":
-                    self.buffer = self.buffer[idx + len(self.FINAL_MARKER):]
-                    self.in_think = False
-                    self.seen_content = True
-                else:
-                    rest = self.buffer[idx + len(self.GEMMA_CHANNEL_PREFIX):]
-                    if rest.startswith(self.GEMMA_THOUGHT_OPEN):
-                        self.buffer = rest[len(self.GEMMA_THOUGHT_OPEN):]
-                    else:
-                        nl_idx = rest.find("\n")
-                        if nl_idx == -1:
-                            self.buffer = self.buffer[idx:]
-                            break
-                        self.buffer = rest[nl_idx + 1:]
-                        self.in_think = False
-
-        return ("".join(thinking_parts), "".join(content_parts))
-
-    def flush(self) -> tuple:
-        """流结束时调用，把 buffer 中剩余内容按当前状态输出，并重置状态。"""
-        remaining = self.buffer
-        was_in_think = self.in_think
-        self.buffer = ""
-        self.in_think = False
-        self.seen_content = False
-        if not remaining:
-            return ("", "")
-        if was_in_think:
-            return (remaining, "")
-        return ("", remaining)
-
-    def _safe_emit_length_multi(self, pending_tags):
-        """Calculate safe emit length to avoid outputting incomplete prefix of any pending_tag."""
-        max_prefix_len = 0
-        for tag in pending_tags:
-            max_prefix = min(len(tag) - 1, len(self.buffer))
-            for prefix_len in range(max_prefix, 0, -1):
-                if self.buffer.endswith(tag[:prefix_len]):
-                    if prefix_len > max_prefix_len:
-                        max_prefix_len = prefix_len
-                    break
-        return len(self.buffer) - max_prefix_len
 _MEMORY_PATTERNS = [
     # 名字/称呼 - 注意：排除疑问句中的"我叫"
     (r"^(?!.*还?记得).*(?:我(?:叫|是)([\w·]{2,10}))(?!.*[？?])", "name"),
@@ -400,7 +240,7 @@ def get_agent_config(agent_id: str) -> Optional[dict]:
 
 def get_llm_client_for_agent(agent_config: dict):
     """根据 Agent 配置获取 LLM 客户端"""
-    from backend.api.app import get_llm_client, get_model_router
+    from backend.dependencies import get_llm_client, get_model_router
 
     model = agent_config.get("model", "main")
 
@@ -497,7 +337,7 @@ async def chat(request: ChatRequest):
     前端只发送最新消息，后端根据 Agent 配置构建完整上下文
     每个 Agent 对应一个固定会话
     """
-    from backend.api.app import get_context_manager, get_memory_manager
+    from backend.dependencies import get_context_manager, get_memory_manager
 
     try:
         _t0 = time.monotonic()
@@ -585,8 +425,8 @@ async def chat(request: ChatRequest):
             f"tools={int((_t5-_t4)*1000)}ms llm={int((_t6-_t5)*1000)}ms total_pre_llm={int((_t5-_t0)*1000)}ms"
         )
 
-        # 9. 循环处理工具调用（最多10轮，防止无限循环和高成本）
-        max_tool_rounds = 10
+        # 9. 循环处理工具调用（按 settings.config.llm.max_tool_rounds，默认10轮）
+        max_tool_rounds = settings.config.llm.max_tool_rounds
         for _ in range(max_tool_rounds):
             if not (hasattr(response, "tool_calls") and response.tool_calls):
                 break
@@ -680,13 +520,13 @@ async def chat(request: ChatRequest):
 
 
 @router.post("/chat/stream")
-async def chat_stream(request: ChatRequest):
+async def stream_chat(request: ChatRequest):
     """
     流式聊天
     前端只发送最新消息，后端根据 Agent 配置构建完整上下文
     每个 Agent 对应一个固定会话
     """
-    from backend.api.app import get_context_manager, get_memory_manager
+    from backend.dependencies import get_context_manager, get_memory_manager
 
     try:
         # Fast prep only: agent config, managers, session, LLM client
@@ -726,6 +566,7 @@ async def chat_stream(request: ChatRequest):
             _t_tools_total = 0.0
             persist_task = None
             try:
+                stream_gen = None  # C4: 共享聊天流生成器引用，断开时在 finally 中 aclose 释放上游 vLLM
                 async def _retrieve_memory():
                     if not (agent_config.get("use_memory", True) and memory_mgr):
                         return None
@@ -782,14 +623,15 @@ async def chat_stream(request: ChatRequest):
                 logger.info(f"generate_stream 开始: llm={llm}, messages={len(messages)}, tools={len(tools)}")
 
                 _t_llm_start = _time.monotonic()
-                async for event in generate_chat_stream(
+                stream_gen = generate_chat_stream(
                     llm=llm,
                     messages=messages,
                     agent_config=agent_config,
                     tools=tools,
                     session_id=session_id,
                     state=state,
-                ):
+                )
+                async for event in stream_gen:
                     # 记录首 token 时间
                     if _t_llm_first is None and event.get("type") in ("content", "thinking"):
                         _t_llm_first = _time.monotonic()
@@ -816,6 +658,12 @@ async def chat_stream(request: ChatRequest):
                 logger.error(f"generate_stream 异常: {e}", exc_info=True)
                 yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
             finally:
+                # C4: 主动 aclose 共享聊天流生成器，传播客户端断开/取消到上游 vLLM 流
+                if stream_gen is not None:
+                    try:
+                        await stream_gen.aclose()
+                    except Exception:
+                        pass
                 # 确保用户消息持久化完成
                 if persist_task is not None:
                     try:
@@ -851,7 +699,7 @@ async def chat_stream(request: ChatRequest):
 @router.get("/chat/history/{session_id}")
 async def get_chat_history(session_id: str, limit: int = 50):
     """获取聊天历史"""
-    from backend.api.app import get_context_manager
+    from backend.dependencies import get_context_manager
 
     try:
         context_mgr = get_context_manager()
@@ -900,18 +748,25 @@ async def get_chat_history(session_id: str, limit: int = 50):
 
 
 class MemoryAgentChatRequest(BaseModel):
-    """记忆管理模型聊天请求"""
+    """记忆管理模型聊天请求。
+
+    字段对齐 public/interface_stub/chat_service.pyi 的
+    memory_agent_stream_chat(message, agent_id, images) 契约。
+    agent_id 默认 memory-agent，images 可选（用于多模态扩展）。
+    """
 
     message: str  # 用户最新消息
+    agent_id: str = "memory-agent"  # 固定为记忆管理 Agent
+    images: Optional[List[str]] = None  # base64 encoded images
 
 
 @router.post("/memory-agent/chat/stream")
-async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
+async def memory_agent_stream_chat(request: MemoryAgentChatRequest):
     """
     记忆管理模型流式聊天 - 支持上下文持久化
     记忆管理Agent只有一个固定会话
     """
-    from backend.api.app import get_context_manager, get_memory_manager, get_model_router
+    from backend.dependencies import get_context_manager, get_memory_manager, get_model_router
 
     try:
         # 1. 获取记忆管理Agent配置
@@ -987,22 +842,30 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
 
             state = ChatStreamState()
             try:
+                stream_gen = None  # C4: 共享聊天流生成器引用，断开时在 finally 中 aclose 释放上游 vLLM
                 logger.info(
                     f"开始记忆管理模型流式聊天，消息数: {len(messages)}, 工具数: {len(tools)}"
                 )
-                async for event in generate_chat_stream(
+                stream_gen = generate_chat_stream(
                     llm=llm,
                     messages=messages,
                     agent_config=agent_config,
                     tools=tools,
                     session_id=session_id,
                     state=state,
-                ):
+                )
+                async for event in stream_gen:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             except Exception as e:
                 logger.error(f"记忆管理模型流式聊天错误: {e}", exc_info=True)
                 yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
             finally:
+                # C4: 主动 aclose 共享聊天流生成器，传播客户端断开/取消到上游 vLLM 流
+                if stream_gen is not None:
+                    try:
+                        await stream_gen.aclose()
+                    except Exception:
+                        pass
                 # 确保 assistant 消息可靠落库（使用跨轮累积内容）
                 if state.accumulated_response:
                     try:
@@ -1033,20 +896,28 @@ async def memory_agent_chat_stream(request: MemoryAgentChatRequest):
 
 
 class SummaryAgentChatRequest(BaseModel):
-    """摘要助手聊天请求"""
+    """摘要助手聊天请求。
+
+    字段对齐 public/interface_stub/chat_service.pyi 的
+    summary_agent_stream_chat(message, agent_id, images) 契约。
+    agent_id 默认 summary-agent，images 可选（用于多模态扩展）。
+    target_session_id 是摘要助手扩展字段（指定待摘要的目标会话）。
+    """
 
     message: str  # 用户最新消息
+    agent_id: str = "summary-agent"  # 固定为摘要 Agent
+    images: Optional[List[str]] = None  # base64 encoded images
     target_session_id: Optional[str] = None  # 待摘要的目标会话ID（用于上下文替换）
 
 
 @router.post("/summary-agent/chat/stream")
-async def summary_agent_chat_stream(request: SummaryAgentChatRequest):
+async def summary_agent_stream_chat(request: SummaryAgentChatRequest):
     """
     摘要助手流式聊天 - 支持上下文持久化
     使用 summary 模型，仅提供 summary 类别工具（save_summary_memory 等）
     摘要助手只有一个固定会话
     """
-    from backend.api.app import get_context_manager, get_model_router
+    from backend.dependencies import get_context_manager, get_model_router
 
     try:
         # 1. 获取摘要Agent配置（复用 memory-agent 配置结构，但使用 summary 模型）
@@ -1156,10 +1027,11 @@ async def summary_agent_chat_stream(request: SummaryAgentChatRequest):
 
             state = ChatStreamState()
             try:
+                stream_gen = None  # C4: 共享聊天流生成器引用，断开时在 finally 中 aclose 释放上游 vLLM
                 logger.info(
                     f"开始摘要助手流式聊天，消息数: {len(messages)}, 工具数: {len(tools)}"
                 )
-                async for event in generate_chat_stream(
+                stream_gen = generate_chat_stream(
                     llm=llm,
                     messages=messages,
                     agent_config=agent_config,
@@ -1167,12 +1039,19 @@ async def summary_agent_chat_stream(request: SummaryAgentChatRequest):
                     session_id=session_id,
                     state=state,
                     on_tool_result=_on_tool_result,
-                ):
+                )
+                async for event in stream_gen:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             except Exception as e:
                 logger.error(f"摘要助手流式聊天错误: {e}", exc_info=True)
                 yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
             finally:
+                # C4: 主动 aclose 共享聊天流生成器，传播客户端断开/取消到上游 vLLM 流
+                if stream_gen is not None:
+                    try:
+                        await stream_gen.aclose()
+                    except Exception:
+                        pass
                 # 确保 assistant 消息可靠落库（使用跨轮累积内容）
                 if state.accumulated_response:
                     try:

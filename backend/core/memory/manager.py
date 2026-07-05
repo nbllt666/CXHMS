@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import json
 import re
 import sqlite3
@@ -33,6 +34,31 @@ except ImportError:
 logger = get_contextual_logger(__name__)
 
 
+# C2: 模块级共享 ThreadPoolExecutor（lazy init），避免每次 _run_async_sync 都新建/销毁线程池。
+# 注：此为模块级变量而非 app.py 的全局 DI 实例 / get_*() 函数，符合 spec 约束。
+_embedding_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+_embedding_executor_lock = threading.Lock()
+
+
+def _get_embedding_executor() -> concurrent.futures.ThreadPoolExecutor:
+    """获取模块级共享 ThreadPoolExecutor（lazy init，线程安全）。
+
+    用于在已存在运行中事件循环时，把 asyncio.run(coro) 卸载到独立线程执行。
+    复用同一池子而非每次 with ThreadPoolExecutor() 新建，降低线程创建开销。
+
+    Returns:
+        共享的 ThreadPoolExecutor 实例
+    """
+    global _embedding_executor
+    if _embedding_executor is None:
+        with _embedding_executor_lock:
+            if _embedding_executor is None:
+                _embedding_executor = concurrent.futures.ThreadPoolExecutor(
+                    max_workers=4, thread_name_prefix="embedding"
+                )
+    return _embedding_executor
+
+
 class MemoryManager:
     """记忆管理器
 
@@ -45,34 +71,16 @@ class MemoryManager:
         _hybrid_search: 混合搜索实例
     """
 
-    _instance = None
-    _lock = threading.Lock()
-
-    def __new__(cls, db_path: str = "data/memories.db") -> "MemoryManager":
-        """创建单例实例
-
-        Args:
-            db_path: 数据库文件路径
-
-        Returns:
-            MemoryManager实例
-        """
-        if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    cls._instance = super().__new__(cls)
-                    cls._instance._initialized = False
-        return cls._instance
-
     def __init__(self, db_path: str = "data/memories.db") -> None:
         """初始化记忆管理器
 
         Args:
             db_path: 数据库文件路径
-        """
-        if self._initialized:
-            return
 
+        Note:
+            按 db_path 实例化，每次构造返回独立实例（不再使用单例缓存），
+            simulation 模式无需重置 ``_instance``。
+        """
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -95,7 +103,6 @@ class MemoryManager:
         self._start_cleanup_task()
 
         logger.info(f"记忆管理器初始化完成: db={db_path}")
-        self._initialized = True
 
     def _get_table_name(self, agent_id: str = "default") -> str:
         """获取Agent对应的记忆表名
@@ -112,6 +119,38 @@ class MemoryManager:
         if not re.match(r"^[a-zA-Z_]", safe_agent_id):
             safe_agent_id = "agent_" + safe_agent_id
         return f"memories_{safe_agent_id}"
+
+    def _migrate_memories_table_columns(self, cursor, table_name: str):
+        """B2: 幂等迁移 memories 系列表的列。
+
+        - 统一列名 type -> memory_type（RENAME COLUMN 保留数据，需 SQLite 3.25+）
+        - 补齐 accessed_at / access_count / decay_score（与异步 MemoryManager 对齐）
+
+        主表迁移在 _init_db 中内联完成；本方法用于 agent 专属表（按需迁移）。
+        """
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        existing = {row[1] for row in cursor.fetchall()}
+
+        if "type" in existing and "memory_type" not in existing:
+            cursor.execute(f"ALTER TABLE {table_name} RENAME COLUMN type TO memory_type")
+            existing.discard("type")
+            existing.add("memory_type")
+            logger.info(f"已重命名 {table_name}.type -> memory_type")
+        elif "memory_type" not in existing and "type" not in existing:
+            cursor.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN memory_type VARCHAR(20) NOT NULL DEFAULT 'short_term'"
+            )
+            existing.add("memory_type")
+            logger.info(f"已添加 memory_type 列到 {table_name}")
+
+        for col, col_type in [
+            ("accessed_at", "TEXT"),
+            ("access_count", "INTEGER DEFAULT 0"),
+            ("decay_score", "FLOAT DEFAULT 0.0"),
+        ]:
+            if col not in existing:
+                cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col} {col_type}")
+                logger.info(f"已添加 {table_name}.{col} 列")
 
     def _ensure_agent_table(self, agent_id: str):
         """确保Agent的记忆表存在，不存在则创建
@@ -133,6 +172,9 @@ class MemoryManager:
                 "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,)
             )
             if cursor.fetchone():
+                # B2: 已存在的 agent 表可能仍是旧 schema（type 列），做幂等迁移
+                self._migrate_memories_table_columns(cursor, table_name)
+                conn.commit()
                 return  # 表已存在
 
             # 创建Agent专属记忆表
@@ -140,7 +182,7 @@ class MemoryManager:
                 f"""
                 CREATE TABLE IF NOT EXISTS {table_name} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    type VARCHAR(20) NOT NULL,
+                    memory_type VARCHAR(20) NOT NULL DEFAULT 'short_term',
                     content TEXT NOT NULL,
                     vector_id VARCHAR(100),
                     metadata TEXT,
@@ -159,7 +201,10 @@ class MemoryManager:
                     is_deleted BOOLEAN DEFAULT FALSE,
                     source VARCHAR(50) DEFAULT 'user',
                     workspace_id VARCHAR(100) DEFAULT 'default',
-                    agent_id VARCHAR(100) DEFAULT 'default'
+                    agent_id VARCHAR(100) DEFAULT 'default',
+                    accessed_at TIMESTAMP,
+                    access_count INTEGER DEFAULT 0,
+                    decay_score FLOAT DEFAULT 0.0
                 )
             """
             )
@@ -167,7 +212,7 @@ class MemoryManager:
             # 创建索引
             cursor.execute(
                 f"""
-                CREATE INDEX IF NOT EXISTS idx_{table_name}_type ON {table_name}(type)
+                CREATE INDEX IF NOT EXISTS idx_{table_name}_memory_type ON {table_name}(memory_type)
             """
             )
             cursor.execute(
@@ -226,6 +271,9 @@ class MemoryManager:
     def _run_async_sync(self, coro):
         """在同步方法中运行异步协程
 
+        复用模块级共享 ThreadPoolExecutor（_get_embedding_executor），避免每次调用
+        都 with ThreadPoolExecutor() 新建/销毁线程池（C2 性能优化）。
+
         Args:
             coro: 异步协程对象
 
@@ -238,11 +286,9 @@ class MemoryManager:
             loop = None
 
         if loop and loop.is_running():
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(asyncio.run, coro)
-                return future.result()
+            executor = _get_embedding_executor()
+            future = executor.submit(asyncio.run, coro)
+            return future.result()
         else:
             return asyncio.run(coro)
 
@@ -490,7 +536,7 @@ class MemoryManager:
             """
             CREATE TABLE IF NOT EXISTS memories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                type VARCHAR(20) NOT NULL,
+                memory_type VARCHAR(20) NOT NULL DEFAULT 'short_term',
                 content TEXT NOT NULL,
                 vector_id VARCHAR(100),
                 metadata TEXT,
@@ -510,7 +556,10 @@ class MemoryManager:
                 deleted_at TIMESTAMP,
                 source VARCHAR(50) DEFAULT 'user',
                 workspace_id VARCHAR(100) DEFAULT 'default',
-                agent_id VARCHAR(100) DEFAULT 'default'
+                agent_id VARCHAR(100) DEFAULT 'default',
+                accessed_at TIMESTAMP,
+                access_count INTEGER DEFAULT 0,
+                decay_score FLOAT DEFAULT 0.0
             )
         """
         )
@@ -566,6 +615,22 @@ class MemoryManager:
             cursor.execute(f"PRAGMA table_info({table_name})")
             return {row[1] for row in cursor.fetchall()}
 
+        existing_columns = get_existing_columns(cursor, "memories")
+
+        # B2: 统一列名 type -> memory_type（与异步 MemoryManager 对齐）。
+        # 旧库存在 type 列、不存在 memory_type 列时，RENAME COLUMN 保留数据（需 SQLite 3.25+）。
+        if "type" in existing_columns and "memory_type" not in existing_columns:
+            cursor.execute("ALTER TABLE memories RENAME COLUMN type TO memory_type")
+            existing_columns.discard("type")
+            existing_columns.add("memory_type")
+            logger.info("已重命名 memories.type -> memory_type")
+        elif "memory_type" not in existing_columns and "type" not in existing_columns:
+            cursor.execute(
+                "ALTER TABLE memories ADD COLUMN memory_type VARCHAR(20) NOT NULL DEFAULT 'short_term'"
+            )
+            existing_columns.add("memory_type")
+            logger.info("已添加 memory_type 列到 memories 表")
+
         # 1. memories 表的列
         memories_columns_to_add = [
             ("emotion_score", "FLOAT DEFAULT 0.0"),
@@ -579,9 +644,12 @@ class MemoryManager:
             ("is_deleted", "BOOLEAN DEFAULT FALSE"),
             ("deleted_at", "TIMESTAMP"),
             ("agent_id", "VARCHAR(100) DEFAULT 'default'"),
+            # B2: 与异步 MemoryManager schema 对齐，补齐访问/衰减字段
+            ("accessed_at", "TEXT"),
+            ("access_count", "INTEGER DEFAULT 0"),
+            ("decay_score", "FLOAT DEFAULT 0.0"),
         ]
 
-        existing_columns = get_existing_columns(cursor, "memories")
         for col_name, col_type in memories_columns_to_add:
             if col_name not in existing_columns:
                 cursor.execute(f"ALTER TABLE memories ADD COLUMN {col_name} {col_type}")
@@ -606,7 +674,7 @@ class MemoryManager:
                 logger.info(f"已添加 {col_name} 列到 permanent_memories 表")
 
         indexes = [
-            "CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type)",
+            "CREATE INDEX IF NOT EXISTS idx_memories_memory_type ON memories(memory_type)",
             "CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at)",
             "CREATE INDEX IF NOT EXISTS idx_memories_is_deleted ON memories(is_deleted)",
             "CREATE INDEX IF NOT EXISTS idx_memories_permanent ON memories(permanent)",
@@ -615,6 +683,69 @@ class MemoryManager:
         ]
         for idx in indexes:
             cursor.execute(idx)
+
+        # C6: content 全文检索——优先 FTS5 trigram tokenizer（支持中文按字符切分）。
+        # 不可用（SQLite 未编译 FTS5 或版本 < 3.34 不支持 trigram）时降级为 LIKE 全表扫。
+        try:
+            # 迁移：若旧表用 unicode61 创建（中文整体作为一个 token），DROP 重建为 trigram
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='memories_fts'"
+            )
+            existing_fts = cursor.fetchone()
+            need_recreate = False
+            if existing_fts:
+                cursor.execute("SELECT sql FROM sqlite_master WHERE name='memories_fts'")
+                fts_sql = (cursor.fetchone() or [""])[0]
+                if "trigram" not in fts_sql:
+                    cursor.execute("DROP TABLE memories_fts")
+                    need_recreate = True
+                    logger.info("迁移：旧 memories_fts 用 unicode61，DROP 重建为 trigram")
+
+            cursor.execute(
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+                    content,
+                    tokenize='trigram',
+                    content='memories',
+                    content_rowid='rowid'
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS memories_fts_ai AFTER INSERT ON memories BEGIN
+                    INSERT INTO memories_fts(rowid, content) VALUES (new.rowid, new.content);
+                END
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS memories_fts_ad AFTER DELETE ON memories BEGIN
+                    INSERT INTO memories_fts(memories_fts, rowid, content)
+                    VALUES ('delete', old.rowid, old.content);
+                END
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS memories_fts_au AFTER UPDATE ON memories BEGIN
+                    INSERT INTO memories_fts(memories_fts, rowid, content)
+                    VALUES ('delete', old.rowid, old.content);
+                    INSERT INTO memories_fts(rowid, content) VALUES (new.rowid, new.content);
+                END
+                """
+            )
+            # 首次创建或迁移后回填既有数据（幂等：仅当 FTS 索引为空时执行，避免每次启动全表回填）
+            cursor.execute("SELECT 1 FROM memories_fts LIMIT 1")
+            if cursor.fetchone() is None or need_recreate:
+                cursor.execute("DELETE FROM memories_fts")
+                cursor.execute(
+                    "INSERT INTO memories_fts(rowid, content) SELECT rowid, content FROM memories"
+                )
+            self._fts5_available = True
+        except Exception as fts_e:
+            self._fts5_available = False
+            logger.warning(f"FTS5 不可用，search_memories 将回退到 LIKE 全表扫: {fts_e}")
 
         conn.commit()
         conn.close()
@@ -745,20 +876,21 @@ class MemoryManager:
         cursor = conn.cursor()
 
         try:
+            now_iso = datetime.now().isoformat()
             cursor.execute(
                 f"""
                 INSERT INTO {table_name} (
-                    type, content, importance, importance_score,
+                    memory_type, content, importance, importance_score,
                     decay_type, decay_params, reactivation_count,
                     emotion_score, permanent, psychological_age,
-                    tags, metadata, created_at, workspace_id, agent_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    tags, metadata, created_at, accessed_at, workspace_id, agent_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     memory_type,
                     content,
                     importance,
-                    0.6 if not permanent else 1.0,
+                    importance / 5.0 if not permanent else 1.0,
                     "zero" if permanent else "exponential",
                     json_dumps({}),
                     0,
@@ -767,7 +899,8 @@ class MemoryManager:
                     1.0,
                     json_dumps(tags or [], ensure_ascii=False),
                     json_dumps(metadata or {}, ensure_ascii=False),
-                    datetime.now().isoformat(),
+                    now_iso,
+                    now_iso,
                     workspace_id,
                     agent_id,
                 ),
@@ -888,13 +1021,22 @@ class MemoryManager:
             conditions = ["workspace_id = ?"]
             params = [workspace_id]
 
-            if query:
+            # C6: 默认 memories 表且 FTS5 trigram 可用时走全文索引（需 query ≥3 字符）；
+            # 否则（query <3 字符或 FTS5 不可用）回退 content LIKE 全表扫
+            fts_usable = (
+                bool(query)
+                and len(query) >= 3
+                and table_name == "memories"
+                and getattr(self, "_fts5_available", False)
+            )
+
+            if query and not fts_usable:
                 escaped_query = query.replace("%", "\\%").replace("_", "\\_")
                 conditions.append("content LIKE ? ESCAPE '\\'")
                 params.append(f"%{escaped_query[:500]}%")
 
             if memory_type:
-                conditions.append("type = ?")
+                conditions.append("memory_type = ?")
                 params.append(memory_type)
 
             if tags:
@@ -922,15 +1064,44 @@ class MemoryManager:
                 conditions.append("is_deleted = FALSE")
 
             where_clause = " AND ".join(conditions) if conditions else "1=1"
-            params.append(limit)
-            params.append(offset)
 
-            cursor.execute(
-                f"SELECT * FROM {table_name} WHERE {where_clause} ORDER BY importance DESC, created_at DESC LIMIT ? OFFSET ?",
-                params,
-            )
+            if fts_usable:
+                # C6: FTS5 phrase 查询——双引号包裹整串，内部双引号转义以避免语法错误
+                try:
+                    phrase = '"' + query[:500].replace('"', '""') + '"'
+                    fts_params = [phrase] + params + [limit, offset]
+                    cursor.execute(
+                        f"""SELECT m.* FROM {table_name} m
+                            JOIN memories_fts f ON m.rowid = f.rowid
+                            WHERE memories_fts MATCH ? AND {where_clause}
+                            ORDER BY m.importance DESC, m.created_at DESC
+                            LIMIT ? OFFSET ?""",
+                        fts_params,
+                    )
+                    rows = cursor.fetchall()
+                except Exception as fts_inner_e:
+                    # FTS5 查询语法异常 → 回退 LIKE 全表扫
+                    logger.warning(
+                        f"FTS5 查询失败，回退 LIKE: query={query!r}, err={fts_inner_e}"
+                    )
+                    escaped_query = query.replace("%", "\\%").replace("_", "\\_")
+                    like_conditions = conditions + ["content LIKE ? ESCAPE '\\'"]
+                    like_params = params + [f"%{escaped_query[:500]}%", limit, offset]
+                    like_where = " AND ".join(like_conditions)
+                    cursor.execute(
+                        f"SELECT * FROM {table_name} WHERE {like_where} ORDER BY importance DESC, created_at DESC LIMIT ? OFFSET ?",
+                        like_params,
+                    )
+                    rows = cursor.fetchall()
+            else:
+                params.append(limit)
+                params.append(offset)
+                cursor.execute(
+                    f"SELECT * FROM {table_name} WHERE {where_clause} ORDER BY importance DESC, created_at DESC LIMIT ? OFFSET ?",
+                    params,
+                )
+                rows = cursor.fetchall()
 
-            rows = cursor.fetchall()
             return [self._row_to_memory(row) for row in rows]
         except Exception as e:
             logger.error(f"搜索记忆失败: {e}", exc_info=True)
@@ -940,8 +1111,8 @@ class MemoryManager:
         self,
         memory_id: int,
         new_content: str = None,
-        new_tags: List[str] = None,
         new_importance: int = None,
+        new_tags: List[str] = None,
         new_metadata: Dict = None,
         agent_id: str = "default",
     ) -> bool:
@@ -950,8 +1121,8 @@ class MemoryManager:
         Args:
             memory_id: 记忆ID
             new_content: 新内容
-            new_tags: 新标签
             new_importance: 新重要性
+            new_tags: 新标签
             new_metadata: 新元数据
             agent_id: Agent ID，用于指定记忆表
         """
@@ -1125,7 +1296,7 @@ class MemoryManager:
             total = cursor.fetchone()[0]
 
             cursor.execute(
-                "SELECT type, COUNT(*) FROM memories WHERE is_deleted = FALSE AND workspace_id = ? GROUP BY type",
+                "SELECT memory_type, COUNT(*) FROM memories WHERE is_deleted = FALSE AND workspace_id = ? GROUP BY memory_type",
                 (workspace_id,),
             )
             by_type = {row[0]: row[1] for row in cursor.fetchall()}
@@ -1162,9 +1333,14 @@ class MemoryManager:
             tags = []
             decay_params = {}
 
+        keys = row.keys()
+        # B2: 列名已统一为 memory_type；保留 "type" 别名以兼容下游读取（assistant_tools / chroma_store 等）
+        memory_type = row["memory_type"] if "memory_type" in keys else row.get("type")
+
         return {
             "id": row["id"],
-            "type": row["type"],
+            "memory_type": memory_type,
+            "type": memory_type,  # 向后兼容别名，与 memory_type 同值
             "content": row["content"],
             "vector_id": row["vector_id"],
             "metadata": metadata,
@@ -1183,7 +1359,11 @@ class MemoryManager:
             "is_deleted": bool(row["is_deleted"]),
             "source": row["source"],
             "workspace_id": row["workspace_id"],
-            "agent_id": row["agent_id"] if "agent_id" in row.keys() else "default",
+            "agent_id": row["agent_id"] if "agent_id" in keys else "default",
+            # B2: 与异步 MemoryManager 对齐的访问/衰减字段
+            "accessed_at": row["accessed_at"] if "accessed_at" in keys else None,
+            "access_count": row["access_count"] if "access_count" in keys else 0,
+            "decay_score": row["decay_score"] if "decay_score" in keys else 0.0,
         }
 
     def enable_vector_search(
@@ -1274,7 +1454,7 @@ class MemoryManager:
             return self._hybrid_search is not None and self._vector_store is not None
 
     async def semantic_search(
-        self, query: str, memory_type: str = None, limit: int = 10, agent_id: str = "default"
+        self, query: str, memory_type: Optional[str] = None, limit: int = 10, agent_id: str = "default"
     ) -> List[Dict]:
         if not self.is_vector_search_enabled():
             # 不再静默降级为关键词搜索，返回空结果并记录错误，让用户知道向量搜索未启用
@@ -1294,10 +1474,10 @@ class MemoryManager:
     async def hybrid_search(
         self,
         query: str,
-        memory_type: str = None,
-        tags: List[str] = None,
-        limit: int = 10,
-        workspace_id: str = None,
+        memory_type: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        limit: int = 5,
+        workspace_id: Optional[str] = None,
         agent_id: str = "default",
     ) -> List[Dict]:
         fallback = False
@@ -1575,22 +1755,56 @@ class MemoryManager:
                 params.append(f"%{escaped_query[:500]}%")
 
             if memory_type:
-                conditions.append("type = ?")
+                conditions.append("memory_type = ?")
                 params.append(memory_type)
 
             if tags:
                 for tag in tags:
-                    escaped_tag = tag.replace('%', '\\%').replace('_', '\\_')
+                    escaped_tag = tag.replace("%", "\\%").replace("_", "\\_")
                     conditions.append("tags LIKE ? ESCAPE '\\'")
                     params.append(f'%"{escaped_tag[:100]}"%')
 
             where_clause = " AND ".join(conditions)
-            params.append(limit * 2)
+            # C5: decay 计算下推到 SQL。沿用 async_manager.sync_decay_values 的
+            # julianday 线性衰减约定（importance * (1 - days/30)），将 ORDER BY 改为
+            # DB 端近似最终分，仅拉取 limit 行（而非 limit*2）交由 Python 精算最终分。
+            # relevance 在此路径恒为 0.5（无 query embedding），作为常量参与 min(,1) 上限对齐。
+            # DecayCalculator 真实用 created_at 计算衰减（非 accessed_at），故此处用 created_at。
+            decay_order_sql = f"""
+                SELECT * FROM (
+                    SELECT
+                        memories.*,
+                        COALESCE(importance_score, importance * 1.0 / 5.0) AS _imp,
+                        MAX(COALESCE(julianday('now') - julianday(created_at), 0.0), 0.0) AS _days
+                    FROM memories
+                    WHERE {where_clause}
+                )
+                ORDER BY MIN(
+                    _imp * ?
+                    + (
+                        CASE WHEN permanent = 1 THEN 1.0
+                        ELSE
+                            MIN(
+                                CASE WHEN reactivation_count > 0 THEN
+                                    (_imp * MAX(0.0, 1.0 - _days / 30.0))
+                                        * (1.0 + 0.2 * reactivation_count)
+                                        + 0.1 + 0.05 * abs(emotion_score)
+                                ELSE
+                                    _imp * MAX(0.0, 1.0 - _days / 30.0)
+                                END,
+                                1.0
+                            )
+                        END
+                    ) * ?
+                    + 0.5 * ?
+                    + (CASE WHEN permanent = 1 THEN 0.15 ELSE 0 END),
+                    1.0
+                ) DESC
+                LIMIT ?
+            """
+            params.extend([weights[0], weights[1], weights[2], limit])
 
-            cursor.execute(
-                f"SELECT * FROM memories WHERE {where_clause} ORDER BY importance DESC, created_at DESC LIMIT ?",
-                params,
-            )
+            cursor.execute(decay_order_sql, params)
 
             rows = cursor.fetchall()
         except Exception as e:
@@ -1636,15 +1850,17 @@ class MemoryManager:
 
         return scored_memories[:limit]
 
-    def recall_memory(self, memory_id: int, emotion_intensity: float = 0.0) -> Optional[Dict]:
+    def recall_memory(self, memory_id: int, emotion_intensity: float = 0.0, agent_id: str = "default") -> Optional[Dict]:
         from backend.core.memory.decay import DecayCalculator
 
+        # B4: 按 agent 表查询，避免跨 agent 记忆串扰
+        table_name = self._get_table_name(agent_id)
         conn = self._get_connection()
         cursor = conn.cursor()
 
         try:
             cursor.execute(
-                "SELECT * FROM memories WHERE id = ? AND is_deleted = FALSE", (memory_id,)
+                f"SELECT * FROM {table_name} WHERE id = ? AND is_deleted = FALSE", (memory_id,)
             )
             row = cursor.fetchone()
 
@@ -1665,8 +1881,8 @@ class MemoryManager:
             new_emotion_score = (memory.get("emotion_score", 0.0) + abs(emotion_intensity)) / 2
 
             cursor.execute(
-                """
-                UPDATE memories
+                f"""
+                UPDATE {table_name}
                 SET reactivation_count = ?, emotion_score = ?, updated_at = ?
                 WHERE id = ?
             """,
@@ -1689,7 +1905,7 @@ class MemoryManager:
                             "emotion_intensity": emotion_intensity,
                             "old_time_score": old_time_score,
                             "new_time_score": new_time_score,
-                            "memory_type": memory.get("type"),
+                            "memory_type": memory.get("memory_type", memory.get("type")),
                         }
                     ),
                 ),
@@ -1699,7 +1915,7 @@ class MemoryManager:
 
             logger.info(f"记忆已召回: id={memory_id}, reactivation_count={new_reactivation_count}")
 
-            updated_memory = self.get_memory(memory_id)
+            updated_memory = self.get_memory(memory_id, agent_id=agent_id)
             if updated_memory:
                 updated_memory["reactivation_details"] = {
                     "old_time_score": old_time_score,
@@ -1722,7 +1938,7 @@ class MemoryManager:
             try:
                 memory_id = self.write_memory(
                     content=mem_data.get("content", ""),
-                    memory_type=mem_data.get("type", "long_term"),
+                    memory_type=mem_data.get("memory_type", mem_data.get("type", "long_term")),
                     importance=mem_data.get("importance", 3),
                     tags=mem_data.get("tags", []),
                     metadata=mem_data.get("metadata", {}),
@@ -2025,8 +2241,8 @@ class MemoryManager:
             # 查找过期的短期记忆
             cursor.execute(
                 """
-                SELECT id FROM memories 
-                WHERE type = 'short_term' 
+                SELECT id FROM memories
+                WHERE memory_type = 'short_term'
                 AND is_deleted = FALSE
                 AND julianday('now') - julianday(created_at) > ?
             """,
@@ -2129,16 +2345,16 @@ class MemoryManager:
 
             cursor.execute(
                 """
-                SELECT 
+                SELECT
                     date(created_at) as date,
                     COUNT(*) as count,
-                    type,
+                    memory_type,
                     AVG(importance_score) as avg_importance
-                FROM memories 
-                WHERE is_deleted = FALSE 
+                FROM memories
+                WHERE is_deleted = FALSE
                 AND workspace_id = ?
                 AND julianday('now') - julianday(created_at) <= ?
-                GROUP BY date(created_at), type
+                GROUP BY date(created_at), memory_type
                 ORDER BY date DESC
             """,
                 (workspace_id, days),
@@ -2184,8 +2400,8 @@ class MemoryManager:
                 """
                 SELECT 
                     COUNT(*) as total,
-                    SUM(CASE WHEN type = 'long_term' THEN 1 ELSE 0 END) as long_term,
-                    SUM(CASE WHEN type = 'short_term' THEN 1 ELSE 0 END) as short_term,
+                    SUM(CASE WHEN memory_type = 'long_term' THEN 1 ELSE 0 END) as long_term,
+                    SUM(CASE WHEN memory_type = 'short_term' THEN 1 ELSE 0 END) as short_term,
                     SUM(CASE WHEN permanent = TRUE THEN 1 ELSE 0 END) as permanent,
                     AVG(importance_score) as avg_importance,
                     AVG(emotion_score) as avg_emotion
@@ -2453,8 +2669,8 @@ class MemoryManager:
             else:
                 cursor.execute(
                     """
-                    SELECT * FROM memories 
-                    WHERE type = ? 
+                    SELECT * FROM memories
+                    WHERE memory_type = ?
                     AND is_deleted = FALSE
                     AND workspace_id = ?
                     ORDER BY created_at DESC

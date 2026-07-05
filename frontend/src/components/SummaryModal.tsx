@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Send, Sparkles, Trash2, Wrench } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { api } from '../api/client';
+import { api } from '../api';
 
 interface ToolEvent {
   toolName: string;
@@ -403,24 +403,27 @@ ${contextText}
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-background rounded-xl w-full max-w-3xl h-[80vh] flex flex-col m-4">
+    <div
+      className="fixed inset-0 flex items-center justify-center z-50"
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+    >
+      <div className="bg-[var(--color-bg-primary)] rounded-xl w-full max-w-3xl h-[80vh] flex flex-col m-4">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border">
+        <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-primary" />
+            <Sparkles className="w-5 h-5 text-[var(--color-accent)]" />
             <h3 className="font-semibold">{autoStart ? '自动日记摘要' : '自定义摘要'} - 摘要助手</h3>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handleClearContext}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+              className="flex items-center gap-1 px-3 py-1.5 text-sm text-[var(--color-error)] hover:bg-[var(--color-error-light)] rounded-lg transition-colors"
               title="清空当前对话的所有上下文"
             >
               <Trash2 className="w-4 h-4" />
               清空上下文
             </button>
-            <button onClick={onClose} className="p-2 hover:bg-accent rounded-lg transition-colors">
+            <button onClick={onClose} className="p-2 hover:bg-[var(--color-bg-hover)] rounded-lg transition-colors">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -435,13 +438,13 @@ ${contextText}
             >
               <div
                 className={`max-w-[80%] rounded-2xl px-4 py-2 ${
-                  message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'
+                  message.role === 'user' ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-bg-tertiary)]'
                 }`}
               >
                 {/* 思考过程（可折叠） */}
                 {message.thinking && (
                   <details className="mb-2 group">
-                    <summary className="cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+                    <summary className="cursor-pointer select-none text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors flex items-center gap-1">
                       <svg
                         className="w-3 h-3 transition-transform group-open:rotate-90"
                         fill="none"
@@ -452,7 +455,7 @@ ${contextText}
                       </svg>
                       思考过程
                     </summary>
-                    <div className="mt-1.5 pl-4 border-l-2 border-border text-xs text-muted-foreground whitespace-pre-wrap break-words">
+                    <div className="mt-1.5 pl-4 border-l-2 border-[var(--color-border)] text-xs text-[var(--color-text-muted)] whitespace-pre-wrap break-words">
                       {message.thinking}
                     </div>
                   </details>
@@ -473,10 +476,10 @@ ${contextText}
                         key={idx}
                         className={`px-2 py-1.5 rounded border ${
                           evt.status === 'calling'
-                            ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
+                            ? 'bg-[var(--color-info-light)] text-[var(--color-info)] border-[var(--color-info)]'
                             : evt.status === 'error'
-                            ? 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20'
-                            : 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20'
+                            ? 'bg-[var(--color-error-light)] text-[var(--color-error)] border-[var(--color-error)]'
+                            : 'bg-[var(--color-success-light)] text-[var(--color-success)] border-[var(--color-success)]'
                         }`}
                       >
                         <div className="flex items-center gap-1.5">
@@ -506,7 +509,7 @@ ${contextText}
         </div>
 
         {/* Input */}
-        <div className="p-4 border-t border-border">
+        <div className="p-4 border-t border-[var(--color-border)]">
           <div className="flex gap-2">
             <input
               type="text"
@@ -514,19 +517,19 @@ ${contextText}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
               placeholder="告诉我如何整理这段对话为日记..."
-              className="flex-1 px-4 py-2 bg-muted rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+              className="flex-1 px-4 py-2 bg-[var(--color-bg-tertiary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
               disabled={isLoading}
             />
             <button
               onClick={handleSend}
               disabled={!input.trim() || isLoading}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-[var(--color-accent)] text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
             >
               <Send className="w-4 h-4" />
               发送
             </button>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">
+          <p className="text-xs text-[var(--color-text-muted)] mt-2">
             提示：可以直接发送"自动摘要"让我将对话整理为日记，或指定需要关注的内容
           </p>
         </div>

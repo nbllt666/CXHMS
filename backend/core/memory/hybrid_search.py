@@ -101,11 +101,14 @@ class HybridSearch:
 
     async def _keyword_search(self, options: HybridSearchOptions) -> List[SearchResult]:
         try:
+            # B5: 必须透传 workspace_id/agent_id，否则关键词搜索会跨 agent 泄漏
             keyword_results = self.sqlite_manager.search_memories(
                 query=options.query,
                 memory_type=options.memory_type,
                 tags=options.tags,
                 limit=options.limit * 2,
+                workspace_id=options.workspace_id or "default",
+                agent_id=options.agent_id,
             )
 
             return [

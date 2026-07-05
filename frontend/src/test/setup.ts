@@ -49,6 +49,13 @@ Object.defineProperty(window, 'ResizeObserver', {
   value: ResizeObserverMock,
 });
 
+// Mock scrollIntoView (jsdom 未实现，ChatPage 等组件调用）
+Element.prototype.scrollIntoView = vi.fn();
+// Mock scrollIntoView for HTMLElement（部分场景 HTMLElement.prototype 优先级更高）
+if (!HTMLElement.prototype.scrollIntoView) {
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+}
+
 // Mock fetch
 global.fetch = vi.fn();
 

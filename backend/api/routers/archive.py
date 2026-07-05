@@ -54,7 +54,7 @@ async def list_archived_memories(
     offset: int = 0,
     memory_type: Optional[str] = None,
 ):
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -74,7 +74,7 @@ async def list_archived_memories(
 @router.post("/archive/memory")
 async def archive_memory(request: ArchiveRequest):
     """归档单个记忆"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -107,7 +107,7 @@ async def archive_memory(request: ArchiveRequest):
 @router.post("/archive/merge")
 async def merge_memories(request: MergeRequest):
     """合并重复记忆"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -144,7 +144,7 @@ async def merge_memories(request: MergeRequest):
 @router.post("/archive/deduplicate")
 async def detect_duplicates(request: DeduplicateRequest):
     """检测重复记忆"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -184,7 +184,7 @@ async def detect_duplicates(request: DeduplicateRequest):
 @router.get("/archive/duplicates")
 async def get_duplicate_groups():
     """获取所有去重组"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -213,7 +213,7 @@ async def get_duplicate_groups():
 @router.post("/archive/of-archives")
 async def archive_of_archives(request: ArchiveOfArchivesRequest):
     """归档的归档 - 对已有归档进行二次压缩"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -240,7 +240,7 @@ async def archive_of_archives(request: ArchiveOfArchivesRequest):
 @router.get("/archive/stats")
 async def get_archive_stats():
     """获取归档统计"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -286,7 +286,7 @@ async def get_archive_levels():
 @router.post("/archive/threshold")
 async def set_dedup_threshold(request: SetDedupThresholdRequest):
     """设置去重相似度阈值"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         if not 0.5 <= request.threshold <= 1.0:
@@ -336,7 +336,7 @@ async def auto_archive_process(
     """自动归档处理 - 归档旧记忆并合并重复项"""
     from datetime import datetime, timedelta
 
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()

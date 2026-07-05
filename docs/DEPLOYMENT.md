@@ -1,6 +1,6 @@
 # CXHMS 部署指南
 
-> **文档版本**: v2.2.0 | **最后更新**: 2026-06-19
+> **文档版本**: v2.3.0 | **最后更新**: 2026-07-02
 
 ## 目录
 
@@ -112,12 +112,12 @@ server:
 
 ```yaml
 llm:
-  provider: "ollama"   # LLM提供商: ollama, vllm, openai, anthropic, deepseek, local
-  host: "http://localhost:11434"  # LLM服务地址
-  model: "qwen3-vl:8b" # 模型名称
-  temperature: 1.3     # 温度参数
-  max_tokens: 0        # 最大token数（0表示不限制）
-  top_p: 0.9           # Top-P采样参数
+  provider: "vllm"    # LLM提供商: ollama, vllm, openai, anthropic, deepseek, local
+  host: "http://localhost:8002"  # LLM服务地址（默认主模型 vLLM）
+  model: "gemma4-e4b" # 模型名称
+  temperature: 0.0    # 温度参数
+  max_tokens: 0       # 最大token数（0表示不限制）
+  top_p: 0.9          # Top-P采样参数
 ```
 
 #### 模型配置
@@ -125,21 +125,22 @@ llm:
 ```yaml
 models:
   main:
-    provider: ollama
-    host: "http://localhost:11434"
-    model: qwen3-vl:8b
+    provider: vllm
+    host: "http://localhost:8002"
+    model: gemma4-e4b
     apiKey: ""
     enabled: true
-    port: 0
+    port: 8002
     temperature: 0.0
     max_tokens: 0
     timeout: 0
   embedding:
-    provider: ""
-    host: ""
-    model: ""
+    provider: vllm
+    host: "http://localhost:8101"
+    model: "/models/Qwen3-Embedding-0.6B"
     apiKey: ""
-    enabled: false
+    enabled: true
+    port: 8101
   summary:
     provider: ollama
     model: qwen3-vl:8b
@@ -184,7 +185,7 @@ memory:
     port: 8090                     # Weaviate端口（HTTP）
     grpc_port: 50051               # Weaviate gRPC端口
     embedded: false                # 是否使用嵌入式模式
-  hybrid_search_enabled: true      # 启用混合搜索
+  hybrid_search_enabled: false     # 启用混合搜索（default.yaml 默认 false）
   archive_enabled: true            # 启用归档
   dedup_threshold: 0.95            # 去重阈值
   archive_compression_enabled: false  # 启用归档压缩
@@ -827,7 +828,7 @@ sudo systemctl start cxhms
 
 ### 版本兼容性
 
-- v2.2.0: 当前版本
+- v2.3.0: 当前版本
 - 升级前请查看CHANGELOG.md了解破坏性变更
 
 ---
@@ -864,5 +865,5 @@ MIT License
 
 ---
 
-*文档版本: v2.2.0*
-*最后更新: 2026-06-19*
+*文档版本: v2.3.0*
+*最后更新: 2026-07-02*

@@ -25,7 +25,7 @@ class MessageCreateRequest(BaseModel):
 
 @router.get("/context/sessions")
 async def list_sessions(workspace_id: str = "default", limit: int = 20, active_only: bool = True):
-    from backend.api.app import get_context_manager
+    from backend.dependencies import get_context_manager
 
     try:
         context_mgr = get_context_manager()
@@ -39,7 +39,7 @@ async def list_sessions(workspace_id: str = "default", limit: int = 20, active_o
 
 @router.post("/context/sessions")
 async def create_session(request: SessionCreateRequest):
-    from backend.api.app import get_context_manager
+    from backend.dependencies import get_context_manager
 
     try:
         context_mgr = get_context_manager()
@@ -53,7 +53,7 @@ async def create_session(request: SessionCreateRequest):
 
 @router.get("/context/sessions/{session_id}")
 async def get_session(session_id: str):
-    from backend.api.app import get_context_manager
+    from backend.dependencies import get_context_manager
 
     try:
         context_mgr = get_context_manager()
@@ -72,7 +72,7 @@ async def get_session(session_id: str):
 @router.delete("/context/sessions/{session_id}/messages")
 async def clear_session_messages(session_id: str):
     """清空会话消息（保留会话）"""
-    from backend.api.app import get_context_manager
+    from backend.dependencies import get_context_manager
 
     try:
         context_mgr = get_context_manager()
@@ -88,7 +88,7 @@ async def clear_session_messages(session_id: str):
 
 @router.delete("/context/sessions/{session_id}")
 async def delete_session(session_id: str):
-    from backend.api.app import get_context_manager
+    from backend.dependencies import get_context_manager
 
     try:
         context_mgr = get_context_manager()
@@ -107,7 +107,7 @@ async def delete_session(session_id: str):
 @router.delete("/context/sessions/all")
 async def clear_all_sessions():
     """删除所有会话和消息"""
-    from backend.api.app import get_context_manager
+    from backend.dependencies import get_context_manager
 
     try:
         context_mgr = get_context_manager()
@@ -120,7 +120,7 @@ async def clear_all_sessions():
 
 @router.get("/context/messages/{session_id}")
 async def get_messages(session_id: str, limit: int = 50, offset: int = 0):
-    from backend.api.app import get_context_manager
+    from backend.dependencies import get_context_manager
 
     try:
         context_mgr = get_context_manager()
@@ -137,7 +137,7 @@ async def get_messages(session_id: str, limit: int = 50, offset: int = 0):
 
 @router.post("/context/messages")
 async def add_message(request: MessageCreateRequest):
-    from backend.api.app import get_context_manager
+    from backend.dependencies import get_context_manager
 
     try:
         context_mgr = get_context_manager()
@@ -158,7 +158,7 @@ async def add_message(request: MessageCreateRequest):
 @router.post("/context/summary")
 async def generate_summary(session_id: str, max_points: int = 5, save_as_memory: bool = True):
     """使用摘要模型生成对话摘要和报告"""
-    from backend.api.app import get_context_manager, get_memory_manager, get_model_router
+    from backend.dependencies import get_context_manager, get_memory_manager, get_model_router
 
     try:
         context_mgr = get_context_manager()
@@ -317,7 +317,7 @@ async def generate_summary(session_id: str, max_points: int = 5, save_as_memory:
 
 @router.get("/context/stats")
 async def get_context_stats(workspace_id: str = "default"):
-    from backend.api.app import get_context_manager
+    from backend.dependencies import get_context_manager
 
     try:
         context_mgr = get_context_manager()

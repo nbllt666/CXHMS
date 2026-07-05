@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cxhms.local/schema/tool.json",
+  "title": "Tool",
+  "description": "工具注册实体契约。对应 backend/api/routers/tools.py 的 ToolRegisterRequest 与 backend/core/tools/registry.py 的工具描述结构。Tool 是 Agent 可调用的外部能力。",
+  "type": "object",
+  "required": ["name", "description", "parameters"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+      "description": "工具唯一名称，须为合法 Python 标识符"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "工具功能描述，供 LLM 选择工具时参考"
+    },
+    "parameters": {
+      "type": "object",
+      "description": "工具参数的 JSON Schema（OpenAI function-calling 格式）",
+      "additionalProperties": true
+    },
+    "category": {
+      "type": "string",
+      "enum": ["builtin", "custom", "mcp", "native", "general"],
+      "default": "general",
+      "description": "工具类别"
+    },
+    "type": {
+      "type": ["string", "null"],
+      "enum": ["builtin", "mcp", "custom", "native", null],
+      "description": "前端兼容字段，映射到 category"
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "是否启用"
+    },
+    "version": {
+      "type": "string",
+      "default": "1.0.0",
+      "description": "工具版本号"
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true,
+      "description": "工具标签"
+    },
+    "examples": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "调用示例"
+    },
+    "icon": {
+      "type": ["string", "null"],
+      "description": "前端图标标识"
+    },
+    "config": {
+      "type": ["object", "null"],
+      "description": "额外配置",
+      "additionalProperties": true
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "inactive"],
+      "description": "运行时状态：active=已启用，inactive=已禁用"
+    }
+  }
+}

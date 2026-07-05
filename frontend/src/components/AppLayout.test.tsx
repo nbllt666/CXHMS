@@ -3,12 +3,27 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { AppLayout } from './AppLayout';
 
-vi.mock('./layout/Sidebar', () => ({
+// AppLayout 从 './layout'（index）导入 Layout/Sidebar/Header，故 mock index 而非子模块，
+// 否则 mock 不生效，测试无法真正覆盖 AppLayout 的组合行为。
+vi.mock('./layout', () => ({
+  Layout: ({
+    children,
+    sidebar,
+    header,
+  }: {
+    children?: JSX.Element;
+    sidebar?: (props: unknown) => JSX.Element;
+    header?: JSX.Element;
+  }) => (
+    <div data-testid="layout">
+      {header}
+      {sidebar ? sidebar({}) : null}
+      {children}
+    </div>
+  ),
   Sidebar: () => <div data-testid="sidebar">Sidebar</div>,
-}));
-
-vi.mock('./layout/Header', () => ({
   Header: () => <div data-testid="header">Header</div>,
+  PageHeader: () => <div data-testid="page-header">PageHeader</div>,
 }));
 
 const renderWithRouter = (initialRoute: string = '/') => {

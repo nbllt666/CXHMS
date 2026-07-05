@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cxhms.local/config_template/vector_config.json",
+  "title": "VectorConfig",
+  "description": "向量数据库配置契约。对应 config/default.yaml 的 memory 段下 chroma/milvus_lite/qdrant/weaviate 子段。配置加载时自动补充缺失字段为默认值。",
+  "type": "object",
+  "required": ["memory"],
+  "additionalProperties": false,
+  "properties": {
+    "memory": {
+      "type": "object",
+      "required": ["vector_enabled", "vector_backend"],
+      "additionalProperties": false,
+      "properties": {
+        "vector_enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否启用向量搜索"
+        },
+        "vector_backend": {
+          "type": "string",
+          "enum": ["weaviate", "chroma", "milvus_lite", "qdrant", "none"],
+          "default": "weaviate",
+          "description": "向量库后端类型"
+        },
+        "hybrid_search_enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否启用混合搜索（向量+关键词）"
+        },
+        "dedup_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.85,
+          "description": "去重相似度阈值"
+        },
+        "chroma": {
+          "type": "object",
+          "description": "Chroma 向量库配置",
+          "additionalProperties": false,
+          "properties": {
+            "db_path": {"type": "string", "default": "data/chroma_db"},
+            "collection_name": {"type": "string", "default": "memory_vectors"},
+            "vector_size": {"type": "integer", "default": 768, "minimum": 1}
+          }
+        },
+        "milvus_lite": {
+          "type": "object",
+          "description": "Milvus Lite 向量库配置",
+          "additionalProperties": false,
+          "properties": {
+            "db_path": {"type": "string", "default": "data/milvus_lite.db"},
+            "vector_size": {"type": "integer", "default": 768, "minimum": 1}
+          }
+        },
+        "qdrant": {
+          "type": "object",
+          "description": "Qdrant 向量库配置",
+          "additionalProperties": false,
+          "properties": {
+            "host": {"type": "string", "default": "localhost"},
+            "port": {"type": "integer", "default": 6333, "minimum": 1, "maximum": 65535},
+            "vector_size": {"type": "integer", "default": 768, "minimum": 1}
+          }
+        },
+        "weaviate": {
+          "type": "object",
+          "description": "Weaviate 向量库配置",
+          "additionalProperties": false,
+          "properties": {
+            "host": {"type": "string", "default": "localhost"},
+            "port": {"type": "integer", "default": 8090, "minimum": 1, "maximum": 65535},
+            "grpc_port": {"type": "integer", "default": 50061, "minimum": 1, "maximum": 65535},
+            "embedded": {"type": "boolean", "default": false},
+            "vector_size": {"type": "integer", "default": 768, "minimum": 1},
+            "schema_class": {"type": "string", "default": "CXHMSMemory"},
+            "api_key": {"type": ["string", "null"], "default": null}
+          }
+        }
+      }
+    }
+  }
+}

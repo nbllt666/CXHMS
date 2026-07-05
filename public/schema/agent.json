@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cxhms.local/schema/agent.json",
+  "title": "AgentConfig",
+  "description": "Agent 配置实体契约。对应 backend/api/routers/agents.py 的 AgentConfig Pydantic 模型。Agent 是 CXHMS 中承载不同人格/能力的可配置助手。",
+  "type": "object",
+  "required": ["id", "name", "model", "system_prompt"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Agent 唯一标识，如 'default'、'memory-agent'"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Agent 显示名称"
+    },
+    "description": {
+      "type": "string",
+      "default": "",
+      "description": "Agent 用途描述"
+    },
+    "system_prompt": {
+      "type": "string",
+      "minLength": 1,
+      "description": "系统提示词，定义 Agent 行为边界与人格"
+    },
+    "model": {
+      "type": "string",
+      "enum": ["main", "summary", "memory"],
+      "description": "使用的模型槽位：main/summary/memory"
+    },
+    "temperature": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2,
+      "default": 0.7,
+      "description": "采样温度 [0,2]"
+    },
+    "max_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "最大生成 token 数；0 表示不限制"
+    },
+    "use_memory": {
+      "type": "boolean",
+      "default": true,
+      "description": "是否启用记忆注入"
+    },
+    "use_tools": {
+      "type": "boolean",
+      "default": true,
+      "description": "是否启用工具调用"
+    },
+    "memory_scene": {
+      "type": "string",
+      "enum": ["chat", "task", "first_interaction"],
+      "default": "chat",
+      "description": "记忆注入场景模式"
+    },
+    "decay_model": {
+      "type": "string",
+      "enum": ["exponential", "ebbinghaus"],
+      "default": "exponential",
+      "description": "记忆衰减模型"
+    },
+    "vision_enabled": {
+      "type": "boolean",
+      "default": false,
+      "description": "是否启用视觉（多模态）能力"
+    },
+    "is_default": {
+      "type": "boolean",
+      "default": false,
+      "description": "是否为默认 Agent（仅一个可为 true）"
+    },
+    "created_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "创建时间"
+    },
+    "updated_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "最近更新时间"
+    }
+  }
+}

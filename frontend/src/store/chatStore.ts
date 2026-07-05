@@ -1,30 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { api } from '../api/client';
+import { api } from '../api';
+import type { Agent, Session } from '../types';
 
-interface Agent {
-  id: string;
-  name: string;
-  description: string;
-  system_prompt: string;
-  model: string;
-  temperature: number;
-  max_tokens: number;
-  use_memory: boolean;
-  use_tools: boolean;
-  memory_scene: string;
-  vision_enabled?: boolean;
-  is_default?: boolean;
-}
-
-interface Session {
-  id: string;
-  title: string;
-  agent_id?: string;
-  message_count?: number;
-  created_at?: string;
-  updated_at?: string;
-}
+// F8: Agent / Session 类型统一到 types/，此处不再重复声明。
 
 interface ChatState {
   agents: Agent[];

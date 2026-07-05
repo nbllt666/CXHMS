@@ -41,7 +41,7 @@ class ChatWebSocketHandler:
         self, client_id: str, message: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """准备聊天所需的上下文，返回准备结果或 None（出错时已发送错误消息）"""
-        from backend.api.app import get_context_manager, get_memory_manager
+        from backend.dependencies import get_context_manager, get_memory_manager
         from backend.api.routers.chat import (
             build_messages,
             get_agent_config,
@@ -169,8 +169,9 @@ class ChatWebSocketHandler:
         def is_cancelled():
             return self._cancel_flags.get(client_id, False)
 
+        stream_gen = None  # C4: 共享聊天流生成器引用，断开/异常时在 finally 中 aclose 释放上游 vLLM
         try:
-            async for event in generate_chat_stream(
+            stream_gen = generate_chat_stream(
                 llm=llm,
                 messages=messages,
                 agent_config=agent_config,
@@ -178,7 +179,8 @@ class ChatWebSocketHandler:
                 session_id=session_id,
                 state=state,
                 is_cancelled=is_cancelled,
-            ):
+            )
+            async for event in stream_gen:
                 if event.get("type") == "session":
                     continue  # already sent early in _handle_chat
                 await self.ws_manager.send_to_client(client_id, event)
@@ -211,6 +213,13 @@ class ChatWebSocketHandler:
             except Exception:
                 pass
             return
+        finally:
+            # C4: 主动 aclose 共享聊天流生成器，传播断开/取消到上游 vLLM 流
+            if stream_gen is not None:
+                try:
+                    await stream_gen.aclose()
+                except Exception:
+                    pass
 
         # 正常结束后保存完整响应
         await self._save_assistant_message(

@@ -1,6 +1,6 @@
 # CXHMS 架构文档
 
-> **文档版本**: v2.2.0 | **最后更新**: 2026-06-19
+> **文档版本**: v2.3.0 | **最后更新**: 2026-07-02
 
 ## 系统概述
 
@@ -442,13 +442,13 @@ CXHMSConfig
 
 > **注意**: `default.yaml` 中的 `llm_params`、`agent`、`security`、`monitoring`、`tools` 等配置节未被 `CXHMSConfig` 加载，属于配置孤儿（仅存在于YAML文件中，不会被代码消费）。`graph` 和 `cxfc` 配置节存在于 `settings.py` 的数据类定义中，但尚未添加到 `default.yaml`。
 
-> **端口不一致注意**: `default.yaml` 中 `server.port` 默认值为 8001，但 `SystemConfig` 数据类默认值为 8000，`.env.example` 也显示 8000。实际运行时以 `SystemConfig` 默认值和环境变量为准。
+> **端口真相源**: 以 `config/default.yaml` 为唯一真相源，`server.port` 为 **8001**。`SystemConfig` 数据类默认值 (8000) 与 `.env.example` (8000) 为历史遗留，仅 Docker 部署上下文沿用 8000；本地开发与文档统一以 `default.yaml` 的 8001 为准。
 
 **配置结构**:
 ```yaml
 server:                    # 服务器配置
   host: "0.0.0.0"
-  port: 8000
+  port: 8001
   debug: false
 
 cors:                      # CORS配置
@@ -474,14 +474,14 @@ database:                  # 数据库配置
   acp_db: ""
   echo: false
 
-models:                    # 模型槽位配置
+models:                    # 模型槽位配置（默认值源自 config/default.yaml）
   main:
-    provider: "ollama"
-    host: ""
-    model: "qwen3-vl:8b"
+    provider: "vllm"
+    host: "http://localhost:8002"
+    model: "gemma4-e4b"
     apiKey: ""
     enabled: true
-    port: 0
+    port: 8002
     temperature: 0.0
     max_tokens: 0
     timeout: 0
@@ -544,7 +544,7 @@ memory:                    # 记忆配置
   milvus_lite: {}
   qdrant: {}
   weaviate: {}
-  hybrid_search_enabled: true
+  hybrid_search_enabled: false
   archive_enabled: true
   dedup_threshold: 0.95
   archive_compression_enabled: false
@@ -690,7 +690,7 @@ cxfc:                      # CXFC配置
 │           Docker Container          │
 │  ┌───────────────────────────────┐  │
 │  │         CXHMS Service         │  │
-│  │  - FastAPI (port 8000)        │  │
+│  │  - FastAPI (port 8001)        │  │
 │  │  - WebUI (port 7860)          │  │
 │  │  - Control (port 8765)        │  │
 │  └───────────────────────────────┘  │
@@ -773,7 +773,7 @@ cxfc:                      # CXFC配置
 ## 版本兼容性
 
 ### API版本
-- 当前版本: v2.2.0
+- 当前版本: v2.3.0
 - 版本控制: URL路径（预留）
 
 ### 数据迁移
@@ -819,5 +819,70 @@ cxfc:                      # CXFC配置
 
 ---
 
-*文档版本: v2.2.0*
-*最后更新: 2026-06-19*
+## 附录 A：应用初始化流程
+
+主程序 `main.py` 加载配置、初始化日志、启动 Uvicorn，FastAPI 应用使用 lifespan 上下文管理器处理启停。**初始化顺序**（[app.py](../backend/api/app.py)）：
+
+1. ModelRouter — 模型路由器（最先初始化，其他组件可能依赖它）
+2. MemoryManager — 记忆管理器
+3. ContextManager — 上下文管理器
+4. ACPManager — ACP 管理器（含 start()）
+5. LLMClient — LLM 客户端（优先从 model_router 获取主模型客户端，回退到 LLMFactory）
+6. SecondaryModelRouter — 副模型路由器
+7. MCPManager — MCP 管理器
+8. 内置工具注册 — register_builtin_tools()
+9. 主模型工具注册 — register_master_tools()
+10. 摘要模型工具注册 — register_summary_tools()
+11. 记忆管理模型工具注册 — register_assistant_tools()
+12. 向量搜索启用 — 根据 vector_backend 配置初始化（chroma/milvus_lite/qdrant/weaviate/weaviate_embedded）
+13. AlarmManager + WebSocket 离线保存
+14. AsyncMemoryManager — 异步记忆管理器
+15. GraphDatabase + SQLiteGraphStore — 图数据库 + SQLite 图存储（条件启用：settings.config.graph.enabled）
+16. CXFCManager — CXFC 管理器（条件启用：settings.config.cxfc.enabled，含 start()）
+17. 图数据库工具注册 — register_graph_tools()（条件注册：graph_database && graph_store）
+18. ServiceState — 注入所有组件
+
+**关闭顺序**：CXFCManager → GraphDatabase → AlarmManager → WebSocketManager(stop_cleanup_task) → ACPManager(stop) → MemoryManager → BackupManager → PluginManager → ModelRouter
+
+> **注意**：控制服务（Control Service，端口 8765）独立于 FastAPI lifespan 运行，不在上述初始化序列中。
+
+## 附录 B：全局依赖注入
+
+系统通过 `ServiceState` 类和 `backend/dependencies.py` 提供以下依赖注入函数：
+
+| 依赖函数 | 说明 |
+|---------|------|
+| get_memory_manager() | 记忆管理器 |
+| get_async_memory_manager() | 异步记忆管理器 |
+| get_context_manager() | 上下文管理器 |
+| get_acp_manager() | ACP 管理器 |
+| get_llm_client() | LLM 客户端 |
+| get_secondary_router() | 副模型路由器 |
+| get_mcp_manager() | MCP 管理器 |
+| get_model_router() | 模型路由器 |
+| get_graph_database() | 图数据库 |
+| get_graph_store() | 图存储 |
+| get_cxfc_manager() | CXFC 管理器（可选，返回 Optional） |
+
+**ServiceState 属性**：`memory_manager`、`async_memory_manager`、`context_manager`、`acp_manager`、`llm_client`、`secondary_router`、`mcp_manager`、`model_router`、`graph_database`（可选）、`graph_store`（可选）、`cxfc_manager`（可选）。
+
+## 附录 C：核心业务流程图
+
+### C.1 消息处理完整流程
+
+用户发送消息 → 获取 Agent 配置（系统提示词、模型、温度等）→ 会话管理（有 session_id 则获取已有会话，否则创建新会话）→ 添加用户消息到上下文 → 记忆检索（MemoryRouter.route 按场景路由 → HybridSearch 向量+关键词 → DecayCalculator 计算时间衰减 → 综合评分排序）→ 构建消息列表 [System 提示词 + 相关记忆 + 历史消息 + 当前消息] → 调用 LLM（选择模型 main/summary/memory，传递工具定义）→ 普通响应（保存到上下文、返回用户）或 工具调用请求（执行工具、收集结果）→ 可选保存重要内容到记忆 → 返回响应。
+
+### C.2 记忆检索评分流程
+
+检索请求 → 生成查询向量（LLMClient.get_embedding）→ 并行执行向量搜索（余弦相似度）与关键词搜索（BM25/TF-IDF）→ 分数融合（RRF: `score = 0.6*vector_rank + 0.4*text_rank`）→ 3D 评分（场景感知：`final = importance_w*importance + time_w*time + relevance_w*relevance`；chat=0.45/0.20/0.35，task=0.30/0.20/0.50，creative=0.30/0.40/0.30）→ 过滤低分记忆（阈值 0.3）→ 返回 Top-K。
+
+### C.3 ACP 消息流程
+
+Agent A 发送消息 → 消息序列化（ACPMessageInfo → JSON，添加时间戳、相关性 ID）→ 路由选择（直接消息 / 广播 / 群组消息）→ HTTP POST `http://target:port/acp/receive` → Agent B 接收并验证格式、查找消息处理器 → 消息处理（chat / memory_request / tool_call）→ 发送响应（如需要）。
+
+> 配置系统详情见本文档「配置系统」章节；LLM 提供商支持 OLLAMA/VLLM/OPENAI/ANTHROPIC/DEEPSEEK/LOCAL，当前默认主模型为 VLLM (`gemma4-e4b` @8002)，嵌入模型为 vLLM `Qwen3-Embedding-0.6B` @8101。
+
+---
+
+*文档版本: v2.3.0*
+*最后更新: 2026-07-02*

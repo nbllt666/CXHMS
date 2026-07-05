@@ -1,7 +1,7 @@
-import asyncio
 import json
 import os
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -10,6 +10,10 @@ from backend.core.exceptions import ContextError
 from backend.core.logging_config import get_contextual_logger
 
 logger = get_contextual_logger(__name__)
+
+# C3: 增量持久化阈值——_persist 只标记 dirty，达到阈值才真正落盘
+_FLUSH_MSG_INTERVAL = 10  # 每 N 条消息触发一次 flush
+_FLUSH_TIME_INTERVAL = 5.0  # 或距上次 flush 超过 N 秒触发一次
 
 
 class ContextManager:
@@ -31,6 +35,16 @@ class ContextManager:
         self._context_dir = "data/context"
         self._lock = threading.Lock()
         self._store: Dict[str, Dict] = {}
+
+        # C3: 增量持久化状态——_persist 只标记 dirty，后台线程周期性 flush
+        self._dirty: set = set()
+        self._dirty_msg_count: Dict[str, int] = {}
+        self._last_flush_time: float = time.time()
+        self._stop_event = threading.Event()
+        self._flush_thread = threading.Thread(
+            target=self._flush_loop, daemon=True, name="ContextFlush"
+        )
+        self._flush_thread.start()
 
         os.makedirs(self._context_dir, exist_ok=True)
         self._load_from_disk()
@@ -65,17 +79,98 @@ class ContextManager:
             except Exception as e:
                 logger.warning(f"加载上下文文件失败 {file_path}: {e}")
 
+    def _mark_dirty(self, session_id: str) -> None:
+        """标记 session 为脏（C3）。调用方需已持有 self._lock。本方法不执行磁盘 I/O。"""
+        self._dirty.add(session_id)
+        self._dirty_msg_count[session_id] = self._dirty_msg_count.get(session_id, 0) + 1
+
     def _persist(self, session_id: str) -> None:
-        """将内存中的 session 数据持久化到文件（调用方需持有锁或在锁外安全调用）"""
-        data = self._store.get(session_id)
-        if data is not None:
-            self._atomic_write(session_id, data)
+        """将内存中的 session 数据标记为待持久化（C3: 增量——只标记 dirty，不立即写）。
+
+        调用方需持有锁或在锁外安全调用。原全量重写改为增量标记，避免每条消息都全量重写
+        session JSON；真正的落盘由后台 _flush_loop 周期性执行（每 _FLUSH_TIME_INTERVAL 秒，
+        或某 session 累积消息数达 _FLUSH_MSG_INTERVAL 时触发）。长对话下每条消息持久化
+        开销从一次全量文件写降为内存 set/dict 更新（< 5ms）。
+        """
+        self._mark_dirty(session_id)
+
+    def _should_flush(self) -> bool:
+        """判断是否达到 flush 阈值（C3）。调用方需已持有 self._lock。"""
+        if not self._dirty:
+            return False
+        if (time.time() - self._last_flush_time) >= _FLUSH_TIME_INTERVAL:
+            return True
+        if self._dirty_msg_count and max(self._dirty_msg_count.values()) >= _FLUSH_MSG_INTERVAL:
+            return True
+        return False
+
+    def _collect_flush_snapshots(self) -> List[tuple]:
+        """在锁内收集所有脏 session 的快照并清脏标记，返回 (session_id, snapshot) 列表（C3）。
+
+        快照采用浅拷贝（session dict + messages list + mono_contexts list），与原
+        add_message_async 的快照语义一致；写盘在锁外执行，避免阻塞消息写入路径。
+        """
+        snapshots = []
+        for sid in list(self._dirty):
+            data = self._store.get(sid)
+            if data is not None:
+                snapshots.append(
+                    (
+                        sid,
+                        {
+                            "session": dict(data["session"]),
+                            "messages": list(data["messages"]),
+                            "mono_contexts": list(data.get("mono_contexts", [])),
+                        },
+                    )
+                )
+            self._dirty.discard(sid)
+            self._dirty_msg_count.pop(sid, None)
+        self._last_flush_time = time.time()
+        return snapshots
+
+    def flush(self) -> None:
+        """强制将所有脏 session 落盘（C3）。锁内取快照，锁外写盘。"""
+        with self._lock:
+            snapshots = self._collect_flush_snapshots()
+        for sid, snap in snapshots:
+            try:
+                self._atomic_write(sid, snap)
+            except Exception as e:
+                logger.warning(f"flush 写盘失败 {sid}: {e}")
+
+    def _flush_loop(self) -> None:
+        """C3: 后台周期性 flush 脏 session。
+
+        每 1s 检查一次是否达到阈值（消息数 ≥ _FLUSH_MSG_INTERVAL 或距上次 flush
+        ≥ _FLUSH_TIME_INTERVAL 秒）；达到则 flush。退出时做最终 flush 确保数据落盘。
+        """
+        while not self._stop_event.wait(1.0):
+            try:
+                need = False
+                with self._lock:
+                    need = self._should_flush()
+                if need:
+                    self.flush()
+            except Exception as e:
+                logger.warning(f"后台 flush 失败: {e}")
+        # 退出前最终 flush
+        try:
+            self.flush()
+        except Exception as e:
+            logger.warning(f"退出前 flush 失败: {e}")
 
     # ─── 兼容方法（无操作）────────────────────────────────────────
 
     def shutdown(self):
-        """关闭（兼容，无操作）"""
-        pass
+        """关闭：停止后台 flush 线程并强制 flush 所有脏 session（C3），确保退出前数据落盘"""
+        self._stop_event.set()
+        if self._flush_thread.is_alive():
+            self._flush_thread.join(timeout=5)
+        try:
+            self.flush()
+        except Exception as e:
+            logger.warning(f"shutdown flush 失败: {e}")
 
     def clear_cache(self):
         """清理缓存（兼容，无操作）"""
@@ -186,6 +281,9 @@ class ContextManager:
                 return False
 
             del self._store[session_id]
+            # C3: 清理脏标记，避免后续 flush 试图写已删除的 session
+            self._dirty.discard(session_id)
+            self._dirty_msg_count.pop(session_id, None)
             file_path = self._session_file(session_id)
             try:
                 if os.path.exists(file_path):
@@ -204,6 +302,9 @@ class ContextManager:
         with self._lock:
             count = len(self._store)
             self._store.clear()
+            # C3: 同步清理脏标记
+            self._dirty.clear()
+            self._dirty_msg_count.clear()
 
             # 删除目录下所有 .json 文件
             if os.path.isdir(self._context_dir):
@@ -270,10 +371,11 @@ class ContextManager:
         metadata: Dict = None,
         tokens: int = 0,
     ) -> str:
-        """异步追加消息：内存立即更新（持锁），磁盘持久化通过 asyncio.to_thread 卸载，不阻塞事件循环。
+        """异步追加消息：内存立即更新（持锁），磁盘持久化由后台 _flush_loop 周期性完成（C3）。
 
-        与 add_message 行为一致，但将磁盘写入卸载到线程池，避免阻塞事件循环。
-        磁盘写入失败仅记录日志，不抛出异常（不打断流式响应）。
+        与 add_message 行为一致，但不再每条消息都全量重写 session JSON——仅标记 dirty，
+        由后台线程按阈值（每 _FLUSH_MSG_INTERVAL 条或每 _FLUSH_TIME_INTERVAL 秒）批量落盘。
+        长对话下每条消息持久化开销 < 5ms（仅内存 set/dict 更新，无磁盘 I/O、无 to_thread 调度）。
         """
         message_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
@@ -300,24 +402,8 @@ class ContextManager:
             entry["messages"].append(message)
             entry["session"]["message_count"] += 1
             entry["session"]["updated_at"] = now
-            # Capture a snapshot for disk persistence (avoid holding lock during I/O)
-            snapshot = dict(entry["session"])
-            messages_snapshot = list(entry["messages"])
-            mono_contexts_snapshot = list(entry.get("mono_contexts", []))
-
-        # Disk persistence offloaded to thread pool (outside the lock)
-        try:
-            await asyncio.to_thread(
-                self._atomic_write,
-                session_id,
-                {
-                    "session": snapshot,
-                    "messages": messages_snapshot,
-                    "mono_contexts": mono_contexts_snapshot,
-                },
-            )
-        except Exception as e:
-            logger.warning(f"异步持久化失败 {session_id}: {e}")
+            # C3: 仅标记 dirty，落盘由后台 _flush_loop 周期性完成
+            self._mark_dirty(session_id)
 
         return message_id
 

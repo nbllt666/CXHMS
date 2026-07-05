@@ -1,0 +1,9 @@
+# public/ dependencies
+# 契约测试套件 (public/test_cases/) 的运行时依赖
+
+# JSON Schema 校验（rules-3 §一 data_contract + §五 test_suite）
+# 用于 public/test_cases/test_data_schema.py 与 test_config_template.py 的契约约束验证
+jsonschema>=4.0.0
+
+# 类型注解运行时求值（被契约与 Mock 共用）
+typing_extensions>=4.5.0; python_version < "3.10"

@@ -28,7 +28,9 @@ export default defineConfig({
 
   webServer: [
     {
-      command: 'python -m backend.tests.simulation.server --host 127.0.0.1 --port 8001',
+      // 模拟后端：CXHMS_SIMULATION=1 启动 uvicorn，装配 FakeLLMClient 等假实现
+      // 用 scripts/start_sim_backend.py 避免在 TS 中处理跨平台环境变量转义
+      command: 'python scripts/start_sim_backend.py',
       url: 'http://localhost:8001/health',
       timeout: 30000,
       reuseExistingServer: true,

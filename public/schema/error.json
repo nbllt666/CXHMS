@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cxhms.local/schema/error.json",
+  "title": "ErrorResponse",
+  "description": "统一错误响应契约。对应 backend/api/exceptions.py 的 ErrorResponse 与 backend/core/exceptions.py 的 CXHMSException。所有业务异常统一以本结构返回，含机器可读 error_code 与 HTTP 状态码。",
+  "type": "object",
+  "required": ["error", "error_code"],
+  "additionalProperties": false,
+  "properties": {
+    "error": {
+      "type": "string",
+      "minLength": 1,
+      "description": "人类可读的错误描述"
+    },
+    "error_code": {
+      "type": "string",
+      "enum": [
+        "INTERNAL_ERROR",
+        "DATABASE_ERROR",
+        "VALIDATION_ERROR",
+        "ACP_ERROR",
+        "MEMORY_OPERATION_ERROR",
+        "MEMORY_NOT_FOUND",
+        "VECTOR_STORE_ERROR",
+        "LLM_ERROR",
+        "TOOL_ERROR",
+        "MCP_ERROR",
+        "CONTEXT_ERROR",
+        "AGENT_NOT_FOUND",
+        "SESSION_NOT_FOUND",
+        "AUTHENTICATION_ERROR",
+        "RATE_LIMIT_ERROR"
+      ],
+      "description": "机器可读错误码，用于跨层透传与客户端分支处理"
+    },
+    "details": {
+      "type": ["object", "null"],
+      "description": "额外细节，如 {memory_id, errors, retry_after}",
+      "additionalProperties": true
+    },
+    "http_status": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 599,
+      "description": "对应 HTTP 状态码（仅契约描述，响应头由框架设置）"
+    }
+  }
+}

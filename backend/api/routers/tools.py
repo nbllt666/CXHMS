@@ -35,6 +35,22 @@ class ToolCallRequest(BaseModel):
     arguments: Dict = {}
 
 
+class ToolUpdateRequest(BaseModel):
+    """工具更新请求（对齐 public/interface_stub/tool_service.pyi update_tool）。
+
+    所有字段可选——仅更新提供的字段，未提供字段保持原值。
+    内置工具的 name 与 function 不可变更。
+    """
+
+    enabled: Optional[bool] = None
+    description: Optional[str] = None
+    parameters: Optional[Dict] = None
+    version: Optional[str] = None
+    category: Optional[str] = None
+    tags: Optional[List[str]] = None
+    examples: Optional[List[str]] = None
+
+
 class MCPServerAddRequest(BaseModel):
     """MCP服务器添加请求"""
 
@@ -175,7 +191,7 @@ async def get_tool_stats():
 
 
 @router.post("/tools/call")
-async def call_tool(request: ToolCallRequest):
+async def execute_tool(request: ToolCallRequest):
     """调用工具"""
     from backend.core.tools.registry import tool_registry
 
@@ -188,6 +204,38 @@ async def call_tool(request: ToolCallRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"调用工具失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="内部服务器错误")
+
+
+@router.put("/tools/{name}")
+async def update_tool(name: str, request: ToolUpdateRequest):
+    """更新工具配置（启用/禁用/描述/参数 schema 等）。
+
+    对齐 public/interface_stub/tool_service.pyi 的 update_tool(name, request) 契约。
+    内置工具的 name 与 function 不可变更。
+    """
+    from backend.core.tools.registry import tool_registry
+
+    try:
+        updates = request.dict(exclude_unset=True)
+        if not updates:
+            raise HTTPException(status_code=400, detail="未提供任何更新字段")
+
+        updated_tool = tool_registry.update_tool(name, updates)
+        if updated_tool is None:
+            raise HTTPException(status_code=404, detail=f"工具 {name} 不存在")
+
+        return {
+            "status": "success",
+            "tool": updated_tool.to_dict(),
+            "message": f"工具 {name} 更新成功",
+        }
+    except HTTPException:
+        raise
+    except ToolError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"更新工具失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="内部服务器错误")
 
 
@@ -282,7 +330,7 @@ async def import_tools(tools: List[Dict]):
 
 @router.get("/tools/mcp/servers")
 async def get_mcp_servers():
-    from backend.api.app import get_mcp_manager
+    from backend.dependencies import get_mcp_manager
 
     try:
         mcp_mgr = get_mcp_manager()
@@ -298,7 +346,7 @@ async def get_mcp_servers():
 
 @router.post("/tools/mcp/servers")
 async def add_mcp_server(request: MCPServerAddRequest):
-    from backend.api.app import get_mcp_manager
+    from backend.dependencies import get_mcp_manager
 
     try:
         mcp_mgr = get_mcp_manager()
@@ -319,7 +367,7 @@ async def add_mcp_server(request: MCPServerAddRequest):
 
 @router.delete("/tools/mcp/servers/{name}")
 async def remove_mcp_server(name: str):
-    from backend.api.app import get_mcp_manager
+    from backend.dependencies import get_mcp_manager
 
     try:
         mcp_mgr = get_mcp_manager()
@@ -336,7 +384,7 @@ async def remove_mcp_server(name: str):
 
 @router.post("/tools/mcp/servers/start")
 async def start_mcp_server(request: MCPServerStartRequest):
-    from backend.api.app import get_mcp_manager
+    from backend.dependencies import get_mcp_manager
 
     try:
         mcp_mgr = get_mcp_manager()
@@ -353,7 +401,7 @@ async def start_mcp_server(request: MCPServerStartRequest):
 
 @router.post("/tools/mcp/servers/stop")
 async def stop_mcp_server(request: MCPServerStopRequest):
-    from backend.api.app import get_mcp_manager
+    from backend.dependencies import get_mcp_manager
 
     try:
         mcp_mgr = get_mcp_manager()
@@ -370,7 +418,7 @@ async def stop_mcp_server(request: MCPServerStopRequest):
 
 @router.get("/tools/mcp/servers/{name}/health")
 async def check_mcp_server_health(name: str):
-    from backend.api.app import get_mcp_manager
+    from backend.dependencies import get_mcp_manager
 
     try:
         mcp_mgr = get_mcp_manager()
@@ -385,7 +433,7 @@ async def check_mcp_server_health(name: str):
 
 @router.get("/tools/mcp/servers/{name}/tools")
 async def get_mcp_server_tools(name: str):
-    from backend.api.app import get_mcp_manager
+    from backend.dependencies import get_mcp_manager
 
     try:
         mcp_mgr = get_mcp_manager()
@@ -400,7 +448,7 @@ async def get_mcp_server_tools(name: str):
 
 @router.post("/tools/mcp/call")
 async def call_mcp_tool(request: MCPToolCallRequest):
-    from backend.api.app import get_mcp_manager
+    from backend.dependencies import get_mcp_manager
 
     try:
         mcp_mgr = get_mcp_manager()
@@ -419,7 +467,7 @@ async def call_mcp_tool(request: MCPToolCallRequest):
 
 @router.post("/tools/mcp/sync")
 async def sync_mcp_tools():
-    from backend.api.app import get_mcp_manager
+    from backend.dependencies import get_mcp_manager
 
     try:
         mcp_mgr = get_mcp_manager()

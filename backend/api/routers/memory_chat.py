@@ -47,7 +47,7 @@ async def memory_chat(request: MemoryChatRequest):
     - 检测重复
     - 查看统计
     """
-    from backend.api.app import get_memory_manager, get_model_router
+    from backend.dependencies import get_memory_manager, get_model_router
 
     try:
         memory_mgr = get_memory_manager()
@@ -98,7 +98,7 @@ async def memory_chat(request: MemoryChatRequest):
 @router.get("/memory-chat/sessions/{session_id}")
 async def get_chat_session(session_id: str):
     """获取对话会话历史"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()
@@ -133,7 +133,7 @@ async def get_chat_session(session_id: str):
 @router.delete("/memory-chat/sessions/{session_id}")
 async def clear_chat_session(session_id: str):
     """清除对话会话"""
-    from backend.api.app import get_memory_manager
+    from backend.dependencies import get_memory_manager
 
     try:
         memory_mgr = get_memory_manager()

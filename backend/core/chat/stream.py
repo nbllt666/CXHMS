@@ -16,10 +16,13 @@ WebSocket 处理器（`handlers.py`）共同消费，确保两条路径行为完
     {"type": "cancelled", "timestamp": "..."}
 """
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
+
+from config.settings import settings
 
 from backend.core.llm.tools import parse_text_tool_calls, strip_text_tool_calls
 from backend.core.logging_config import get_contextual_logger
@@ -34,7 +37,7 @@ logger = get_contextual_logger(__name__)
 
 
 # ============================================================================
-# ThinkTagStreamParser（从 chat.py 复制，避免循环导入）
+# ThinkTagStreamParser 正式定义（chat.py 重复副本已于 D4 移除）
 # ============================================================================
 
 
@@ -254,12 +257,13 @@ async def generate_chat_stream(
     had_tool_calls = False
     think_parser = ThinkTagStreamParser()
 
+    current_upstream = None  # C4: 当前轮的上游 vLLM 流引用，断开时由外层 except 主动 aclose
     try:
         logger.info(
             f"开始共享流式聊天，消息数: {len(messages)}, 工具数: {len(tools) if tools else 0}"
         )
 
-        max_tool_rounds = 50
+        max_tool_rounds = settings.config.llm.max_tool_rounds
         for round_idx in range(max_tool_rounds):
             # 检查取消
             if is_cancelled and is_cancelled():
@@ -275,8 +279,8 @@ async def generate_chat_stream(
                 f"had_tool_calls: {had_tool_calls}"
             )
 
-            # 调用LLM流式接口
-            async for chunk in llm.stream_chat(
+            # 调用LLM流式接口（C4: 捕获上游生成器，断开时由外层 except 主动 aclose 释放 vLLM 连接）
+            current_upstream = llm.stream_chat(
                 messages=messages,
                 temperature=agent_config.get("temperature", 0.7),
                 max_tokens=(
@@ -286,7 +290,8 @@ async def generate_chat_stream(
                 ),
                 tools=tools if tools else None,
                 enable_thinking=agent_config.get("enable_thinking", False),
-            ):
+            )
+            async for chunk in current_upstream:
                 # 检查取消（流式过程中也可能被取消）
                 if is_cancelled and is_cancelled():
                     yield {"type": "cancelled", "timestamp": datetime.now().isoformat()}
@@ -337,6 +342,7 @@ async def generate_chat_stream(
                         yield {"type": "content", "content": content_out}
 
             # 流式结束，刷新 <think> 标签解析器
+            current_upstream = None  # C4: 本轮流式已耗尽，清除引用（避免外层 except 误 aclose 已关闭的生成器）
             flush_thinking, flush_content = think_parser.flush()
             if flush_thinking:
                 full_thinking += flush_thinking
@@ -533,3 +539,21 @@ async def generate_chat_stream(
         state.accumulated_response = accumulated_response
         state.full_thinking = full_thinking
         yield {"type": "error", "error": str(e)}
+    except (asyncio.CancelledError, GeneratorExit):
+        # C4: 客户端断开 / 生成器被外层 aclose 时进入此分支。
+        # CancelledError 与 GeneratorExit 均为 BaseException 子类，不会被上面的 except Exception 捕获。
+        # 主动 aclose 当前轮的上游 vLLM 流，触发 httpx async-with 上下文退出，关闭 HTTP 连接，
+        # 从而让 vLLM 停止继续生成 token（满足 C4.1/C4.2）。
+        upstream = current_upstream
+        current_upstream = None
+        if upstream is not None:
+            try:
+                await upstream.aclose()
+            except Exception as cleanup_err:
+                logger.warning(f"aclose 上游 vLLM 流失败: {cleanup_err}")
+        logger.info("共享流式聊天被取消/断开，已释放上游 vLLM 流")
+        # 更新状态对象（部分内容）
+        state.accumulated_response = accumulated_response
+        state.full_thinking = full_thinking
+        # 取消/关闭异常必须继续向上抛出，使 Starlette StreamingResponse 正确终止
+        raise

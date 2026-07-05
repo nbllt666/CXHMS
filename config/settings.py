@@ -164,6 +164,8 @@ class LLMConfig:
     max_tokens: int = 4096
     stream: bool = True
     api_key: Optional[str] = None
+    # 工具调用最大轮数（防止无限循环和高成本），流式与非流式共用
+    max_tool_rounds: int = 10
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "LLMConfig":
@@ -175,6 +177,7 @@ class LLMConfig:
             max_tokens=data.get("max_tokens", 4096),
             stream=data.get("stream", True),
             api_key=data.get("api_key"),
+            max_tool_rounds=data.get("max_tool_rounds", 10),
         )
 
 

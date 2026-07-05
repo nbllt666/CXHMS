@@ -1,10 +1,14 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 
 // 动态获取 WebSocket 基础 URL
+// 使用 URL 构造替换协议，避免 baseUrl.replace('http','ws') 只替换首个 'http' 子串的脆弱性
 const getWsBaseUrl = () => {
   const savedApiUrl = localStorage.getItem('cxhms-api-url');
   const baseUrl = savedApiUrl || import.meta.env.VITE_API_URL || 'http://localhost:8001';
-  return baseUrl.replace('http', 'ws');
+  const url = new URL(baseUrl);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  // 移除末尾斜杠，避免拼接 /ws/... 时出现双斜杠导致 WS 升级 404
+  return url.toString().replace(/\/$/, '');
 };
 
 const MAX_RECONNECT_ATTEMPTS = 5;

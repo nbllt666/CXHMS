@@ -1,9 +1,10 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '../components/layout';
 import { Card, CardBody, Button, SkeletonCard, EmptyStateIcon } from '../components/ui';
-import { api } from '../api/client';
+import { api } from '../api';
 
 interface Stats {
   totalMemories: number;
@@ -55,6 +56,7 @@ const QuickAction: React.FC<{ to: string; icon: React.ReactNode; label: string }
 );
 
 export const DashboardPage: React.FC = () => {
+  const { t, i18n } = useTranslation();
   const { data: stats, isLoading: statsLoading } = useQuery<Stats>({
     queryKey: ['dashboard-stats'],
     queryFn: async () => {
@@ -77,7 +79,7 @@ export const DashboardPage: React.FC = () => {
       return sessionsList.slice(0, 5).map((s: { id: string; title?: string; updated_at?: string }) => ({
         id: s.id,
         type: 'chat' as const,
-        title: s.title || '新对话',
+        title: s.title || t('chat.newChat'),
         timestamp: s.updated_at || new Date().toISOString(),
       }));
     },
@@ -85,7 +87,7 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto">
-      <PageHeader title="仪表盘" description="系统概览与快捷操作" />
+      <PageHeader title={t('dashboard.title')} description={t('dashboard.description')} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {statsLoading ? (
@@ -98,7 +100,7 @@ export const DashboardPage: React.FC = () => {
         ) : (
           <>
             <StatCard
-              title="记忆总数"
+              title={t('dashboard.totalMemories')}
               value={stats?.totalMemories ?? 0}
               color="accent"
               icon={
@@ -113,7 +115,7 @@ export const DashboardPage: React.FC = () => {
               }
             />
             <StatCard
-              title="总消息数"
+              title={t('dashboard.totalMessages')}
               value={stats?.totalMessages ?? 0}
               color="success"
               icon={
@@ -128,7 +130,7 @@ export const DashboardPage: React.FC = () => {
               }
             />
             <StatCard
-              title="Agent数"
+              title={t('dashboard.totalAgents')}
               value={stats?.totalAgents ?? 0}
               color="warning"
               icon={
@@ -143,7 +145,7 @@ export const DashboardPage: React.FC = () => {
               }
             />
             <StatCard
-              title="归档记忆数"
+              title={t('dashboard.archivedMemories')}
               value={stats?.archivedMemories ?? 0}
               color="info"
               icon={
@@ -165,7 +167,7 @@ export const DashboardPage: React.FC = () => {
         <Card className="lg:col-span-2">
           <CardBody>
             <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-4">
-              最近活动
+              {t('dashboard.recentActivity')}
             </h2>
             {activityLoading ? (
               <div className="space-y-3">
@@ -195,14 +197,16 @@ export const DashboardPage: React.FC = () => {
                         {activity.title}
                       </p>
                       <p className="text-xs text-[var(--color-text-tertiary)]">
-                        {new Date(activity.timestamp).toLocaleString('zh-CN')}
+                        {new Date(activity.timestamp).toLocaleString(i18n.language)}
                       </p>
                     </div>
                   </Link>
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 text-[var(--color-text-tertiary)]">暂无最近活动</div>
+              <div className="text-center py-8 text-[var(--color-text-tertiary)]">
+                {t('dashboard.noRecentActivity')}
+              </div>
             )}
           </CardBody>
         </Card>
@@ -210,7 +214,7 @@ export const DashboardPage: React.FC = () => {
         <Card>
           <CardBody>
             <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-4">
-              快捷操作
+              {t('dashboard.quickActions')}
             </h2>
             <div className="space-y-2">
               <QuickAction
@@ -225,7 +229,7 @@ export const DashboardPage: React.FC = () => {
                     />
                   </svg>
                 }
-                label="新对话"
+                label={t('chat.newChat')}
               />
               <QuickAction
                 to="/memories"
@@ -239,7 +243,7 @@ export const DashboardPage: React.FC = () => {
                     />
                   </svg>
                 }
-                label="新建记忆"
+                label={t('dashboard.newMemory')}
               />
               <QuickAction
                 to="/agents"
@@ -253,7 +257,7 @@ export const DashboardPage: React.FC = () => {
                     />
                   </svg>
                 }
-                label="新建Agent"
+                label={t('dashboard.newAgent')}
               />
               <QuickAction
                 to="/settings"
@@ -273,7 +277,7 @@ export const DashboardPage: React.FC = () => {
                     />
                   </svg>
                 }
-                label="系统设置"
+                label={t('nav.settings')}
               />
             </div>
           </CardBody>

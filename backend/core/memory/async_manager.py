@@ -95,6 +95,9 @@ class AsyncMemoryManager:
             await self._pool.commit()
             logger.info("数据库表结构初始化完成")
 
+        # B2: 幂等迁移旧库（可能由同步 MemoryManager 创建，含 type 列），统一为 memory_type 并补齐字段
+        await self._migrate_memories_schema()
+
         await self._pool.execute("""
             CREATE TABLE IF NOT EXISTS permanent_memories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,6 +111,40 @@ class AsyncMemoryManager:
                 verified INTEGER NOT NULL DEFAULT 0
             )
         """)
+        await self._pool.commit()
+
+    async def _migrate_memories_schema(self):
+        """B2: 幂等迁移 memories 表 schema。
+
+        - 旧库由同步 MemoryManager 创建时含 ``type`` 列，此处 RENAME 为 ``memory_type``（保留数据，需 SQLite 3.25+）
+        - 补齐 accessed_at / access_count / decay_score（缺失则 ADD COLUMN）
+        新建表已具备全部列，本方法对其为 no-op。
+        """
+        cursor = await self._pool.execute("PRAGMA table_info(memories)")
+        rows = await cursor.fetchall()
+        existing = {row[1] for row in rows}
+
+        if "type" in existing and "memory_type" not in existing:
+            await self._pool.execute("ALTER TABLE memories RENAME COLUMN type TO memory_type")
+            existing.discard("type")
+            existing.add("memory_type")
+            logger.info("AsyncMemoryManager: 已重命名 memories.type -> memory_type")
+        elif "memory_type" not in existing and "type" not in existing:
+            await self._pool.execute(
+                "ALTER TABLE memories ADD COLUMN memory_type TEXT NOT NULL DEFAULT 'short_term'"
+            )
+            existing.add("memory_type")
+            logger.info("AsyncMemoryManager: 已添加 memory_type 列")
+
+        for col, col_type in [
+            ("accessed_at", "TEXT"),
+            ("access_count", "INTEGER DEFAULT 0"),
+            ("decay_score", "REAL DEFAULT 0.0"),
+        ]:
+            if col not in existing:
+                await self._pool.execute(f"ALTER TABLE memories ADD COLUMN {col} {col_type}")
+                logger.info(f"AsyncMemoryManager: 已添加 memories.{col} 列")
+
         await self._pool.commit()
 
     async def _get_connection(self) -> aiosqlite.Connection:

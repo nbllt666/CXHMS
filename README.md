@@ -26,7 +26,7 @@ CXHMS (CX-O History & Memory Service) 是一个智能记忆管理平台，提供
 
 - Python 3.10+
 - Node.js 18+
-- Ollama (推荐) 或其他 LLM 服务
+- vLLM（默认主模型/Embedding 服务）或 Ollama（副模型，可选）
 
 ### 安装启动
 
@@ -34,9 +34,10 @@ CXHMS (CX-O History & Memory Service) 是一个智能记忆管理平台，提供
 # 1. 安装后端依赖
 pip install -r requirements.txt
 
-# 2. 安装模型 (使用 Ollama)
-ollama pull qwen3-vl:8b
-ollama pull nomic-embed-text
+# 2. 准备模型服务（默认使用 vLLM）
+#    主模型 gemma4-e4b 由 vLLM 提供：http://localhost:8002
+#    Embedding 模型 Qwen3-Embedding-0.6B 由 vLLM 提供：http://localhost:8101
+#    摘要/记忆副模型（可选）使用 Ollama: ollama pull qwen3-vl:8b
 
 # 3. 启动后端
 python main.py
@@ -45,18 +46,30 @@ python main.py
 cd frontend && npm install && npm run dev
 ```
 
-**Windows 一键启动**: `.\1.1.启动前端(含控制服务)(Conda).bat`
+**Windows 启动脚本**（位于项目根目录）：
+
+| 脚本 | 用途 |
+|------|------|
+| `2-1.重建环境.bat` | 重建 Conda 环境 |
+| `2-2.安装依赖.bat` | 安装后端/前端依赖 |
+| `2.启动后端(Conda环境).bat` | 在 Conda 环境中启动后端 |
+| `3.启动后端(系统环境).bat` | 在系统 Python 环境中启动后端 |
+| `7.激活conda环境.bat` | 激活 Conda 环境 |
 
 ### 服务地址
 
 | 服务 | 地址 |
 |------|------|
-| API 文档 (Swagger) | http://localhost:8000/docs |
-| API 文档 (ReDoc) | http://localhost:8000/redoc |
+| API 服务 | http://localhost:8001 |
+| API 文档 (Swagger) | http://localhost:8001/docs |
+| API 文档 (ReDoc) | http://localhost:8001/redoc |
 | 前端界面 | http://localhost:3000 |
 | 控制服务 | http://localhost:8765 |
+| vLLM 主模型 | http://localhost:8002 |
+| vLLM Embedding | http://localhost:8101 |
+| Weaviate 向量库 | http://localhost:8090 |
 
-> **注意**: API 默认端口为 8001（见 `config/default.yaml`），前端开发服务器通过代理转发请求至 8001 端口，Swagger/ReDoc 文档通过前端代理访问。
+> **注意**: API 默认端口为 8001、前端开发服务器为 3000、控制服务为 8765、vLLM 主模型为 8002（见 `config/default.yaml`）。前端开发服务器通过代理转发请求至 8001 端口，Swagger/ReDoc 文档可通过前端代理访问。
 
 ## 主要 API
 
@@ -88,110 +101,104 @@ cd frontend && npm install && npm run dev
 | `GET /api/service/*` | 服务管理 |
 | `GET /api/admin/*` | 管理员 |
 
-完整 API 文档: http://localhost:8000/docs
+完整 API 文档: http://localhost:8001/docs
 
 ## 项目结构
 
 ```
 CXHMS/
-├── backend/           # Python 后端 (FastAPI)
-│   ├── api/routers/   # API 路由 (17个路由模块)
-│   │   ├── acp.py     # ACP 协议
-│   │   ├── admin.py   # 管理员
-│   │   ├── agents.py  # Agent 管理
-│   │   ├── archive.py # 归档管理
-│   │   ├── backup.py  # 备份恢复
-│   │   ├── chat.py    # 聊天接口
-│   │   ├── config.py  # 配置管理
-│   │   ├── context.py # 上下文管理
-│   │   ├── cxfc.py    # CXFC 插件协议
-│   │   ├── graph.py   # 图数据库
-│   │   ├── memory.py  # 记忆管理
-│   │   ├── memory_chat.py # 记忆聊天
-│   │   ├── service.py # 服务管理
-│   │   ├── stats.py   # 统计
-│   │   ├── tools.py   # 工具管理
-│   │   ├── vector.py  # 向量搜索
-│   │   └── websocket.py # WebSocket
-│   ├── core/          # 核心模块 (12个子模块)
-│   │   ├── acp/       # ACP 协议
-│   │   ├── alarm/     # 提醒管理
-│   │   ├── backup/    # 备份管理
-│   │   ├── context/   # 上下文管理
-│   │   ├── cxfc/      # CXFC 插件协议
-│   │   ├── graph/     # 图数据库
-│   │   ├── llm/       # LLM 客户端
-│   │   ├── memory/    # 记忆系统 (含5种向量后端)
-│   │   ├── plugins/   # 插件管理
-│   │   ├── session/   # 会话管理
-│   │   ├── tools/     # 工具系统
-│   │   └── websocket/ # WebSocket 管理
-│   ├── cache.py       # 缓存
-│   ├── exceptions.py  # 异常定义
-│   ├── logging_config.py # 日志配置
-│   ├── model_router.py # 模型路由
-│   ├── utils.py       # 工具函数
-│   ├── control_service.py # 控制服务 (端口8765)
-│   ├── models/        # 数据模型 (acp.py, context.py, memory.py)
-│   └── tests/         # 测试用例 (18个测试文件 + LLM E2E测试框架)
-├── frontend/          # React 前端
+├── backend/                # Python 后端 (FastAPI)
+│   ├── api/routers/        # API 路由 (17个路由模块：acp/admin/agents/archive/backup/chat/config/context/cxfc/graph/memory/memory_chat/service/stats/tools/vector/websocket)
+│   ├── core/               # 核心模块 (12个子模块：acp/alarm/backup/context/cxfc/graph/llm/memory/plugins/session/tools/websocket)
+│   ├── models/             # 数据模型 (acp.py, context.py, memory.py)
+│   ├── tests/              # 后端测试用例
+│   ├── cache.py            # 缓存
+│   ├── exceptions.py       # 异常定义
+│   ├── logging_config.py   # 日志配置
+│   ├── model_router.py     # 模型路由
+│   ├── utils.py            # 工具函数
+│   └── control_service.py  # 控制服务 (端口8765)
+├── frontend/               # React 前端
 │   └── src/
-│       ├── pages/     # 页面组件 (9个页面)
-│       ├── components/# UI组件库(11个) + 布局组件(4个) + 功能组件(GraphManager, ConnectionCheck, VirtualList, SummaryModal, ErrorBoundary, LanguageSwitcher, Header, Sidebar)
-│       ├── store/     # 状态管理 (chatStore + themeStore)
-│       ├── hooks/     # 自定义Hooks (useWebSocket + useHotkey)
-│       ├── i18n/      # 国际化 (zh-CN + en-US)
-│       ├── api/       # API 客户端
-│       ├── styles/    # 样式文件 (animations.css, variables.css)
-│       └── test/      # 测试配置 (setup.ts)
-├── config/            # 配置文件
-│   ├── default.yaml   # 默认配置
-│   ├── env.py         # 环境变量
-│   ├── validation.py  # 配置验证
-│   ├── repair.py      # 配置修复
-│   └── settings.py    # 设置加载
-├── plugins/           # 示例插件
-└── docs/              # 文档
-    ├── API.md         # API 文档
-    ├── ARCHITECTURE.md# 架构文档
-    ├── DEPLOYMENT.md  # 部署指南
-    └── TECHNICAL.md   # 技术文档
+│       ├── pages/          # 页面组件 (9个页面)
+│       ├── components/     # UI组件库 + 布局组件 + 功能组件(GraphManager/ConnectionCheck/VirtualList/SummaryModal/ErrorBoundary/LanguageSwitcher)
+│       ├── store/          # 状态管理 (chatStore + themeStore)
+│       ├── hooks/          # 自定义Hooks (useWebSocket + useHotkey)
+│       ├── i18n/           # 国际化 (zh-CN + en-US)
+│       ├── api/            # API 客户端
+│       └── styles/         # 样式文件 (animations.css, variables.css)
+├── config/                 # 配置文件
+│   ├── default.yaml        # 默认配置（真相源）
+│   ├── env.py              # 环境变量
+│   ├── validation.py       # 配置验证
+│   ├── repair.py           # 配置修复
+│   └── settings.py         # 设置加载
+├── modules/                # 业务模块区（AC 范式：按「模块N_中文名」组织，当前为空骨架）
+├── interfaces/             # 入口层（AC 范式：app.py / main.py / start.bat，当前为空骨架）
+├── workspace/              # 用户数据区（AC 范式）
+├── public/                 # 全局公共资源区（只读契约载体，AC 范式真相源）
+│   ├── schema/             # 数据契约 (JSON Schema)
+│   ├── interface_stub/     # 接口契约 (.pyi 存根)
+│   ├── config_template/    # 配置契约模板
+│   ├── pre_generated_mock/ # 预生成 Mock（并行开发支点）
+│   ├── global_mock/        # 全局可自定义 Mock
+│   ├── test_cases/         # 通用测试用例
+│   └── dependencies/       # 依赖锁定
+├── scripts/                # 脚本目录
+├── data/                   # 运行时数据 (SQLite/向量库等)
+├── logs/                   # 运行日志
+└── docs/                   # 文档
+    ├── API.md              # API 文档
+    ├── ARCHITECTURE.md     # 架构文档
+    ├── DEPLOYMENT.md       # 部署指南
+    ├── TECHNICAL.md        # 技术文档
+    ├── PROJECT_OVERVIEW.md # 项目概述
+    └── MODULES.md          # 模块详解
 ```
 
 ## 配置
 
-主配置文件: `config/default.yaml`
+主配置文件: `config/default.yaml`（端口、模型等以该文件为真相源）
 
 ```yaml
+server:
+  host: 0.0.0.0
+  port: 8001          # API 服务端口
+
 models:
-  main:
-    provider: ollama
-    model: qwen3-vl:8b
+  main:               # 默认主模型
+    provider: vllm
+    host: http://localhost:8002
+    model: gemma4-e4b
     enabled: true
-  embedding:
-    provider: ollama
-    model: nomic-embed-text
+  embedding:          # 默认 Embedding 模型
+    provider: vllm
+    host: http://localhost:8101
+    model: /models/Qwen3-Embedding-0.6B
     enabled: true
-  summary:
+  summary:            # 摘要副模型（默认禁用，回退到 main）
     provider: ollama
     model: qwen3-vl:8b
     enabled: false
-  memory:
+  memory:             # 记忆副模型（默认禁用，回退到 main）
     provider: ollama
     model: qwen3-vl:8b
     enabled: false
+
+model_defaults:
+  summary: main
+  memory: main
 
 memory:
   vector_backend: weaviate
   decay_model: exponential
   emotion_enabled: true
-  hybrid_search_enabled: true
+  hybrid_search_enabled: false   # 默认关闭
   archive_enabled: true
   dedup_threshold: 0.85
 
-server:
-  host: 0.0.0.0
-  port: 8001
+llm:
+  max_tool_rounds: 10            # 流式与非流式统一
 ```
 
 ## 技术栈
@@ -250,8 +257,10 @@ npm run test:coverage
 
 ## 文档
 
-- [API 文档](docs/API.md)
+- [项目概述](docs/PROJECT_OVERVIEW.md)
 - [架构文档](docs/ARCHITECTURE.md)
+- [模块详解](docs/MODULES.md)
+- [API 文档](docs/API.md)
 - [部署指南](docs/DEPLOYMENT.md)
 - [技术文档](docs/TECHNICAL.md)
 

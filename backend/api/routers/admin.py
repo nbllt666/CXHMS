@@ -25,7 +25,7 @@ def verify_admin_key(x_api_key: Optional[str] = Header(None)) -> None:
 async def get_dashboard(x_api_key: Optional[str] = Header(None)):
     verify_admin_key(x_api_key)
 
-    from backend.api.app import get_acp_manager, get_context_manager, get_memory_manager
+    from backend.dependencies import get_acp_manager, get_context_manager, get_memory_manager
 
     stats = {"memory": {}, "context": {}, "acp": {}}
 
@@ -54,7 +54,7 @@ async def get_dashboard(x_api_key: Optional[str] = Header(None)):
 async def get_stats(x_api_key: Optional[str] = Header(None)):
     verify_admin_key(x_api_key)
 
-    from backend.api.app import get_context_manager, get_memory_manager
+    from backend.dependencies import get_context_manager, get_memory_manager
     from backend.core.tools.registry import tool_registry
 
     stats = {"memory": {}, "context": {}, "tools": {}}
@@ -82,7 +82,7 @@ async def get_stats(x_api_key: Optional[str] = Header(None)):
 @router.get("/admin/health")
 async def health_check():
     """健康检查端点 - 不需要认证"""
-    from backend.api.app import get_acp_manager, get_context_manager, get_memory_manager
+    from backend.dependencies import get_acp_manager, get_context_manager, get_memory_manager
 
     health = {"memory": "unknown", "context": "unknown", "acp": "unknown"}
 
