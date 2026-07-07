@@ -393,6 +393,52 @@ class VLLMClient(LLMClient):
             if msg["role"] not in ["system", "user", "assistant", "tool"]:
                 raise ValueError(f"消息 {i} 的 role 必须是 'system', 'user', 'assistant' 或 'tool'")
 
+    def _parse_gemma4_tool_call(self, text: str) -> Optional[Dict]:
+        """解析 gemma4 流式模式下的文本格式 tool_call。
+        输入格式：<|tool_call>call:calculator{expression:<|"|>25 * 15<|"|>}<tool_call|>
+        输出：{"id": "...", "type": "function", "function": {"name": "calculator", "arguments": '{"expression": "25 * 15"}'}}
+        """
+        import re
+        import uuid
+
+        inner = text.replace("<|tool_call>", "").replace("<tool_call|>", "").strip()
+        if not inner.startswith("call:"):
+            logger.warning(f"gemma4 tool_call 格式异常: {text[:200]}")
+            return None
+
+        inner = inner[5:]
+        brace_idx = inner.find("{")
+        if brace_idx == -1:
+            logger.warning(f"gemma4 tool_call 缺少参数: {inner[:200]}")
+            return None
+
+        name = inner[:brace_idx].strip()
+        args_str = inner[brace_idx:]
+        args_str = args_str.replace('<|"|>', '"')
+
+        try:
+            args_dict = json.loads(args_str)
+            args_json = json.dumps(args_dict, ensure_ascii=False)
+        except json.JSONDecodeError:
+            fixed = re.sub(r'([{,]\s*)(\w+)(\s*:)', r'\1"\2"\3', args_str)
+            try:
+                args_dict = json.loads(fixed)
+                args_json = json.dumps(args_dict, ensure_ascii=False)
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    f"gemma4 tool_call 参数解析失败，使用空参数。原始: {args_str[:200]}, 错误: {e}"
+                )
+                args_json = "{}"
+
+        return {
+            "id": f"call_{uuid.uuid4().hex[:8]}",
+            "type": "function",
+            "function": {
+                "name": name,
+                "arguments": args_json,
+            },
+        }
+
     async def chat(self, messages: List[Dict], stream: bool = False, is_background: bool = False, **kwargs) -> LLMResponse:
         """发送聊天请求
 
@@ -575,6 +621,17 @@ class VLLMClient(LLMClient):
 
             logger.debug(f"vLLM stream_chat 请求体: model={request_body.get('model')}, max_tokens={request_body.get('max_tokens', '未设置')}, tools={len(request_body.get('tools', []))}个")
 
+            # 临时调试日志：捕获多轮工具调用第2轮的请求特征
+            msg_summary = []
+            for m in messages:
+                role = m.get("role", "?")
+                content = m.get("content")
+                content_len = len(content) if isinstance(content, str) else 0
+                has_tc = "tool_calls" in m
+                tc_id = m.get("tool_call_id", "")
+                msg_summary.append(f"{role}(content={content_len},tc={has_tc},tc_id={tc_id})")
+            logger.info(f"stream_chat 请求消息概览: total={len(messages)}, summary={msg_summary}")
+
             headers = {"Content-Type": "application/json"}
             if self.api_key:
                 headers["Authorization"] = f"Bearer {self.api_key}"
@@ -585,6 +642,25 @@ class VLLMClient(LLMClient):
             # vLLM 流式返回 tool_calls 时是增量的：第一个 chunk 包含 id/name，
             # 后续 chunk 只包含 arguments 的片段，需要拼接
             tool_calls_accumulator: Dict[int, Dict] = {}
+
+            # gemma4 流式模式把 tool_calls 作为 content 文本返回：
+            # <|tool_call>call:calculator{expression:<|"|>25 * 15<|"|>}<tool_call|>
+            # 需要检测标签并解析为结构化 tool_calls
+            content_buffer = ""
+            in_tool_call = False
+
+            # 临时调试：流式 chunk 统计
+            _dbg_chunks = 0
+            _dbg_content_chars = 0
+            _dbg_reasoning_chars = 0
+            _dbg_tool_call_chunks = 0
+            _dbg_finish_reason = None
+            _dbg_first_chunk_preview = None
+            # 新增：完整文本捕获（定位 tool_call 失败根因）
+            _dbg_full_content = []  # 全部 content 文本
+            _dbg_full_reasoning = []  # 全部 reasoning 文本
+            _dbg_special_chunks = []  # 含特殊 token 的原始 delta（限前 20 条）
+            _dbg_raw_first_chunks = []  # 前 5 条原始 delta JSON
 
             async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0), trust_env=False) as client:
                 async with client.stream("POST", url, json=request_body, headers=headers) as response:
@@ -599,25 +675,77 @@ class VLLMClient(LLMClient):
                         if line:
                             decoded = line if isinstance(line, str) else line.decode("utf-8")
                             if decoded.startswith("data: "):
+                                _dbg_chunks += 1
                                 data = decoded[6:]
                                 if data == "[DONE]":
                                     break
                                 try:
                                     chunk = json.loads(data)
-                                    delta = chunk["choices"][0].get("delta", {})
+                                    choice = chunk["choices"][0]
+                                    delta = choice.get("delta", {})
+                                    # 临时调试：捕获 finish_reason
+                                    _fr = choice.get("finish_reason")
+                                    if _fr:
+                                        _dbg_finish_reason = _fr
+                                    # 新增：前 5 条原始 delta JSON（用于排查字段结构）
+                                    if len(_dbg_raw_first_chunks) < 5:
+                                        _dbg_raw_first_chunks.append({
+                                            "idx": _dbg_chunks,
+                                            "delta": delta,
+                                            "finish_reason": _fr,
+                                        })
+                                    # 新增：检测含特殊 token 的 chunk（限前 20 条）
+                                    _delta_str = json.dumps(delta, ensure_ascii=False)
+                                    if ("<|" in _delta_str or "tool_call" in _delta_str or "channel" in _delta_str) and len(_dbg_special_chunks) < 20:
+                                        _dbg_special_chunks.append({
+                                            "idx": _dbg_chunks,
+                                            "delta": delta,
+                                            "finish_reason": _fr,
+                                        })
                                     reasoning_content = delta.get("reasoning_content", "") or delta.get("reasoning", "")
                                     if reasoning_content and reasoning_content != "<pad>":
+                                        _dbg_reasoning_chars += len(reasoning_content)
+                                        _dbg_full_reasoning.append(reasoning_content)
                                         yield {"type": "thinking", "content": reasoning_content}
                                     content = delta.get("content", "")
                                     if content and content != "<pad>":
-                                        yield {"type": "content", "content": content}
+                                        _dbg_content_chars += len(content)
+                                        _dbg_full_content.append(content)
+                                    # 临时调试：捕获首 chunk 预览
+                                    if _dbg_first_chunk_preview is None and (content or reasoning_content):
+                                        _dbg_first_chunk_preview = (content or reasoning_content)[:80]
+                                    if content and content != "<pad>":
+                                        # gemma4 流式 tool_call 文本检测
+                                        content_buffer += content
+                                        if "<|tool_call>" in content_buffer and not in_tool_call:
+                                            # 检测到 tool_call 开始标签
+                                            in_tool_call = True
+                                            # 提取标签前的正常 content（如果有）
+                                            before_tag = content_buffer.split("<|tool_call>")[0]
+                                            if before_tag:
+                                                yield {"type": "content", "content": before_tag}
+                                            content_buffer = "<|tool_call>" + content_buffer.split("<|tool_call>", 1)[1]
+                                        elif in_tool_call:
+                                            # 在 tool_call 内，继续缓冲
+                                            if "<tool_call|>" in content_buffer:
+                                                # 检测到结束标签，解析 tool_call
+                                                in_tool_call = False
+                                                parsed_tc = self._parse_gemma4_tool_call(content_buffer)
+                                                if parsed_tc:
+                                                    tool_calls_accumulator[0] = parsed_tc
+                                                content_buffer = ""
+                                            # 不 yield content，避免前端显示原始标签
+                                        else:
+                                            # 正常 content，直接 yield
+                                            yield {"type": "content", "content": content}
+                                            content_buffer = ""
                                     tool_calls = delta.get("tool_calls")
                                     if tool_calls:
-                                        # 增量拼接 tool_calls
+                                        _dbg_tool_call_chunks += 1
+                                        # 标准结构化 tool_calls（非 gemma4 文本格式）
                                         for tc in tool_calls:
                                             idx = tc.get("index", 0)
                                             if idx not in tool_calls_accumulator:
-                                                # 新的 tool_call，初始化
                                                 tool_calls_accumulator[idx] = {
                                                     "id": tc.get("id", ""),
                                                     "type": tc.get("type", "function"),
@@ -627,7 +755,6 @@ class VLLMClient(LLMClient):
                                                     },
                                                 }
                                             else:
-                                                # 增量更新，拼接 arguments
                                                 func_delta = tc.get("function", {})
                                                 if func_delta.get("name"):
                                                     tool_calls_accumulator[idx]["function"]["name"] += func_delta["name"]
@@ -638,11 +765,40 @@ class VLLMClient(LLMClient):
                                 except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                                     continue
 
-                    # 流结束后，yield 拼接完成的 tool_calls
+                    # 流结束后，处理 buffer 中残留的 content
+                    if content_buffer and not in_tool_call:
+                        yield {"type": "content", "content": content_buffer}
+
+                    # yield 拼接完成的 tool_calls
                     if tool_calls_accumulator:
                         complete_tool_calls = [tool_calls_accumulator[i] for i in sorted(tool_calls_accumulator.keys())]
                         logger.info(f"流式 tool_calls 拼接完成: {len(complete_tool_calls)} 个工具调用")
                         yield {"type": "tool_calls", "tool_calls": complete_tool_calls}
+
+                    # 临时调试：流式统计汇总
+                    logger.info(
+                        f"stream_chat 流式统计: chunks={_dbg_chunks}, "
+                        f"content_chars={_dbg_content_chars}, "
+                        f"reasoning_chars={_dbg_reasoning_chars}, "
+                        f"tool_call_chunks={_dbg_tool_call_chunks}, "
+                        f"finish_reason={_dbg_finish_reason}, "
+                        f"first_chunk_preview={repr(_dbg_first_chunk_preview) if _dbg_first_chunk_preview else None}"
+                    )
+                    # 新增：完整文本输出（截断到 1500 字符避免日志爆炸）
+                    _full_content_text = "".join(_dbg_full_content)
+                    _full_reasoning_text = "".join(_dbg_full_reasoning)
+                    logger.info(
+                        f"stream_chat 完整 content ({len(_full_content_text)} chars): "
+                        f"{repr(_full_content_text[:1500])}"
+                    )
+                    logger.info(
+                        f"stream_chat 完整 reasoning ({len(_full_reasoning_text)} chars): "
+                        f"{repr(_full_reasoning_text[:1500])}"
+                    )
+                    # 新增：前 5 条原始 delta（排查字段结构）
+                    logger.info(f"stream_chat 前5条原始 delta: {_dbg_raw_first_chunks}")
+                    # 新增：含特殊 token 的 chunk（最多 20 条）
+                    logger.info(f"stream_chat 特殊 token chunks ({len(_dbg_special_chunks)} 条): {_dbg_special_chunks}")
 
         except Exception as e:
             logger.error(f"VLLM流式调用失败: {e}")

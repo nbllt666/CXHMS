@@ -28,6 +28,8 @@ interface SummaryModalProps {
   agentId: string;
   autoStart?: boolean;
   targetSessionId?: string;
+  /** 摘要完成且后端已替换目标会话上下文时触发，用于通知父组件刷新聊天记录 */
+  onSummaryComplete?: (targetSessionId: string, summarizedUpTo: number) => void;
 }
 
 // 格式化工具参数为可读文本
@@ -68,12 +70,20 @@ export function SummaryModal({
   agentId,
   autoStart = false,
   targetSessionId,
+  onSummaryComplete,
 }: SummaryModalProps) {
   const [messages, setMessages] = useState<SummaryMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoStartedRef = useRef(false);
+  // 用 ref 持有最新的 onSummaryComplete，避免 handleStreamChunk 闭包陈旧。
+  // handleStreamChunk 不是 useCallback，每次渲染重建，但被 handleAutoSummary/handleSend 的
+  // useCallback 捕获后，新 onSummaryComplete 不会自动传到旧回调里。ref 桥接保证始终读到最新值。
+  const onSummaryCompleteRef = useRef(onSummaryComplete);
+  useEffect(() => {
+    onSummaryCompleteRef.current = onSummaryComplete;
+  }, [onSummaryComplete]);
 
   // 统一处理流式 chunk，更新最后一条助手消息
   const handleStreamChunk = (
@@ -85,8 +95,18 @@ export function SummaryModal({
       tool_name?: string;
       tool_call?: { function?: { name?: string; arguments?: string } };
       result?: unknown;
+      target_session_id?: string;
+      summarized_up_to?: number;
     }
   ) => {
+    // context_replaced 是元事件：后端已将目标会话中被摘要的原始消息替换为日记摘要。
+    // 此事件不属于对话流，不能放入 setMessages 的 reducer（reducer 内不能有副作用）。
+    // 通过 onSummaryComplete 通知父组件刷新目标会话的聊天记录。
+    if (chunk.type === 'context_replaced' && chunk.target_session_id) {
+      onSummaryCompleteRef.current?.(chunk.target_session_id, chunk.summarized_up_to ?? 0);
+      return;
+    }
+
     setMessages((prev) => {
       const lastMsg = prev[prev.length - 1];
       if (!lastMsg || lastMsg.role !== 'assistant' || !lastMsg.isStreaming) {

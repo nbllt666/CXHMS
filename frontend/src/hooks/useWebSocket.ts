@@ -100,9 +100,14 @@ export function useWebSocket(options: WebSocketOptions): UseWebSocketReturn {
   }, [clearPingInterval]);
 
   const connect = useCallback(() => {
-    // 已有连接或正在连接中，跳过
-    if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
-      return;
+    // 先关闭旧连接（StrictMode 双重挂载或 agentId 变化时清理残留）
+    if (wsRef.current) {
+      const oldWs = wsRef.current;
+      oldWs.onclose = null; // 防止旧连接 onclose 触发重连
+      if (oldWs.readyState === WebSocket.OPEN || oldWs.readyState === WebSocket.CONNECTING) {
+        oldWs.close();
+      }
+      wsRef.current = null;
     }
 
     const wsBaseUrl = import.meta.env.VITE_WS_URL || getWsBaseUrl();

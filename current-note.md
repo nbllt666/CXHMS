@@ -1,8 +1,151 @@
 # 当前交接状态（current-note.md）
 
-> 最后更新：2026-07-05 23:00:00
-> 状态：**spec 实施已交付 + 全部待办观察项/pre-existing 已处置完毕 + G6 观察项 4 已处置 + GN-004 全代码审查警示项已处置 + GN-004 4 项观察项全部处置**
-> （spec: optimize-systematically-and-rewrite-tests 全部 task 闭合 + I3 [V] 双重闸门通过 + 用户已批准交付 2026-07-05 18:30 + 5 批次待办清理 2026-07-05 21:30 + G6 观察项 4 拆分 2026-07-05 22:00 + GN-004 全代码审查警示项处置 2026-07-05 22:30 + GN-004 4 项观察项全部处置 2026-07-05 23:00）
+> 最后更新：2026-07-07 16:07:00
+> 状态：**spec 实施已交付 + gemma4 工具调用全链路修复 + 多轮工具调用端到端验证通过 + 语义搜索失效修复（端到端验证通过）+ 工具调用失败根因修复（system prompt 引导）+ 隐藏系统提示词设计原则修正 + 摘要后聊天记录不更新修复（端到端验证通过）+ write_long_term_memory 工具卡住修复（端到端验证通过）**
+> （spec: optimize-systematically-and-rewrite-tests 全部 task 闭合 + I3 [V] 双重闸门通过 + 用户已批准交付 2026-07-05 18:30 + 5 批次待办清理 2026-07-05 21:30 + G6 观察项 4 拆分 2026-07-05 22:00 + GN-004 全代码审查警示项处置 2026-07-05 22:30 + GN-004 4 项观察项全部处置 2026-07-05 23:00 + 迁移检查清单验证留痕 2026-07-05 21:40 + gemma4 工具参数解析修复 2026-07-06 19:48 + vLLM 流式 tool_calls 解析补丁 2026-07-06 20:00 + 前端工具调用参数显示修复 2026-07-06 20:10 + 多轮工具调用测试脚本修复与全链路验证 2026-07-06 20:40 + 语义搜索失效修复 2026-07-06 21:45 + 工具调用失败根因修复 2026-07-06 22:55 + 隐藏系统提示词设计原则修正 2026-07-07 06:35 + 摘要后聊天记录不更新修复 2026-07-07 21:35 + 摘要修复端到端验证通过 2026-07-07 14:47 + 语义搜索修复端到端验证通过 2026-07-07 14:57 + write_long_term_memory 工具卡住修复端到端验证通过 2026-07-07 16:07）
+
+## 〇、最新变更（2026-07-07 21:35）：摘要后聊天记录不更新修复
+
+### 工程过程
+1. 用户报告"摘要后前端的聊天记录没有及时更新"
+2. 根因（前置会话已确认）：前端 `SummaryModal.handleStreamChunk` 不处理 `context_replaced` SSE 事件，导致摘要完成后目标会话的聊天记录不刷新
+3. 写分析文档 `.trae/documents/20260707_模块2_修复摘要后聊天记录不更新.md`（rules-6 §三 修复前必写）
+4. 修改 `frontend/src/components/SummaryModal.tsx`：
+   - 新增 `onSummaryComplete?: (targetSessionId: string, summarizedUpTo: number) => void` prop
+   - 新增 `onSummaryCompleteRef`（useRef + useEffect 同步），避免 `handleStreamChunk` 闭包陈旧（被 `handleAutoSummary`/`handleSend` 的 useCallback 捕获后，新回调不会自动传入）
+   - 在 `handleStreamChunk` 顶部添加 `context_replaced` 事件分支：从 ref 读取回调并 `return`（不修改 messages state，避免 reducer 副作用）
+5. 修改 `frontend/src/pages/ChatPage.tsx`：
+   - 新增 `handleSummaryComplete` useCallback，调用 `loadAgentHistory(currentAgentId)` 重新拉取消息列表
+   - 将 `onSummaryComplete={handleSummaryComplete}` 传给 `<SummaryModal>`
+6. 验证：TypeScript 编译无新错误 + 前端单测 19 files / 299 passed / 0 failed（含 ChatPage 21 项）
+
+### 交接状态
+- **状态**：已完成（端到端验证通过）
+- **变更记录**：`.trae/documents/20260707_模块2_修复摘要后聊天记录不更新.md`
+- **未闭合项**：无（端到端验证已通过，所有验证项已闭合）
+
+### 最终结果
+- ✅ `SummaryModal.tsx` 添加 `onSummaryComplete` prop + ref 桥接 + `context_replaced` 事件分支
+- ✅ `ChatPage.tsx` 添加 `handleSummaryComplete` 回调 + 传给 `<SummaryModal>`
+- ✅ TypeScript 编译无新错误
+- ✅ 前端单测 299 passed / 0 failed
+- ✅ 端到端验证通过（Playwright，2026-07-07 14:47 BJT）：主聊天页面已显示 3 条 `[上下文摘要]` 条目，原始对话消息已被替换，无需手动刷新
+
+---
+
+## 〇.0、端到端验证补充（2026-07-07 14:57）：语义搜索修复
+
+### 工程过程
+1. 用户确认"工具语义搜索问题修复还没有验证"
+2. 在主聊天页面输入"帮我搜索一下系统功能测试相关的记忆"触发 LLM 工具调用
+3. 通过 Playwright 验证完整端到端链路：前端输入 → LLM reasoning → search_all_memories 工具调用 → hybrid_search → Weaviate 向量搜索 → 返回结果 → 前端显示
+
+### 交接状态
+- **状态**：已完成（端到端验证通过）
+- **变更记录**：`.trae/documents/20260707_模块0_修复语义搜索入口.md`（第七章端到端验证证据）
+- **未闭合项**：无
+
+### 最终结果
+- ✅ 模型正确调用 `search_all_memories` 工具（参数 `{"query": "系统功能测试"}`）
+- ✅ 返回 `count=10`（修复前 `count=0`）
+- ✅ memory_id=1388 被找到（score=0.4300, source="vector", fallback=false）—— 正是前置会话保存的那条"系统正在进行语义搜索功能的深度测试"记忆
+- ✅ source="vector"/"hybrid" 证明 Weaviate 向量搜索生效
+- ✅ 前端正确显示工具调用详情（思考过程 + 参数 + 结果 JSON）
+- ✅ 模型基于搜索结果给出有意义回复
+- ✅ 双根因修复（工具入口改 hybrid_search + distance 公式 `1 - distance/2`）端到端验证通过
+
+---
+
+## 〇.2、最新变更（2026-07-07 16:07）：write_long_term_memory 工具卡住修复
+
+### 工程过程
+1. 用户报告 `write_long_term_memory` 工具一直显示"执行中..."，参数 `{"content": "用户正在进行全面的工具功能测试...", "importance": 5, "tags": ["测试", "工具"]}`
+2. 通过后端日志定位根因：`find_duplicate_memory` 对每条候选都重新生成 embedding，30 候选 × 2 次 embedding/条 = 60 次 embedding 请求，总耗时 60-90 秒，阻塞事件循环导致 WebSocket 超时
+3. 通过 AskUserQuestion 让用户选择修复方案，用户选定"方案 A（Weaviate nearVector 搜索）+ 去重异步化"
+4. 修改 `backend/core/memory/deduplication.py` L315-396：重写 `find_duplicate_memory`，用 Weaviate nearVector 搜索替代遍历候选，只 1 次 embedding 请求，新增 `exclude_memory_id` 参数
+5. 修改 `backend/core/memory/manager.py`：
+   - L853-854：移除写入前阻塞去重检查
+   - L307-357：新增 `_start_async_dedup_check` 方法（`threading.Thread(daemon=True)` fire-and-forget）
+   - L922-932：写入完成后启动后台去重检查，发现重复则删除新记忆
+6. 重启后端服务，通过 Playwright 执行端到端验证
+
+### 交接状态
+- **状态**：已完成（端到端验证通过）
+- **变更记录**：`.trae/documents/20260707_模块1_修复write_long_term_memory工具卡住.md`（status="已完成"）
+- **未闭合项**：无
+
+### 最终结果
+- ✅ `deduplication.py`：`find_duplicate_memory` 用 Weaviate nearVector 搜索，1 次 embedding 请求（替代 60 次）
+- ✅ `manager.py`：去重从"写入前阻塞检查"改为"写入后 fire-and-forget 异步检查"
+- ✅ 端到端验证通过（Playwright，2026-07-07 16:06-16:07 BJT）：
+  - 16:06:27 记忆写入 id=1393（write_memory 立即返回，无去重阻塞）
+  - 16:06:49 后台去重检查（search_similar: 1 次 embedding，5 候选，1 通过阈值）
+  - 16:06:56 模型回复完成"好的，我已经成功为您保存了..."
+  - 工具不再卡住，WebSocket 不超时
+- ✅ 性能提升：embedding 请求 60→1（60x），去重阻塞时间 60-90s→0s（异步，∞）
+- ⚠️ 语义变化：去重改为写入后异步，短暂窗口（~3秒）内可能存在重复记忆，但后台检查完成后自动删除
+
+---
+
+## 〇.1、历史变更（2026-07-07 06:35）：隐藏系统提示词设计原则修正
+
+### 工程过程
+1. 用户反馈："隐藏系统提示词不对，不应该在这里定义主模型的身份和使用的语言，隐藏系统提示词只用于防呆，使用户修改 Agent system_prompt 不会丢失核心工具引导"
+2. 读取 `backend/api/routers/chat.py` 中三个 HIDDEN_SYSTEM_PROMPT 当前状态
+3. 修正 `MAIN_HIDDEN_SYSTEM_PROMPT`：移除 `<role>` 块和"用中文回答"规则，规则从 10 条减为 9 条
+4. 用户明确指示："只需要改 MAIN_HIDDEN_SYSTEM_PROMPT"
+5. 还原 `MEMORY_AGENT_HIDDEN_SYSTEM_PROMPT` 到原始状态（保留 `<role>` 块和"用中文回答"规则）
+6. 还原 `SUMMARY_AGENT_HIDDEN_SYSTEM_PROMPT` 到原始状态（保留 `<role>` 块和"用中文回答"规则）
+7. 验证修改后的文件内容正确
+
+### 交接状态
+- **状态**：已完成
+- **变更记录**：`.trae/documents/20260707_模块0_修正隐藏系统提示词设计原则.md`
+- **设计原则沉淀**：MAIN_HIDDEN_SYSTEM_PROMPT 只用于防呆（工具使用引导），不定义模型身份和语言；身份和语言由 agent_config 的 system_prompt 承载
+
+### 最终结果
+- ✅ `MAIN_HIDDEN_SYSTEM_PROMPT` 移除 `<role>` 块（模型身份定义）和"用中文回答用户问题"规则（语言定义）
+- ✅ `MEMORY_AGENT_HIDDEN_SYSTEM_PROMPT` 保持原样（用户明确指示仅修改 MAIN）
+- ✅ `SUMMARY_AGENT_HIDDEN_SYSTEM_PROMPT` 保持原样（用户明确指示仅修改 MAIN）
+- ✅ 保留 `<instruction>` 块和工具调用规则（防呆核心）
+- ✅ 上一轮修复的规则 8/9/10（工具调用引导）重新编号为 7/8/9，内容不变
+- ✅ agent_config 已验证：default agent 和 memory-agent 的 system_prompt 都包含身份和语言定义
+- ⏳ 后续验证待做：运行 `tests/test_prompt_fix.py` 确认工具调用仍然正常
+
+### 日志分析发现（2026-07-07）
+- vLLM parser 实际工作正常：5 次成功 tool_call 解析（22:43-22:51）
+- 唯一失败场景（22:45:50）是模型决策行为：reasoning 写道"I will synthesize the summary based on the chat history"
+- 用户反馈"模型生成一段回复之后，无法进行工具调用"对应的是模型决策（基于历史合成），非 parser 问题
+
+---
+
+## 〇.1、历史变更（2026-07-06 22:55）：工具调用失败根因修复
+
+### 工程过程
+1. 用户反馈："模型生成一段回复之后，无法进行工具调用，可以尝试继续修改vllm的工具调用解析器"
+2. 增强 `backend/core/llm/client.py` 调试日志，捕获完整 content/reasoning/原始 delta/special token chunks
+3. 创建 `tests/test_backend_style_tool_call.py` 直接测试 vLLM：7 个场景全部成功（含流式/非流式/3 system+history/tool_choice=required）
+4. 创建 `tests/trigger_backend_tool_call.py` 触发后端实际场景，3 个测试中 2 个成功 1 个失败
+5. 后端日志确认失败根因：模型 reasoning 决定"基于历史合成"或"反问用户澄清"而非调用工具
+6. AskUserQuestion 通知用户：parser 工作正常，根因是模型行为，用户选择"调整 system prompt 引导模型工具调用"
+7. 修改 `backend/api/routers/chat.py` 中 MAIN_HIDDEN_SYSTEM_PROMPT，添加规则 8/9/10
+8. 同步修改 MEMORY_AGENT_HIDDEN_SYSTEM_PROMPT，添加规则 8/9
+9. 运行 `tests/test_prompt_fix.py` 验证：3/3 全部成功（修复前 1/3）
+
+### 交接状态
+- **状态**：已完成
+- **变更记录**：`.trae/documents/20260706_模块0_修复工具调用失败根因.md`
+- **测试结果**：3/3 测试通过（修复前 1/3），后端日志确认 `tool_call_chunks=10, finish_reason=tool_calls`
+- **保留代码**：`backend/core/llm/client.py` 中的调试日志暂时保留，便于后续诊断
+
+### 最终结果
+- ✅ vLLM parser 经验证工作正常，原 `is_reasoning_end_streaming` 补丁保留
+- ✅ system prompt 添加规则 8（优先调用工具而非反问澄清）/ 规则 9（工具调用优于直接回答）/ 规则 10（重复问题也必须调用工具）
+- ✅ 模糊查询场景修复：模型现在使用通用查询参数调用工具
+- ✅ 重复问题场景修复：模型不再以"基于历史合成"为由跳过工具调用
+- ✅ 测试文件保留：`tests/test_backend_style_tool_call.py`、`tests/test_prompt_fix.py`、`tests/trigger_backend_tool_call.py`
+
+
 
 ## 一、当前 Task 状态（spec: optimize-systematically-and-rewrite-tests）
 
@@ -147,11 +290,32 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
    - I3 [V] 双重闸门通过，用户已批准交付
    - 5 批次待办清理全部完成（详见 §九）
    - G6 观察项 4（client.test.ts 58 tests 偏重）已拆分（详见 §十）
-2. **可选后续**（非 spec 范围，按需推进）：
+2. **多轮工具调用问题已诊断闭合**（2026-07-06 20:40）：
+   - 用户报告"多轮工具调用失败 + 前后端连接异常"
+   - 根因：测试脚本 `test_ws_multi_tool.py` `range(200)` 上限太低，vLLM 发送 331 个 thinking chunks 后才产出 tool_calls 事件，测试在 200 个事件后退出循环误判为"无工具调用"
+   - 修复：`range(200)` → `range(2000)`
+   - 验证：vLLM 直接测试 4 场景全部返回 3 个结构化 tool_calls；WebSocket 端到端测试收到 3 tool_call + 3 tool_start + 3 tool_result + 103 content + done，完整回复正确
+   - 变更记录：`.trae/documents/20260706_模块1_修复多轮工具调用测试脚本.md`
+   - 生产代码无问题：前端 useWebSocket 使用事件驱动 onmessage 无循环上限，后端 stream.py 正确转发所有事件
+3. **语义搜索失效修复已闭合**（2026-07-06 21:45）：
+   - 用户报告"用不同措辞搜索相同语义的记忆返回 0 结果"
+   - 双根因：Weaviate 1.26.6 不兼容 weaviate-client v4.22.0（要求 ≥1.27.0）+ FTS5 PHRASE 查询过严（要求 trigram 完全相同顺序）
+   - 修复：
+     - 升级 Weaviate 1.26.6 → 1.35.3
+     - 修改 `docker-compose.weaviate.yml` 移除 t2v-transformers 服务（后端已直接调用 cxhms-vllm-embedding 生成向量，Weaviate 无需 text2vec 模块）
+     - 修改 `backend/core/memory/manager.py` L1068-1100：FTS5 PHRASE → OR 查询（trigram 切分 + OR 连接）
+     - 备份旧数据：`data/weaviate` → `data/weaviate.bak.20260706`
+   - 验证：
+     - 语义搜索 API：查询"用户进行了一系列的工具调用测试" → 返回"用户测试了多轮工具调用"（score=0.4192）
+     - FTS5 降级搜索：相同查询 → 返回 2 条相关记忆
+     - 启动同步：checked=11, synced=11, errors=0
+   - 变更记录：`.trae/documents/20260706_模块1_修复语义搜索失效问题.md`
+4. **可选后续**（非 spec 范围，按需推进）：
    - 进入 S7 运维变更阶段：变更适配 + 版本记录产出
    - 全代码 GN-004 审查（用户 2026-07-05 22:00 指令"再审查一下全部代码"）
+   - 诊断"已完成工具调用。"兜底文本触发原因（第二轮 LLM 响应为空）— 待用户授权后排查
 
-**spec 实施完成状态**：A1-H6 + G1-G7 + I1-I3 全部已闭合 + I3 [V] 通过 + 用户已批准交付 + 全部待办已处置 + G6 观察项 4 已拆分。
+**spec 实施完成状态**：A1-H6 + G1-G7 + I1-I3 全部已闭合 + I3 [V] 通过 + 用户已批准交付 + 全部待办已处置 + G6 观察项 4 已拆分 + 多轮工具调用问题已诊断闭合。
 
 **待办观察项**：全部已处置（详见 §九 + §十）。无遗留观察项。
 
@@ -366,3 +530,42 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
 | ASK-006 | GN-004 观察项 1（backend/tests/ 清理范围）裁决 | 2026-07-05 22:45 | "全部删除 + 重写文档" | **已闭合**（删除 + 重写完成 2026-07-05 22:55） |
 
 **GN-004 4 项观察项已全部处置完毕。无遗留观察项。**
+
+## 十三、迁移检查清单验证留痕（2026-07-05 21:40）
+
+按用户提供的迁移检查清单（6 项），并行验证 6 项任务并留痕。
+
+### 处置结果
+
+| # | 清单项 | 状态 | 证据 |
+|---|--------|------|------|
+| 1 | 前端 API 路由 `/chat/stream` → `/stream_chat` | ⚠️ 迁移方向不成立 → 保留现状 | chat.py:522 后端实际是 `/chat/stream`，chatStream.ts:120 前端也是 `/api/chat/stream`，前后端已一致 |
+| 2 | 备份 memories.db | ✅ 已备份 | `c:\CXHMS\data\backups\memories_20260705_213707.db` (618,496 字节) |
+| 3 | SQLite >= 3.25 | ✅ 通过 | sqlite_version 3.50.4，RENAME COLUMN 支持 |
+| 4 | FTS5 扩展 | ✅ 通过 | PRAGMA compile_options 含 `ENABLE_FTS5` |
+| 5 | 测试导入 `backend.api.app` → `backend.dependencies` | ⚠️ 迁移方向不成立 → 保留现状 | conftest.py:191/322 两处是 `from backend.api.app import app` 拿 FastAPI 实例；backend.dependencies 不导出 app |
+| 6 | CXHMSException handler 覆盖 | ✅ 通过 | app.py:819 注册单一 handler；core 层 11 类 + api 层 10 类全部继承 CXHMSException；handler 正确读取 http_status/error_code/details |
+
+### 关键发现
+
+清单项 1 与 5 的迁移方向与代码现状冲突——按现状执行迁移会破坏现有前后端契约与测试 fixtures。无法自行裁决用户真实意图，按 rules-0 §四-7.1 ec7_self_check 分支1（信息不充分）拉起 AskUserQuestion 让用户裁决。
+
+### 悬空请示登记
+
+| 请示 ID | 内容 | 触发时间 | 用户响应 | 闭合状态 |
+|---------|------|---------|---------|---------|
+| ASK-007 | 清单项 1（/chat/stream 迁移方向冲突）处置选择 | 2026-07-05 21:35 | "保留现状并文档化（推荐）" | **已闭合**（保留现状 + 文档化 2026-07-05 21:40） |
+| ASK-008 | 清单项 5（backend.api.app 导入迁移方向冲突）处置选择 | 2026-07-05 21:35 | "保留现状并文档化（推荐）" | **已闭合**（保留现状 + 文档化 2026-07-05 21:40） |
+
+### 产出物清单
+
+- 变更记录：`.trae/documents/20260705_模块0_迁移检查清单验证留痕.md`（status="已完成"）
+- 数据库备份：`c:\CXHMS\data\backups\memories_20260705_213707.db`
+
+### 三段交接
+
+- **工程过程**：6 项清单并行验证（grep + Glob + PowerShell + Python）→ 4 项自动通过 + 2 项迁移方向冲突 → 拉起 AskUserQuestion 让用户裁决 → 用户均选"保留现状并文档化" → 写变更记录 + 更新 note
+- **交接状态**：6 项清单全部已闭合（4 项验证通过 + 2 项保留现状并文档化）；spec 实施仍处于已交付状态；无未闭合项
+- **最终结果**：本次未修改任何代码（仅备份 memories.db），无需回滚；2 项保留现状的理由已写入变更记录第三章；潜在隐患（core/api 异常类同名）登记但不处置
+
+**迁移检查清单 6 项已全部处置完毕。无遗留阻断项。**

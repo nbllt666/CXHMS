@@ -80,6 +80,18 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
 
   if (!thinking && (!toolCalls || toolCalls.length === 0)) return null;
 
+  // 格式化 JSON 值：arguments/result 可能是 JSON 字符串（OpenAI 格式）或对象
+  const formatJson = (value: unknown): string => {
+    if (typeof value === 'string') {
+      try {
+        return JSON.stringify(JSON.parse(value), null, 2);
+      } catch {
+        return value;
+      }
+    }
+    return JSON.stringify(value, null, 2);
+  };
+
   // 根据内容类型决定标题
   const hasThinking = Boolean(thinking);
   const hasToolCalls = Boolean(toolCalls && toolCalls.length > 0);
@@ -154,12 +166,12 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
                   </div>
                   {Boolean(toolCall.arguments) && (
                     <div className="text-[var(--color-text-tertiary)] font-mono text-[10px] mb-1">
-                      {t('chat.parameters')}: {JSON.stringify(toolCall.arguments, null, 2)}
+                      {t('chat.parameters')}: {formatJson(toolCall.arguments)}
                     </div>
                   )}
                   {toolCall.result !== undefined && (
                     <div className="text-[var(--color-text-tertiary)] font-mono text-[10px]">
-                      {t('chat.result')}: {JSON.stringify(toolCall.result, null, 2)}
+                      {t('chat.result')}: {formatJson(toolCall.result)}
                     </div>
                   )}
                 </div>
@@ -538,6 +550,17 @@ export function ChatPage() {
     setShowSummaryModal(true);
   };
 
+  // 摘要完成且后端已替换目标会话上下文时，重新加载聊天历史以反映被替换后的消息列表。
+  // 不强制关闭 SummaryModal，用户可继续查看摘要助手的输出。
+  const handleSummaryComplete = useCallback(
+    (_targetSessionId: string, _summarizedUpTo: number) => {
+      if (currentAgentId) {
+        loadAgentHistory(currentAgentId);
+      }
+    },
+    [currentAgentId, loadAgentHistory]
+  );
+
   return (
     <div className="w-full h-[calc(100vh-var(--header-height)-3rem)] flex flex-col">
       <PageHeader
@@ -826,6 +849,7 @@ export function ChatPage() {
         agentId={currentAgentId || 'default'}
         autoStart={autoStartSummary}
         targetSessionId={currentSessionId || `agent-${currentAgentId || 'default'}`}
+        onSummaryComplete={handleSummaryComplete}
       />
     </div>
   );

@@ -429,34 +429,77 @@ def write_long_term_memory(
         return {"error": f"保存记忆失败: {str(e)}"}
 
 
-def search_all_memories(
+async def search_all_memories(
     query: str, memory_type: str = "all", time_range: str = None, limit: int = 10
 ) -> Dict[str, Any]:
-    """搜索所有记忆"""
+    """搜索所有记忆（混合搜索：向量+关键词）
+
+    优先调用 MemoryManager.hybrid_search（Weaviate 向量+FTS5 混合），
+    向量搜索不可用时自动降级 FTS5（fallback=true 标记）。
+    time_range 提供时走旧 FTS5 路径（hybrid_search 不支持时间过滤）。
+    """
     mm = get_memory_manager()
     if not mm:
         return {"error": "记忆管理器不可用"}
 
     try:
-        memories = mm.search_memories(
+        # time_range 路径：走旧 FTS5 关键词搜索（hybrid_search 不支持 time_range）
+        if time_range:
+            memories = mm.search_memories(
+                query=query,
+                memory_type=memory_type if memory_type != "all" else None,
+                time_range=time_range,
+                limit=limit,
+            )
+            return {
+                "status": "success",
+                "query": query,
+                "count": len(memories),
+                "memories": [
+                    {
+                        "id": m.get("id"),
+                        "content": m.get("content", "")[:200],
+                        "importance": m.get("importance"),
+                        "created_at": m.get("created_at"),
+                    }
+                    for m in memories
+                ],
+            }
+
+        # 默认路径：hybrid_search（向量+FTS5 混合搜索，自动 fallback）
+        hybrid_results = await mm.hybrid_search(
             query=query,
             memory_type=memory_type if memory_type != "all" else None,
-            time_range=time_range,
             limit=limit,
         )
+
+        # 转换为统一返回结构；vector 路径 metadata 可能缺失，反查 SQLite 补全字段
+        memories = []
+        for r in hybrid_results:
+            mid = r.get("memory_id")
+            content = r.get("content", "") or ""
+            full = mm.get_memory(mid) if mid is not None else None
+            full_meta = (r.get("metadata") or {}) if not full else {}
+            importance = (full or {}).get("importance") if full else full_meta.get("importance")
+            created_at = (full or {}).get("created_at") if full else full_meta.get("created_at")
+
+            memories.append(
+                {
+                    "id": mid,
+                    "content": content[:200],
+                    "importance": importance,
+                    "created_at": created_at,
+                    "score": r.get("score"),
+                    "source": r.get("source"),
+                    "fallback": r.get("fallback", False),
+                }
+            )
+
         return {
             "status": "success",
             "query": query,
             "count": len(memories),
-            "memories": [
-                {
-                    "id": m.get("id"),
-                    "content": m.get("content", "")[:200],
-                    "importance": m.get("importance"),
-                    "created_at": m.get("created_at"),
-                }
-                for m in memories
-            ],
+            "memories": memories,
         }
     except Exception as e:
         return {"error": f"搜索记忆失败: {str(e)}"}

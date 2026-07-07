@@ -1,0 +1,1 @@
+Select-String -Path 'C:\Users\NBLLT666\AppData\Local\Temp\trae-agent-toolhost\jobs\job-edbfc622490a49b9bce65ea9d9dc73e9\output.log' -Pattern 'StatReload|Reloading|Application startup' | Select-Object -Last 5 | ForEach-Object { $_.Line }

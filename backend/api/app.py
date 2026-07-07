@@ -836,7 +836,7 @@ async def health_check():
         "llm_client": _ok("llm_client"),
         "model_router": _ok("model_router"),
         "async_memory_manager": _ok("async_memory_manager"),
-        "graph_database": False,  # 图数据库按助手按需创建，无全局实例
+        "graph_database": _ok("memory_manager"),  # 图数据库依赖 memory_manager，按需创建
         "cxfc_manager": _ok("cxfc_manager"),
     }
     return HealthResponse(

@@ -304,6 +304,58 @@ class MemoryManager:
             return self.deduplication_engine.threshold
         return 0.85
 
+    def _start_async_dedup_check(
+        self,
+        new_memory_id: int,
+        content: str,
+        workspace_id: str = "default",
+        agent_id: str = "default",
+    ) -> None:
+        """启动后台去重检查（fire-and-forget）
+
+        在 write_memory 写入完成后调用，不阻塞 write_memory 返回。
+        后台线程用 Weaviate nearVector 搜索检查是否已存在相似记忆，
+        若发现重复则删除新写入的记忆（硬删除 + 删除向量）。
+
+        Args:
+            new_memory_id: 新写入的记忆ID
+            content: 记忆内容
+            workspace_id: 工作区ID
+            agent_id: Agent ID
+        """
+        import threading
+
+        def _dedup_worker():
+            try:
+                dup_result = self._run_async_sync(
+                    self.deduplication_engine.find_duplicate_memory(
+                        content=content,
+                        workspace_id=workspace_id,
+                        agent_id=agent_id,
+                        threshold=self._get_dedup_threshold(),
+                        exclude_memory_id=new_memory_id,
+                    )
+                )
+                if dup_result is not None:
+                    existing_id, similarity = dup_result
+                    logger.info(
+                        f"后台去重命中: new_id={new_memory_id}, "
+                        f"existing_id={existing_id}, similarity={similarity:.4f}, "
+                        f"agent={agent_id}，删除新记忆"
+                    )
+                    self.delete_memory(new_memory_id, soft_delete=False, agent_id=agent_id)
+                else:
+                    logger.debug(f"后台去重检查完成: memory_id={new_memory_id}，无重复")
+            except Exception as e:
+                logger.warning(
+                    f"后台去重检查失败 [{type(e).__name__}]: {e}"
+                )
+
+        thread = threading.Thread(
+            target=_dedup_worker, daemon=True, name="DedupCheck"
+        )
+        thread.start()
+
     def _sync_vector_for_memory(self, memory_id: int, content: str, metadata: Dict = None) -> bool:
         """同步记忆到向量数据库
 
@@ -850,27 +902,8 @@ class MemoryManager:
         self._ensure_agent_table(agent_id)
         table_name = self._get_table_name(agent_id)
 
-        # 写入前去重检查：对同 agent 近期记忆做向量相似度搜索
-        if self.deduplication_engine and content:
-            try:
-                dup_result = self._run_async_sync(
-                    self.deduplication_engine.find_duplicate_memory(
-                        content=content,
-                        workspace_id=workspace_id,
-                        agent_id=agent_id,
-                        threshold=self._get_dedup_threshold(),
-                    )
-                )
-                if dup_result is not None:
-                    existing_id, similarity = dup_result
-                    logger.info(
-                        f"写入去重命中，跳过写入: existing_id={existing_id}, "
-                        f"similarity={similarity:.4f}, agent={agent_id}"
-                    )
-                    return existing_id
-            except Exception as e:
-                # 去重检查失败不应阻断写入，记录日志后继续
-                logger.warning(f"写入去重检查失败，继续写入 [{type(e).__name__}]: {e}")
+        # 去重检查已改为写入后异步执行（_start_async_dedup_check），
+        # 不再在写入前阻塞等待（原先阻塞 60-90 秒导致 WebSocket 超时）
 
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -937,6 +970,18 @@ class MemoryManager:
                 self._sync_vector_for_memory(memory_id, content, vector_metadata)
             except Exception as vec_e:
                 logger.warning(f"向量同步失败，不影响主操作: memory_id={memory_id}, error={vec_e}")
+
+            # 启动后台去重检查（fire-and-forget，不阻塞 write_memory 返回）
+            # 去重改为写入后异步：先写入让用户立即得到 memory_id，
+            # 后台用 Weaviate nearVector 搜索（~3秒）检查是否重复，
+            # 若发现重复则删除新记忆。
+            if self.deduplication_engine and content:
+                self._start_async_dedup_check(
+                    new_memory_id=memory_id,
+                    content=content,
+                    workspace_id=workspace_id,
+                    agent_id=agent_id,
+                )
 
             return memory_id
         except Exception as e:
@@ -1066,10 +1111,23 @@ class MemoryManager:
             where_clause = " AND ".join(conditions) if conditions else "1=1"
 
             if fts_usable:
-                # C6: FTS5 phrase 查询——双引号包裹整串，内部双引号转义以避免语法错误
+                # C6: FTS5 OR 查询——将查询切分为 trigram 片段用 OR 连接，支持部分匹配
+                # 注：原 PHRASE 查询（整串双引号包裹）要求 trigram 按完全相同顺序出现，
+                # 对语义相近但措辞不同的内容召回率极低。改用 OR 提升召回率。
                 try:
-                    phrase = '"' + query[:500].replace('"', '""') + '"'
-                    fts_params = [phrase] + params + [limit, offset]
+                    query_str = query[:500].replace('"', '""')
+                    if len(query_str) >= 3:
+                        trigrams = []
+                        seen = set()
+                        for i in range(len(query_str) - 2):
+                            t = query_str[i:i + 3]
+                            if t not in seen:
+                                seen.add(t)
+                                trigrams.append(t)
+                        match_expr = ' OR '.join(f'"{t}"' for t in trigrams)
+                    else:
+                        match_expr = f'"{query_str}"'
+                    fts_params = [match_expr] + params + [limit, offset]
                     cursor.execute(
                         f"""SELECT m.* FROM {table_name} m
                             JOIN memories_fts f ON m.rowid = f.rowid

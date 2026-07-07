@@ -318,18 +318,22 @@ class DeduplicationEngine:
         workspace_id: str = "default",
         agent_id: str = "default",
         threshold: float = None,
-        limit: int = 100,
+        limit: int = 5,
+        exclude_memory_id: int = None,
     ) -> Optional[Tuple[int, float]]:
         """查找与给定内容重复的已存在记忆（用于写入去重）
 
-        优先使用向量余弦相似度，embedding 不可用时降级为字符级 Jaccard。
+        使用 Weaviate nearVector 搜索，只对新内容生成 1 次 embedding，
+        然后用向量搜索找到 top-K 最相似记忆。替代原先遍历候选+逐条生成
+        embedding 的方式（原先 60 次 embedding 请求导致 60-90 秒阻塞）。
 
         Args:
             content: 待写入的记忆内容
             workspace_id: 工作区ID
             agent_id: Agent ID
             threshold: 相似度阈值，默认使用引擎阈值
-            limit: 候选记忆数量上限
+            limit: 返回结果数量上限
+            exclude_memory_id: 排除指定记忆ID（后台去重时排除新记忆本身）
 
         Returns:
             (memory_id, similarity_score) 如果找到重复，否则 None
@@ -341,64 +345,49 @@ class DeduplicationEngine:
             return None
 
         try:
-            # 获取同 agent 的近期记忆作为候选
-            if asyncio.iscoroutinefunction(self.memory_manager.search_memories):
-                candidates = await self.memory_manager.search_memories(
-                    memory_type=None,
-                    limit=limit,
-                    include_deleted=False,
-                    workspace_id=workspace_id,
-                    agent_id=agent_id,
-                )
-            else:
-                candidates = self.memory_manager.search_memories(
-                    memory_type=None,
-                    limit=limit,
-                    include_deleted=False,
-                    workspace_id=workspace_id,
-                    agent_id=agent_id,
-                )
+            embedding_model = getattr(self.memory_manager, "_embedding_model", None)
+            vector_store = getattr(self.memory_manager, "_vector_store", None)
 
-            if not candidates:
+            if embedding_model is None or vector_store is None:
+                logger.warning("embedding 模型或向量存储不可用，跳过向量去重检查")
                 return None
 
-            embedding_available = (
-                getattr(self.memory_manager, "_embedding_model", None) is not None
+            # 对新内容生成 1 次 embedding（不再对每条候选重复生成）
+            query_embedding = await embedding_model.get_embedding(content)
+            if not query_embedding:
+                logger.warning("新内容 embedding 生成失败，跳过去重检查")
+                return None
+
+            # 用 Weaviate nearVector 搜索 top-K 最相似记忆
+            results = await vector_store.search_similar(
+                query_embedding=query_embedding,
+                limit=limit,
+                min_score=threshold,
+                agent_id=agent_id,
             )
 
+            if not results:
+                return None
+
+            # 排除指定记忆（如新写入的记忆本身）并找最高分
             best_match = None
             best_score = 0.0
+            for result in results:
+                memory_id = result.get("memory_id")
+                score = result.get("score", 0.0)
 
-            for candidate in candidates:
-                candidate_content = candidate.get("content", "")
+                if exclude_memory_id is not None and memory_id == exclude_memory_id:
+                    continue
 
-                if embedding_available:
-                    try:
-                        similarity = await self.check_vector_similarity(
-                            content, candidate_content
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            f"向量相似度计算失败，降级为 Jaccard [{type(e).__name__}]: {e}"
-                        )
-                        similarity = self._calculate_text_similarity(
-                            content, candidate_content
-                        )
-                        embedding_available = False
-                else:
-                    similarity = self._calculate_text_similarity(
-                        content, candidate_content
-                    )
+                if score >= threshold and score > best_score:
+                    best_score = score
+                    best_match = memory_id
 
-                if similarity > best_score:
-                    best_score = similarity
-                    best_match = candidate
-
-            if best_match and best_score >= threshold:
+            if best_match is not None:
                 logger.info(
-                    f"发现重复记忆: existing_id={best_match['id']}, similarity={best_score:.4f}"
+                    f"发现重复记忆: existing_id={best_match}, similarity={best_score:.4f}"
                 )
-                return (best_match["id"], best_score)
+                return (best_match, best_score)
 
             return None
 

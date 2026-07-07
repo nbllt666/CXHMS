@@ -194,6 +194,7 @@ class WeaviateVectorStore:
     ) -> List[Dict]:
         """搜索相似向量"""
         if not self._client:
+            logger.warning("[search_similar] _client 为 None")
             return []
 
         if not self.is_available():
@@ -234,13 +235,19 @@ class WeaviateVectorStore:
 
             # 执行查询
             results = query.objects
+            logger.info(
+                f"[search_similar] query_len={len(query_embedding)}, limit={limit}, "
+                f"min_score={min_score}, memory_type={memory_type}, "
+                f"raw_results_count={len(results) if results else 0}"
+            )
 
             # 处理结果
             filtered_results = []
             for obj in results:
-                # Weaviate 返回的是距离，需要转换为相似度
+                # Weaviate 1.35+ cosine distance 范围 [0, 2]（0=完全相同，2=完全相反）
+                # similarity = 1 - distance/2（与 Weaviate certainty 公式一致，范围 [0, 1]）
                 distance = obj.metadata.distance if obj.metadata else 0
-                similarity_score = 1 - distance  # 将距离转换为相似度
+                similarity_score = 1 - distance / 2
 
                 if similarity_score >= min_score:
                     filtered_results.append(
@@ -260,10 +267,13 @@ class WeaviateVectorStore:
                         }
                     )
 
+            logger.info(
+                f"[search_similar] filtered_count={len(filtered_results)} (after min_score={min_score})"
+            )
             return filtered_results
 
         except Exception as e:
-            logger.error(f"Weaviate 向量搜索失败: {e}")
+            logger.error(f"Weaviate 向量搜索失败: {e}", exc_info=True)
             return []
 
     async def delete_by_memory_id(self, memory_id: int) -> bool:

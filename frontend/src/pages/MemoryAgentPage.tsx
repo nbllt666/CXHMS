@@ -55,6 +55,18 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
 
   if (!thinking && (!toolCalls || toolCalls.length === 0)) return null;
 
+  // 格式化 JSON 值：arguments/result 可能是 JSON 字符串（OpenAI 格式）或对象
+  const formatJson = (value: unknown): string => {
+    if (typeof value === 'string') {
+      try {
+        return JSON.stringify(JSON.parse(value), null, 2);
+      } catch {
+        return value;
+      }
+    }
+    return JSON.stringify(value, null, 2);
+  };
+
   // 根据内容类型决定标题
   const hasThinking = Boolean(thinking);
   const hasToolCalls = Boolean(toolCalls && toolCalls.length > 0);
@@ -106,14 +118,14 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
                     )}
                     {toolCall.status === 'failed' && <span className="text-red-500">{t('memoryAgent.failed')}</span>}
                   </div>
-                  {toolCall.arguments && (
+                  {Boolean(toolCall.arguments) && (
                     <div className="text-muted-foreground font-mono text-[10px] mb-1">
-                      {t('memoryAgent.parameters')}: {JSON.stringify(toolCall.arguments, null, 2)}
+                      {t('memoryAgent.parameters')}: {formatJson(toolCall.arguments)}
                     </div>
                   )}
                   {toolCall.result !== undefined && (
                     <div className="text-muted-foreground font-mono text-[10px]">
-                      {t('memoryAgent.result')}: {JSON.stringify(toolCall.result, null, 2)}
+                      {t('memoryAgent.result')}: {formatJson(toolCall.result)}
                     </div>
                   )}
                 </div>
@@ -339,16 +351,22 @@ export function MemoryAgentPage() {
 
   const clearChat = async () => {
     setMessages([]);
+    setSessionId(null); // 重置 sessionId，避免后续发送消息使用旧 session
     try {
-      // Clear session messages
-      await api.clearSessionMessages(sessionId || 'memory-agent');
-      // Clear agent context
-      await fetch(`${api.getApiUrl()}/api/agents/memory-agent/context`, {
+      // 1. 清空会话消息（仅当 sessionId 存在时）
+      if (sessionId) {
+        await api.clearSessionMessages(sessionId);
+      }
+      // 2. 清空 agent 上下文
+      const response = await fetch(`${api.getApiUrl()}/api/agents/memory-agent/context`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${localStorage.getItem('cxhms-token') || ''}`,
         },
       });
+      if (!response.ok) {
+        throw new Error(`清空 agent 上下文失败: ${response.status}`);
+      }
     } catch (error) {
       console.error('清空后端对话数据失败:', error);
     }

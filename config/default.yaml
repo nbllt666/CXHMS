@@ -152,6 +152,13 @@ acp:
   broadcast_port: 9998
   broadcast_address: 255.255.255.255
   discovery_interval: 30
+cxfc:
+  enabled: true
+  discovery_port: 19876
+  discovery_enabled: true
+  heartbeat_timeout: 60
+  auto_reconnect: true
+  storage_path: data/cxfc_plugins.db
 security:
   api_key_enabled: false
   api_key: ''
