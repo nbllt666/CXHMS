@@ -156,7 +156,9 @@
     "streamComplete": "Response completed",
     "streamCancelled": "Response cancelled",
     "streamError": "Sorry, an error occurred: {{error}}",
-    "unknownError": "Unknown error"
+    "unknownError": "Unknown error",
+    "diarySummary": "Diary Summary",
+    "systemMessage": "System Message"
   },
   "memory": {
     "title": "Memory Management",
@@ -507,6 +509,10 @@
     "vectorStorageDesc": "Configure vector database connection",
     "modelSettings": "Model Settings",
     "modelSettingsDesc": "Configure large language model parameters",
+    "contextSettings": "Context Settings",
+    "contextSettingsDesc": "Configure context length and summary retention",
+    "maxSummariesInContextLabel": "Max Summaries in Context",
+    "maxSummariesInContextDesc": "Control how many summaries to retain in context (default 3)",
     "themeSettings": "Theme Settings",
     "themeLightDesc": "Bright and clean interface",
     "themeDarkDesc": "Eye-friendly dark theme",

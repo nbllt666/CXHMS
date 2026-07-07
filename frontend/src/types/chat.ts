@@ -8,13 +8,14 @@
  */
 export interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
   memory_refs?: number[];
   tool_calls?: ToolCall[];
   thinking?: string;
   images?: string[]; // base64 encoded images
+  content_type?: 'diary_summary' | 'archive_notice' | string;
 }
 
 /**

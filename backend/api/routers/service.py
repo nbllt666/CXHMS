@@ -484,6 +484,13 @@ async def get_service_config():
 
         config["vector"] = vector_config
 
+    # 添加上下文配置
+    if hasattr(settings.config, "context"):
+        context_config = settings.config.context
+        config["context"] = {
+            "max_summaries_in_context": getattr(context_config, "max_summaries_in_context", 3),
+        }
+
     return {"status": "success", "config": config}
 
 
@@ -586,6 +593,15 @@ async def update_service_config(request: Request, config: dict):
             for key in ("provider", "host", "model", "temperature", "max_tokens", "stream", "api_key"):
                 if key in llm_params_data:
                     current_config["llm"][key] = llm_params_data[key]
+
+        if "context" in config:
+            context_data = config["context"]
+            if "context" not in current_config:
+                current_config["context"] = {}
+            # 仅合并 ContextConfig 认识的字段
+            for key in ("max_summaries_in_context",):
+                if key in context_data:
+                    current_config["context"][key] = context_data[key]
 
         # system 配置
         if "system" in config:

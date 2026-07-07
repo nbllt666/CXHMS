@@ -6,6 +6,7 @@ import { api } from '../api';
 import { useChatStore } from '../store/chatStore';
 import { formatRelativeTime } from '../lib/utils';
 import { SummaryModal } from '../components/SummaryModal';
+import { SystemMessageBanner } from '../components/SystemMessageBanner';
 import { Button, Textarea, Card } from '../components/ui';
 import { PageHeader } from '../components/layout';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -74,31 +75,14 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
   );
 });
 
-function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls?: ToolCall[] }) {
+function ThinkingBlock({ thinking }: { thinking?: string }) {
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
 
-  if (!thinking && (!toolCalls || toolCalls.length === 0)) return null;
-
-  // 格式化 JSON 值：arguments/result 可能是 JSON 字符串（OpenAI 格式）或对象
-  const formatJson = (value: unknown): string => {
-    if (typeof value === 'string') {
-      try {
-        return JSON.stringify(JSON.parse(value), null, 2);
-      } catch {
-        return value;
-      }
-    }
-    return JSON.stringify(value, null, 2);
-  };
-
-  // 根据内容类型决定标题
-  const hasThinking = Boolean(thinking);
-  const hasToolCalls = Boolean(toolCalls && toolCalls.length > 0);
-  const title = hasThinking ? t('chat.thinkingProcess') : t('chat.toolCalls');
+  if (!thinking) return null;
 
   return (
-    <div className="mt-3 border border-[var(--color-border)] rounded-[var(--radius-md)] overflow-hidden">
+    <div className="mb-2 border border-[var(--color-border)] rounded-[var(--radius-md)] overflow-hidden">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full flex items-center justify-between px-3 py-2 bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-hover)] transition-colors text-xs text-[var(--color-text-secondary)]"
@@ -112,12 +96,65 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
               d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
             />
           </svg>
-          {title}
-          {hasToolCalls && (
-            <span className="px-1.5 py-0.5 bg-[var(--color-accent-light)] text-[var(--color-accent)] rounded-full text-[10px]">
-              {t('chat.toolCallsCount', { count: toolCalls!.length })}
-            </span>
-          )}
+          {t('chat.thinkingProcess')}
+        </span>
+        <svg
+          className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isExpanded && (
+        <div className="px-3 py-2 bg-[var(--color-bg-secondary)] text-xs">
+          <div className="text-[var(--color-text-tertiary)] whitespace-pre-wrap">{thinking}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolCallBlock({ toolCalls }: { toolCalls?: ToolCall[] }) {
+  const { t } = useTranslation();
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  if (!toolCalls || toolCalls.length === 0) return null;
+
+  // 格式化 JSON 值：arguments/result 可能是 JSON 字符串（OpenAI 格式）或对象
+  const formatJson = (value: unknown): string => {
+    if (typeof value === 'string') {
+      try {
+        return JSON.stringify(JSON.parse(value), null, 2);
+      } catch {
+        return value;
+      }
+    }
+    return JSON.stringify(value, null, 2);
+  };
+
+  return (
+    <div className="mt-3 border border-[var(--color-border)] rounded-[var(--radius-md)] overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between px-3 py-2 bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-hover)] transition-colors text-xs text-[var(--color-text-secondary)]"
+      >
+        <span className="flex items-center gap-2">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+            />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          {t('chat.toolCalls')}
+          <span className="px-1.5 py-0.5 bg-[var(--color-accent-light)] text-[var(--color-accent)] rounded-full text-[10px]">
+            {t('chat.toolCallsCount', { count: toolCalls.length })}
+          </span>
         </span>
         <svg
           className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
@@ -131,53 +168,37 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
 
       {isExpanded && (
         <div className="px-3 py-2 bg-[var(--color-bg-secondary)] text-xs space-y-2">
-          {hasThinking && (
-            <div>
-              {hasToolCalls && (
-                <div className="text-[var(--color-text-secondary)] font-medium mb-1">{t('chat.thinkingProcess')}</div>
-              )}
-              <div className="text-[var(--color-text-tertiary)] whitespace-pre-wrap">{thinking}</div>
-            </div>
-          )}
-
-          {hasToolCalls && (
-            <div className={hasThinking ? 'space-y-2 mt-2' : 'space-y-2'}>
-              {hasThinking && (
-                <div className="text-[var(--color-text-secondary)] font-medium mb-1">{t('chat.toolCalls')}</div>
-              )}
-              {toolCalls!.map((toolCall, idx) => (
-                <div
-                  key={toolCall.id || `${toolCall.name}_${idx}`}
-                  className="p-2 bg-[var(--color-bg-tertiary)] rounded border border-[var(--color-border)]"
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium text-[var(--color-text-primary)]">
-                      🔧 {toolCall.name}
-                    </span>
-                    {toolCall.status === 'executing' && (
-                      <span className="animate-pulse text-[var(--color-info)]">{t('chat.executing')}</span>
-                    )}
-                    {toolCall.status === 'completed' && (
-                      <span className="text-[var(--color-success)]">{t('chat.completed')}</span>
-                    )}
-                    {toolCall.status === 'failed' && (
-                      <span className="text-[var(--color-error)]">{t('chat.failed')}</span>
-                    )}
-                  </div>
-                  {Boolean(toolCall.arguments) && (
-                    <div className="text-[var(--color-text-tertiary)] font-mono text-[10px] mb-1">
-                      {t('chat.parameters')}: {formatJson(toolCall.arguments)}
-                    </div>
-                  )}
-                  {toolCall.result !== undefined && (
-                    <div className="text-[var(--color-text-tertiary)] font-mono text-[10px]">
-                      {t('chat.result')}: {formatJson(toolCall.result)}
-                    </div>
-                  )}
+          {toolCalls.map((toolCall, idx) => (
+            <div
+              key={toolCall.id || `${toolCall.name}_${idx}`}
+              className="p-2 bg-[var(--color-bg-tertiary)] rounded border border-[var(--color-border)]"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span className="font-medium text-[var(--color-text-primary)]">
+                  🔧 {toolCall.name}
+                </span>
+                {toolCall.status === 'executing' && (
+                  <span className="animate-pulse text-[var(--color-info)]">{t('chat.executing')}</span>
+                )}
+                {toolCall.status === 'completed' && (
+                  <span className="text-[var(--color-success)]">{t('chat.completed')}</span>
+                )}
+                {toolCall.status === 'failed' && (
+                  <span className="text-[var(--color-error)]">{t('chat.failed')}</span>
+                )}
+              </div>
+              {Boolean(toolCall.arguments) && (
+                <div className="text-[var(--color-text-tertiary)] font-mono text-[10px] mb-1">
+                  {t('chat.parameters')}: {formatJson(toolCall.arguments)}
                 </div>
-              ))}
+              )}
+              {toolCall.result !== undefined && (
+                <div className="text-[var(--color-text-tertiary)] font-mono text-[10px]">
+                  {t('chat.result')}: {formatJson(toolCall.result)}
+                </div>
+              )}
             </div>
-          )}
+          ))}
         </div>
       )}
     </div>
@@ -190,6 +211,12 @@ function ThinkingProcess({ thinking, toolCalls }: { thinking?: string; toolCalls
 const MessageItem = memo(
   function MessageItem({ message, isStreaming }: { message: Message; isStreaming: boolean }) {
     const { t } = useTranslation();
+
+    // system 角色（如摘要、归档通知）走横幅样式，不渲染气泡与头像
+    if (message.role === 'system') {
+      return <SystemMessageBanner message={message} />;
+    }
+
     return (
       <div className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}>
         <div
@@ -220,6 +247,10 @@ const MessageItem = memo(
         <div
           className={`max-w-[80%] ${message.role === 'user' ? 'items-end' : 'items-start'}`}
         >
+          {/* ThinkingBlock 移到气泡上方 */}
+          {message.role === 'assistant' && (
+            <ThinkingBlock thinking={message.thinking} />
+          )}
           <div
             className={`px-4 py-3 rounded-2xl ${
               message.role === 'user'
@@ -235,14 +266,14 @@ const MessageItem = memo(
             {message.role === 'assistant' && isStreaming && (
               <span className="inline-block w-2 h-4 ml-1 bg-[var(--color-accent)] animate-pulse" />
             )}
+            {/* ToolCallBlock 移到气泡内部 */}
+            {message.role === 'assistant' && (
+              <ToolCallBlock toolCalls={message.tool_calls} />
+            )}
           </div>
           <span className="text-xs text-[var(--color-text-tertiary)] mt-1 px-1">
             {formatRelativeTime(message.timestamp)}
           </span>
-
-          {message.role === 'assistant' && (
-            <ThinkingProcess thinking={message.thinking} toolCalls={message.tool_calls} />
-          )}
 
           {message.memory_refs && message.memory_refs.length > 0 && (
             <div className="mt-2 flex gap-2">
@@ -333,11 +364,12 @@ export function ChatPage() {
         const formattedMessages = data.messages.map(
           (msg: {
             id?: string;
-            role: 'user' | 'assistant';
+            role: 'user' | 'assistant' | 'system';
             content: string;
             created_at?: string;
             thinking?: string;
             images?: string[];
+            content_type?: string;
             metadata?: { tool_calls?: ToolCall[]; thinking?: string };
           }) => ({
             id: msg.id || Math.random().toString(),
@@ -347,6 +379,7 @@ export function ChatPage() {
             thinking: msg.thinking || msg.metadata?.thinking,
             images: msg.images,
             tool_calls: msg.metadata?.tool_calls,
+            content_type: msg.content_type,
           })
         );
         setMessages(formattedMessages);

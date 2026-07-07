@@ -26,7 +26,8 @@ database:
   echo: false
 llm:
   max_tool_rounds: 10
-  temperature: 0.7
+  temperature: 1.5
+  max_tokens: 4096
 models:
   main:
     provider: vllm
@@ -39,17 +40,7 @@ models:
     max_tokens: 0
     timeout: 60
     api_key: ''
-  embedding:
-    provider: vllm
-    host: http://localhost:8101
-    model: /models/Qwen3-Embedding-0.6B
-    apiKey: ''
-    enabled: true
-    port: 8101
-    temperature: 0.0
-    max_tokens: 512
-    timeout: 60
-    api_key: ''
+    supports_tools: true
   summary:
     provider: ollama
     host: http://localhost:11434
@@ -61,6 +52,7 @@ models:
     max_tokens: 131072
     timeout: 60
     api_key: ''
+    supports_tools: true
   memory:
     provider: ollama
     host: http://localhost:11434
@@ -72,6 +64,19 @@ models:
     max_tokens: 131072
     timeout: 60
     api_key: ''
+    supports_tools: true
+  embedding:
+    provider: vllm
+    host: http://localhost:8101
+    model: /models/Qwen3-Embedding-0.6B
+    apiKey: ''
+    enabled: true
+    port: 8101
+    temperature: 0
+    max_tokens: 512
+    timeout: 60
+    api_key: ''
+    supports_tools: true
 model_defaults:
   summary: main
   memory: main
@@ -129,6 +134,7 @@ context:
   context_window: 10
   include_memories: true
   max_memories_in_context: 5
+  max_summaries_in_context: 10
 tools:
   enabled: true
   auto_discovery: true

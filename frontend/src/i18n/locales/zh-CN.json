@@ -156,7 +156,9 @@
     "streamComplete": "响应已完成",
     "streamCancelled": "响应已取消",
     "streamError": "抱歉，发生错误：{{error}}",
-    "unknownError": "未知错误"
+    "unknownError": "未知错误",
+    "diarySummary": "日记摘要",
+    "systemMessage": "系统消息"
   },
   "memory": {
     "title": "记忆管理",
@@ -507,6 +509,10 @@
     "vectorStorageDesc": "配置向量数据库连接",
     "modelSettings": "模型设置",
     "modelSettingsDesc": "配置大语言模型参数",
+    "contextSettings": "上下文设置",
+    "contextSettingsDesc": "配置上下文长度和摘要保留数量",
+    "maxSummariesInContextLabel": "上下文摘要保留数量",
+    "maxSummariesInContextDesc": "控制上下文中保留多少篇摘要（默认3篇）",
     "themeSettings": "主题设置",
     "themeLightDesc": "明亮清爽的界面",
     "themeDarkDesc": "护眼暗色主题",

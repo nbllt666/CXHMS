@@ -106,6 +106,7 @@ class ReinitManager:
         "context.summary_threshold",
         "context.window_size",
         "context.enable_summary",
+        "context.max_summaries_in_context",
     }
 
     def __init__(self, service_state: Any, settings: Any) -> None:

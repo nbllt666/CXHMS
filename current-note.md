@@ -1,10 +1,57 @@
 # 当前交接状态（current-note.md）
 
-> 最后更新：2026-07-08 20:12:00
-> 状态：**spec 实施已交付 + gemma4 工具调用全链路修复 + 多轮工具调用端到端验证通过 + 语义搜索失效修复（端到端验证通过）+ 工具调用失败根因修复（system prompt 引导）+ 隐藏系统提示词设计原则修正 + 摘要后聊天记录不更新修复（端到端验证通过）+ write_long_term_memory 工具卡住修复（端到端验证通过）+ 配置热更新与组件重初始化（spec: add-config-hotreload-and-reinit 全部 Task 完成 + 46 测试 PASS + E2E 全部通过）**
-> （spec: optimize-systematically-and-rewrite-tests 全部 task 闭合 + I3 [V] 双重闸门通过 + 用户已批准交付 2026-07-05 18:30 + 5 批次待办清理 2026-07-05 21:30 + G6 观察项 4 拆分 2026-07-05 22:00 + GN-004 全代码审查警示项处置 2026-07-05 22:30 + GN-004 4 项观察项全部处置 2026-07-05 23:00 + 迁移检查清单验证留痕 2026-07-05 21:40 + gemma4 工具参数解析修复 2026-07-06 19:48 + vLLM 流式 tool_calls 解析补丁 2026-07-06 20:00 + 前端工具调用参数显示修复 2026-07-06 20:10 + 多轮工具调用测试脚本修复与全链路验证 2026-07-06 20:40 + 语义搜索失效修复 2026-07-06 21:45 + 工具调用失败根因修复 2026-07-06 22:55 + 隐藏系统提示词设计原则修正 2026-07-07 06:35 + 摘要后聊天记录不更新修复 2026-07-07 21:35 + 摘要修复端到端验证通过 2026-07-07 14:47 + 语义搜索修复端到端验证通过 2026-07-07 14:57 + write_long_term_memory 工具卡住修复端到端验证通过 2026-07-07 16:07 + 配置热更新 spec add-config-hotreload-and-reinit Task 1-9 完成 46 测试 PASS 2026-07-08 10:30 + E2E 全部通过 2026-07-08 20:12）
+> 最后更新：2026-07-08 21:17:00
+> 状态：**spec 实施已交付 + gemma4 工具调用全链路修复 + 多轮工具调用端到端验证通过 + 语义搜索失效修复（端到端验证通过）+ 工具调用失败根因修复（system prompt 引导）+ 隐藏系统提示词设计原则修正 + 摘要后聊天记录不更新修复（端到端验证通过）+ write_long_term_memory 工具卡住修复（端到端验证通过）+ 配置热更新与组件重初始化（spec: add-config-hotreload-and-reinit 全部 Task 完成 + 46 测试 PASS + E2E 全部通过）+ 上下文摘要保留数量配置项 + 前端消息渲染重构（思考过程上方/工具调用内部/系统消息横幅，端到端验证通过）**
+> （spec: optimize-systematically-and-rewrite-tests 全部 task 闭合 + I3 [V] 双重闸门通过 + 用户已批准交付 2026-07-05 18:30 + 5 批次待办清理 2026-07-05 21:30 + G6 观察项 4 拆分 2026-07-05 22:00 + GN-004 全代码审查警示项处置 2026-07-05 22:30 + GN-004 4 项观察项全部处置 2026-07-05 23:00 + 迁移检查清单验证留痕 2026-07-05 21:40 + gemma4 工具参数解析修复 2026-07-06 19:48 + vLLM 流式 tool_calls 解析补丁 2026-07-06 20:00 + 前端工具调用参数显示修复 2026-07-06 20:10 + 多轮工具调用测试脚本修复与全链路验证 2026-07-06 20:40 + 语义搜索失效修复 2026-07-06 21:45 + 工具调用失败根因修复 2026-07-06 22:55 + 隐藏系统提示词设计原则修正 2026-07-07 06:35 + 摘要后聊天记录不更新修复 2026-07-07 21:35 + 摘要修复端到端验证通过 2026-07-07 14:47 + 语义搜索修复端到端验证通过 2026-07-07 14:57 + write_long_term_memory 工具卡住修复端到端验证通过 2026-07-07 16:07 + 配置热更新 spec add-config-hotreload-and-reinit Task 1-9 完成 46 测试 PASS 2026-07-08 10:30 + E2E 全部通过 2026-07-08 20:12 + 上下文摘要保留数量配置项与前端消息渲染重构完成 2026-07-08 21:17）
 
-## 〇.最新变更（2026-07-08 20:12）：配置热更新与组件重初始化 - E2E 全部通过
+## 〇.最新变更（2026-07-08 21:17）：上下文摘要保留数量配置项 + 前端消息渲染重构
+
+### 工程过程
+1. 用户指令 `/plan 加入上下文摘要保留数量的配置项，把思考过程放到消息上面，工具调用应该在消息中，相同消息不要采用普通消息相同形式，应该是横幅（类似于qq那样的系统消息显示方式）`
+2. AskUserQuestion 澄清："相同消息" = "系统消息（如摘要、归档通知）"，"上下文摘要保留数量" = "上下文中保留N篇摘要"
+3. 前序会话已完成：后端 ContextConfig 新增 `max_summaries_in_context: int = 3`、yaml 配置、PURE_PARAM_FIELDS 扩展、`replace_messages_with_summary` 摘要保留上限逻辑
+4. 前序会话已完成：前端 `Message` 接口扩展 `'system'` 角色 + `content_type` 字段；`SystemMessageBanner` 组件创建（QQ 风格横幅）；`ThinkingBlock` 与 `ToolCallBlock` 拆分定义
+5. Task A：`ChatPage.tsx` 顶部新增 `import { SystemMessageBanner } from '../components/SystemMessageBanner';`
+6. Task B+C：MessageItem 重构——添加 system 角色横幅分流（`if (message.role === 'system') return <SystemMessageBanner message={message} />`）；将原 `<ThinkingProcess>` 调用替换为 `<ThinkingBlock>`（气泡上方）+ `<ToolCallBlock>`（气泡内部，content 之后）
+7. Task D：`loadAgentHistory` 映射更新——`role` 类型扩展为 `'user' | 'assistant' | 'system'`，新增 `content_type?: string` 字段透传
+8. Task E+F：i18n 新增 `chat.diarySummary`（"日记摘要"/"Diary Summary"）和 `chat.systemMessage`（"系统消息"/"System Message"）到 zh-CN.json 和 en-US.json
+9. Task G：`npx tsc --noEmit` 通过——所有报错均为预先存在的测试文件和其他未修改源文件错误，本次修改未引入新错误
+10. Task H：Playwright 端到端验证——发送真实消息触发助手回复（含 thinking + 2 个工具调用），验证 ThinkingBlock 显示在气泡上方、ToolCallBlock 显示在气泡内部；点击"自动摘要"触发 diary_summary 生成，DOM 检查确认 SystemMessageBanner 渲染为 `flex justify-center my-2` 横幅样式，i18n key `chat.diarySummary` 正常显示为"日记摘要"
+11. Task I：更新 current-note.md 与变更记录文档
+
+### 交接状态
+- **状态**：已完成（端到端验证通过）
+- **变更记录**：`.trae/documents/20260708_模块0_上下文摘要保留与消息渲染重构.md`（status="已完成"）
+- **计划文件**：`.trae/documents/plan-context-summary-retention-and-message-rendering.md`（已批准并完整执行）
+- **未闭合项**：无
+
+### 最终结果
+- ✅ 后端 3 文件已稳定（前序会话）：`config/settings.py` / `config/default.yaml` / `backend/core/config/reinit.py` / `backend/core/context/manager.py`
+- ✅ 前端类型已稳定（前序会话）：`frontend/src/types/chat.ts` 含 `'system'` 角色 + `content_type` 字段
+- ✅ 前端组件已稳定（前序会话）：`frontend/src/components/SystemMessageBanner.tsx` QQ 风格横幅
+- ✅ 本次修改 `frontend/src/pages/ChatPage.tsx`：
+  - 新增 SystemMessageBanner import
+  - MessageItem 添加 system 角色横幅分流
+  - ThinkingBlock 移到气泡上方（`<div className="px-4 py-3 rounded-2xl ...">` 之前）
+  - ToolCallBlock 移到气泡内部（content + isStreaming 光标之后）
+  - loadAgentHistory 类型扩展为 `'user' | 'assistant' | 'system'` + 透传 `content_type`
+- ✅ 本次修改 `frontend/src/i18n/locales/zh-CN.json` 和 `en-US.json`：新增 `chat.diarySummary` 和 `chat.systemMessage` 两个 key
+- ✅ TypeScript 编译无新错误（所有报错均为预先存在）
+- ✅ Vite dev server 启动无报错（端口 3001）
+- ✅ Playwright 端到端验证：
+  - 用户消息：右对齐气泡 + "我"头像 ✓
+  - 助手消息：思考过程（折叠态）在气泡上方 + 工具调用（2 个）在气泡内部 ✓
+  - diary_summary 系统消息：横幅样式 `flex justify-center my-2`，水平居中，无头像，"日记摘要" i18n 标签正常 ✓
+  - WebSocket 流式响应正常 ✓
+
+### 范围外（明确不在本次工作内）
+- `MemoryAgentPage.tsx` 有独立 ThinkingProcess 实现（L52 定义 + L461 调用），未修改。如需统一改造可后续处理
+- `SettingsPage.tsx` 不新增 `max_summaries_in_context` UI 控件——与其他 context 配置项（max_messages 等）保持一致的 yaml-only 风格
+- `max_summaries_in_context=3` 多摘要保留上限（连续 4 次摘要触发清理）未做端到端验证，但静态代码分析已确认 `replace_messages_with_summary` L788-796 逻辑正确
+
+---
+
+## 〇.前次变更（2026-07-08 20:12）：配置热更新与组件重初始化 - E2E 全部通过
 
 ### 工程过程
 1. 用户指令 `/spec 需要加入配置热更新与自动和手动的重新初始化`

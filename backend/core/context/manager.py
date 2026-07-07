@@ -763,6 +763,13 @@ class ContextManager:
         if isinstance(summary_entries, str):
             summary_entries = [summary_entries]
 
+        # 读取摘要保留上限配置
+        try:
+            from config.settings import settings as _settings
+            max_summaries = _settings.config.context.max_summaries_in_context
+        except Exception:
+            max_summaries = 3
+
         with self._lock:
             entry = self._store.get(session_id)
             if not entry:
@@ -777,6 +784,16 @@ class ContextManager:
             to_delete = min(summarized_up_to_index, len(active_indices))
             for i in range(to_delete):
                 messages[active_indices[i]]["is_deleted"] = True
+
+            # 清理超出保留上限的旧 diary_summary
+            existing_summaries = [
+                m for m in messages
+                if m.get("content_type") == "diary_summary" and not m.get("is_deleted", False)
+            ]
+            existing_summaries.sort(key=lambda m: m.get("created_at", ""))
+            excess_count = max(0, len(existing_summaries) + len(summary_entries) - max_summaries)
+            for i in range(excess_count):
+                existing_summaries[i]["is_deleted"] = True
 
             # 从被摘要的消息中提取话题起止时间
             start_time = None

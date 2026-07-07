@@ -18,7 +18,7 @@ interface SettingSection {
 
 export function SettingsPage() {
   const { t } = useTranslation();
-  const [activeSection, setActiveSection] = useState<'appearance' | 'vector' | 'llm'>('appearance');
+  const [activeSection, setActiveSection] = useState<'appearance' | 'vector' | 'llm' | 'context'>('appearance');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const saveStatusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isBackendRunning, setIsBackendRunning] = useState(false);
@@ -145,6 +145,21 @@ export function SettingsPage() {
       ),
       description: t('settings.modelSettingsDesc'),
     },
+    {
+      id: 'context',
+      title: t('settings.contextSettings'),
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M4 6h16M4 12h16M4 18h7"
+          />
+        </svg>
+      ),
+      description: t('settings.contextSettingsDesc'),
+    },
   ];
 
   const themeOptions = [
@@ -254,6 +269,10 @@ export function SettingsPage() {
     max_tokens: 4096,
   });
 
+  const [contextConfig, setContextConfig] = useState({
+    max_summaries_in_context: 3,
+  });
+
   useEffect(() => {
     if (serviceConfig?.config) {
       if (serviceConfig.config.env_managed_sections) {
@@ -301,6 +320,11 @@ export function SettingsPage() {
         setLlmParams({
           temperature: serviceConfig.config.llm_params.temperature ?? 0.7,
           max_tokens: serviceConfig.config.llm_params.max_tokens ?? 4096,
+        });
+      }
+      if (serviceConfig.config.context) {
+        setContextConfig({
+          max_summaries_in_context: serviceConfig.config.context.max_summaries_in_context ?? 3,
         });
       }
     }
@@ -356,13 +380,25 @@ export function SettingsPage() {
         result = await api.updateServiceConfig({
           vector: vectorPayload,
         });
-      } else {
+      } else if (activeSection === 'llm') {
         result = await api.updateServiceConfig({
           models: modelsConfig,
           model_defaults: modelDefaults,
           llm_params: llmParams,
         });
         localStorage.setItem('cxhms-current-model', modelsConfig.main.model);
+      } else if (activeSection === 'context') {
+        result = await api.updateServiceConfig({
+          context: {
+            max_summaries_in_context: contextConfig.max_summaries_in_context,
+          },
+        });
+      } else {
+        // appearance section - no backend save needed
+        setSaveStatus('saved');
+        setSaveMessage('外观设置已生效');
+        saveStatusTimeoutRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+        return;
       }
 
       // Task 8.1：根据返回结构生成详细成功消息（简化方案，不轮询）
@@ -814,6 +850,51 @@ export function SettingsPage() {
                           placeholder="http://localhost:8101"
                         />
                       </div>
+                    </div>
+                  </div>
+                  <div className="flex justify-end mt-6">
+                    <Button
+                      onClick={handleSave}
+                      loading={saveStatus === 'saving'}
+                      disabled={!isBackendRunning}
+                    >
+                      {saveStatus === 'saved' ? t('settings.savedLabel') : t('settings.saveConfig')}
+                    </Button>
+                  </div>
+                  {saveStatus === 'saved' && saveMessage && (
+                    <p className="text-sm text-[var(--color-text-secondary)] mt-2 text-right">
+                      {saveMessage}
+                    </p>
+                  )}
+                </CardBody>
+              </Card>
+            </div>
+          )}
+
+          {activeSection === 'context' && (
+            <div className="space-y-6">
+              <Card>
+                <CardBody>
+                  <h3 className="text-lg font-semibold mb-4">{t('settings.contextSettings')}</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">
+                        {t('settings.maxSummariesInContextLabel')}: {contextConfig.max_summaries_in_context}
+                      </label>
+                      <p className="text-xs text-[var(--color-text-tertiary)] mb-3">
+                        {t('settings.maxSummariesInContextDesc')}
+                      </p>
+                      <input
+                        type="range"
+                        min="1"
+                        max="10"
+                        step="1"
+                        value={contextConfig.max_summaries_in_context}
+                        onChange={(e) =>
+                          setContextConfig({ ...contextConfig, max_summaries_in_context: parseInt(e.target.value) })
+                        }
+                        className="w-full"
+                      />
                     </div>
                   </div>
                   <div className="flex justify-end mt-6">

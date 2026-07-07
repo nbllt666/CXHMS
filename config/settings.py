@@ -445,6 +445,7 @@ class ContextConfig:
     summary_threshold: int = 20
     window_size: int = 10
     enable_summary: bool = True
+    max_summaries_in_context: int = 3
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ContextConfig":
@@ -453,6 +454,7 @@ class ContextConfig:
             summary_threshold=data.get("summary_threshold", 20),
             window_size=data.get("window_size", 10),
             enable_summary=data.get("enable_summary", True),
+            max_summaries_in_context=data.get("max_summaries_in_context", 3),
         )
 
 
