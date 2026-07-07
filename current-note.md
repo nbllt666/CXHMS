@@ -1,8 +1,46 @@
 # 当前交接状态（current-note.md）
 
-> 最后更新：2026-07-07 16:07:00
-> 状态：**spec 实施已交付 + gemma4 工具调用全链路修复 + 多轮工具调用端到端验证通过 + 语义搜索失效修复（端到端验证通过）+ 工具调用失败根因修复（system prompt 引导）+ 隐藏系统提示词设计原则修正 + 摘要后聊天记录不更新修复（端到端验证通过）+ write_long_term_memory 工具卡住修复（端到端验证通过）**
-> （spec: optimize-systematically-and-rewrite-tests 全部 task 闭合 + I3 [V] 双重闸门通过 + 用户已批准交付 2026-07-05 18:30 + 5 批次待办清理 2026-07-05 21:30 + G6 观察项 4 拆分 2026-07-05 22:00 + GN-004 全代码审查警示项处置 2026-07-05 22:30 + GN-004 4 项观察项全部处置 2026-07-05 23:00 + 迁移检查清单验证留痕 2026-07-05 21:40 + gemma4 工具参数解析修复 2026-07-06 19:48 + vLLM 流式 tool_calls 解析补丁 2026-07-06 20:00 + 前端工具调用参数显示修复 2026-07-06 20:10 + 多轮工具调用测试脚本修复与全链路验证 2026-07-06 20:40 + 语义搜索失效修复 2026-07-06 21:45 + 工具调用失败根因修复 2026-07-06 22:55 + 隐藏系统提示词设计原则修正 2026-07-07 06:35 + 摘要后聊天记录不更新修复 2026-07-07 21:35 + 摘要修复端到端验证通过 2026-07-07 14:47 + 语义搜索修复端到端验证通过 2026-07-07 14:57 + write_long_term_memory 工具卡住修复端到端验证通过 2026-07-07 16:07）
+> 最后更新：2026-07-08 20:12:00
+> 状态：**spec 实施已交付 + gemma4 工具调用全链路修复 + 多轮工具调用端到端验证通过 + 语义搜索失效修复（端到端验证通过）+ 工具调用失败根因修复（system prompt 引导）+ 隐藏系统提示词设计原则修正 + 摘要后聊天记录不更新修复（端到端验证通过）+ write_long_term_memory 工具卡住修复（端到端验证通过）+ 配置热更新与组件重初始化（spec: add-config-hotreload-and-reinit 全部 Task 完成 + 46 测试 PASS + E2E 全部通过）**
+> （spec: optimize-systematically-and-rewrite-tests 全部 task 闭合 + I3 [V] 双重闸门通过 + 用户已批准交付 2026-07-05 18:30 + 5 批次待办清理 2026-07-05 21:30 + G6 观察项 4 拆分 2026-07-05 22:00 + GN-004 全代码审查警示项处置 2026-07-05 22:30 + GN-004 4 项观察项全部处置 2026-07-05 23:00 + 迁移检查清单验证留痕 2026-07-05 21:40 + gemma4 工具参数解析修复 2026-07-06 19:48 + vLLM 流式 tool_calls 解析补丁 2026-07-06 20:00 + 前端工具调用参数显示修复 2026-07-06 20:10 + 多轮工具调用测试脚本修复与全链路验证 2026-07-06 20:40 + 语义搜索失效修复 2026-07-06 21:45 + 工具调用失败根因修复 2026-07-06 22:55 + 隐藏系统提示词设计原则修正 2026-07-07 06:35 + 摘要后聊天记录不更新修复 2026-07-07 21:35 + 摘要修复端到端验证通过 2026-07-07 14:47 + 语义搜索修复端到端验证通过 2026-07-07 14:57 + write_long_term_memory 工具卡住修复端到端验证通过 2026-07-07 16:07 + 配置热更新 spec add-config-hotreload-and-reinit Task 1-9 完成 46 测试 PASS 2026-07-08 10:30 + E2E 全部通过 2026-07-08 20:12）
+
+## 〇.最新变更（2026-07-08 20:12）：配置热更新与组件重初始化 - E2E 全部通过
+
+### 工程过程
+1. 用户指令 `/spec 需要加入配置热更新与自动和手动的重新初始化`
+2. 创建 spec `add-config-hotreload-and-reinit`（三件套），GN-004 审查警示放行，修正 6 个高/中优先级观察项
+3. Task 1：实现 `backend/core/config/diff.py` — `ConfigDiff` + `compute_diff()` 递归对比 12 个顶层段
+4. Task 2：修改 `config/settings.py` — 新增 `reload_config_with_diff()` 返回 diff，保持 `reload_config()` 向后兼容
+5. Task 3：实现 `backend/core/config/reinit.py` — `ReinitManager`（决策、按序执行、失败隔离、状态查询）
+6. Task 4：修改 `backend/dependencies.py` — `ServiceState.update_component()` 原子替换 + `threading.Lock` + `_safe_close()`
+7. Task 5：修改 `backend/api/routers/service.py` — 新增 3 端点（reload-config / reinit 异步 202 / reinit/status）+ 修改 `/service/config` 支持 `auto_reinit`
+8. Task 6：实现 `backend/core/config/watcher.py` — `ConfigWatcher` 基于 watchdog + 5 秒防抖
+9. Task 7：修改 `backend/api/app.py` lifespan — 启动 ReinitManager + ConfigWatcher，shutdown 时停止
+10. Task 8：修改 `frontend/src/pages/SettingsPage.tsx` — 重新初始化按钮 + 确认对话框 + 2 秒轮询
+11. Task 9：修改 `frontend/src/api/{client,config,index}.ts` — 3 个 API 方法 + 5 个 TypeScript 类型
+12. Task 10.1：E2E — API 触发 reinit（修复单例 close 竞态 bug 后通过）
+13. Task 10.2：E2E — 外部编辑 config/default.yaml，ConfigWatcher 5 秒防抖后自动 reinit 成功
+14. Task 10.3：E2E — 3 次快速文件修改（300ms 间隔）只触发 1 次 reinit，防抖生效
+15. Task 10.4：E2E — 调用 /api/service/reinit 传入无效组件名 `invalid_component_xyz`，失败被记录到 failed 列表，其他组件（model_router、context_manager）正常完成，success=False
+16. Task 10.5：写变更文档 `.trae/documents/20260708_模块0_新增配置热更新与重初始化.md` 并补充 E2E 证据
+
+### 交接状态
+- **状态**：全部 Task 闭合（Task 1-10 完成 + 46 单元/集成测试 PASS + 4 项 E2E 全部通过）
+- **变更记录**：`.trae/documents/20260708_模块0_新增配置热更新与重初始化.md`（status="已完成"）
+- **Spec 路径**：`.trae/specs/add-config-hotreload-and-reinit/`
+- **未闭合项**：无（spec 全部完成）
+
+### 最终结果
+- ✅ 新建后端 4 文件：`diff.py` / `reinit.py` / `watcher.py` / `__init__.py`
+- ✅ 修改后端 4 文件：`settings.py` / `dependencies.py` / `service.py` / `app.py`
+- ✅ 修改前端 4 文件：`client.ts` / `config.ts` / `index.ts` / `SettingsPage.tsx`
+- ✅ 新建测试 5 个后端 + 1 个前端：test_diff(8) + test_reinit(10) + test_watcher(5) + test_dependencies(7) + test_service_reinit(12) + SettingsPage.reinit.test(4) = 46 测试全部 PASS
+- ✅ E2E 4 项全部通过：API 触发 reinit / ConfigWatcher 自动 reinit / 防抖验证 / 失败隔离验证
+- ✅ E2E 期间发现并修复单例组件竞态 bug：`dependencies.py` 的 `update_component` 与 `reinit.py` 的 `reinit_component` 均添加 `old is not new_instance` 检查
+- ✅ checklist 51/51 项全部通过
+- ✅ config/default.yaml 已恢复原始状态（temperature 字段全部恢复）
+
+---
 
 ## 〇、最新变更（2026-07-07 21:35）：摘要后聊天记录不更新修复
 

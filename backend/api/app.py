@@ -206,6 +206,11 @@ async def lifespan(app: FastAPI):
         app.state.services = service_state
         set_service_state(service_state)
         app.state._sim_tmpdir = _sim_tmpdir
+        # 模拟模式跳过 ReinitManager 和 ConfigWatcher（无真实配置文件监听需求）。
+        # 显式置 None，让 API 端点 _get_reinit_manager 返回 None（503），
+        # 避免依赖 getattr 的默认值语义。
+        app.state.reinit_manager = None
+        app.state.config_watcher = None
         # cxfc_router 需要显式置空，避免引用上一次启动的 manager
         try:
             cxfc_router.set_cxfc_manager(None)
@@ -685,9 +690,62 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"vLLM 预热异常（不阻断启动）: {e}")
 
+    # 初始化 ReinitManager 和 ConfigWatcher（配置热重载与组件重初始化）
+    # 任一启动失败均不阻断主服务：reinit 仍可通过 API 手动触发（watcher 不可用时）
+    reinit_manager = None
+    try:
+        from backend.core.config.reinit import ReinitManager
+
+        reinit_manager = ReinitManager(service_state, settings)
+        app.state.reinit_manager = reinit_manager
+        logger.info("ReinitManager 已启动")
+    except Exception as e:
+        logger.warning(f"ReinitManager 启动失败: {e}")
+
+    try:
+        from backend.core.config.watcher import ConfigWatcher
+
+        # 捕获主事件循环，供 watchdog 线程提交协程到主循环
+        # （参考本文件 alarm_manager 的 main_loop 模式）
+        main_loop = asyncio.get_running_loop()
+
+        def _on_config_changed():
+            """ConfigWatcher 回调：在 watchdog 线程中触发 async reinit。
+
+            通过 run_coroutine_threadsafe 将协程提交到主事件循环，
+            避免 watchdog 线程直接驱动 asyncio。
+            """
+            if reinit_manager is None:
+                return
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    reinit_manager.reinit(reload_first=True),
+                    main_loop,
+                )
+            except RuntimeError:
+                # main_loop 可能已在 shutdown 中关闭，忽略
+                pass
+
+        config_watcher = ConfigWatcher(
+            config_path="config/default.yaml",
+            callback=_on_config_changed,
+        )
+        config_watcher.start()
+        app.state.config_watcher = config_watcher
+    except Exception as e:
+        logger.warning(f"ConfigWatcher 启动失败: {e}")
+
     yield
 
     logger.info("正在关闭CXHMS服务...")
+
+    # 停止 ConfigWatcher（最先停止，避免 shutdown 期间仍触发 reinit）
+    try:
+        config_watcher = getattr(app.state, "config_watcher", None)
+        if config_watcher:
+            config_watcher.stop()
+    except Exception as e:
+        logger.warning(f"ConfigWatcher 停止失败: {e}")
 
     # 停止自动摘要任务
     try:

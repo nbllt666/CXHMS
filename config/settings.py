@@ -606,9 +606,45 @@ class Settings:
 
         return CXHMSConfig.from_dict(merged_config)
 
-    def reload_config(self, config_path: Optional[str] = None):
+    def reload_config(self, config_path: Optional[str] = None) -> None:
+        """重载配置。保持向后兼容：无返回值。
+
+        旧调用方依赖 reload_config() 返回 None 的语义，此处保持不变。
+        如需获取 diff，请调用 reload_config_with_diff()。
+        """
+        self.reload_config_with_diff(config_path)
+
+    def reload_config_with_diff(self, config_path: Optional[str] = None) -> "ConfigDiff":  # type: ignore[name-defined]
+        """重载配置并返回 ConfigDiff。
+
+        首次加载时 old_config 为 None，返回全量 diff（所有顶层段均视为"变化"）。
+        后续重载时调用 backend.core.config.diff.compute_diff 计算差异。
+
+        Args:
+            config_path: 可选的配置文件路径，未指定时使用默认查找逻辑。
+
+        Returns:
+            ConfigDiff: 描述本次重载引起的变化（changed_sections + field_changes）。
+        """
+        # 局部 import：避免 config.settings 顶部导入 backend.core.* 触发循环
+        from backend.core.config.diff import ConfigDiff, compute_diff
+
+        old_config = self._config
         self._config = self.load_config(config_path)
-        logger.info("配置已重新加载")
+
+        if old_config is None:
+            # 首次加载 → 全量 diff
+            if self._config is None:
+                diff = ConfigDiff()
+            else:
+                diff = ConfigDiff(
+                    changed_sections=set(self._config.__dict__.keys()),
+                )
+        else:
+            diff = compute_diff(old_config, self._config)
+
+        logger.info(f"配置已重新加载, diff: {diff}")
+        return diff
 
     def _backup_and_save(self, config_file: Path, repaired_config: Dict[str, Any]):
         """备份原配置文件并保存修复后的配置"""

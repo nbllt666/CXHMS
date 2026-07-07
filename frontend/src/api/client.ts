@@ -169,3 +169,49 @@ export const commonApi = {
 };
 
 export { API_BASE_URL, CONTROL_SERVICE_URL };
+
+// ========== Service reinit / config reload 类型定义 ==========
+// Task 9.4 — 配置重载与组件重新初始化相关接口契约类型
+// 对应后端 /api/service/reload-config | /api/service/reinit | /api/service/reinit/status
+
+export interface ConfigDiff {
+  changed_sections: string[];
+  field_changes: string[];
+}
+
+export interface ReinitResult {
+  affected: string[];
+  failed: string[];
+  success: boolean;
+  skipped: boolean;
+  errors: Record<string, string>;
+  warnings: string[];
+  started_at: string | null;
+  finished_at: string | null;
+  partial: boolean;
+}
+
+export interface ReinitStatus {
+  status: 'idle' | 'running';
+  current_component?: string;
+  progress?: string;
+  last_result?: ReinitResult;
+  last_at?: string | null;
+}
+
+export interface ReinitResponse {
+  status: 'accepted' | 'conflict' | 'success';
+  task_id?: string;
+  estimated_components?: string[];
+  diff?: ConfigDiff;
+  message?: string;
+  current_component?: string;
+}
+
+export interface ConfigSaveResponse {
+  status: 'success';
+  message: string;
+  diff?: ConfigDiff;
+  reinit_task_id?: string;
+  estimated_components?: string[];
+}

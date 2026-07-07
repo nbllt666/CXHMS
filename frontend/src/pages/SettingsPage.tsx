@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { RefreshCw, AlertCircle } from 'lucide-react';
 import { api } from '../api';
+import type { ConfigSaveResponse, ReinitResponse } from '../api';
 import { cn } from '../lib/utils';
 import { useThemeStore } from '../store/themeStore';
 import { PageHeader } from '../components/layout';
@@ -27,6 +29,74 @@ export function SettingsPage() {
 
   const { theme, setTheme } = useThemeStore();
   const [selectedAccent, setSelectedAccent] = useState('#3b82f6');
+
+  // Task 8.2-8.4：重新初始化按钮状态
+  const [showReinitConfirm, setShowReinitConfirm] = useState(false);
+  const [reinitPolling, setReinitPolling] = useState(false);
+  const [reinitStatusMessage, setReinitStatusMessage] = useState<string | null>(null);
+  const reinitPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Task 8.1：保存配置详细成功消息
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  // Task 8.2-8.4：重新初始化 mutation（带轮询）
+  // 显式泛型 <ReinitResponse, Error, void>：UI 不传 components，mutate() 可 0 参调用
+  const reinitMutation = useMutation<ReinitResponse, Error, void>({
+    mutationFn: () => api.reinitComponents(),
+    onSuccess: (data: ReinitResponse) => {
+      if (data.status === 'accepted') {
+        setShowReinitConfirm(false);
+        setReinitPolling(true);
+        setReinitStatusMessage('重新初始化已启动，正在后台执行...');
+
+        // 轮询 reinit 状态，2s 一次直到 idle
+        const poll = async () => {
+          try {
+            const status = await api.getReinitStatus();
+            if (status.status === 'idle') {
+              setReinitPolling(false);
+              if (status.last_result) {
+                if (status.last_result.success) {
+                  setReinitStatusMessage(
+                    `重新初始化完成：成功重初始化 ${status.last_result.affected.length} 个组件`
+                  );
+                } else {
+                  setReinitStatusMessage(
+                    `部分完成：成功 ${status.last_result.affected.length}，失败 ${status.last_result.failed.length}\n失败组件：${status.last_result.failed.join(', ')}`
+                  );
+                }
+              } else {
+                setReinitStatusMessage('重新初始化完成');
+              }
+            } else {
+              // 仍在运行，继续轮询
+              reinitPollTimerRef.current = setTimeout(poll, 2000);
+            }
+          } catch {
+            setReinitPolling(false);
+            setReinitStatusMessage('查询重新初始化状态失败');
+          }
+        };
+        reinitPollTimerRef.current = setTimeout(poll, 2000);
+      } else if (data.status === 'conflict') {
+        setReinitStatusMessage(
+          `重新初始化正在执行中，当前组件：${data.current_component || '未知'}`
+        );
+      }
+    },
+    onError: (error: Error) => {
+      setReinitStatusMessage(`重新初始化失败: ${error.message}`);
+    },
+  });
+
+  // 清理轮询定时器
+  useEffect(() => {
+    return () => {
+      if (reinitPollTimerRef.current) {
+        clearTimeout(reinitPollTimerRef.current);
+      }
+    };
+  }, []);
 
   // 模块作用域数组移入组件以支持 i18n
   const sections: SettingSection[] = [
@@ -258,7 +328,9 @@ export function SettingsPage() {
       return;
     }
     setSaveStatus('saving');
+    setSaveMessage(null);
     try {
+      let result: ConfigSaveResponse;
       if (activeSection === 'vector') {
         const vectorPayload: Record<string, unknown> = {
           backend: vectorConfig.backend,
@@ -281,20 +353,32 @@ export function SettingsPage() {
           vectorPayload.qdrant_port = vectorConfig.qdrantPort;
         }
 
-        await api.updateServiceConfig({
+        result = await api.updateServiceConfig({
           vector: vectorPayload,
         });
-      } else if (activeSection === 'llm') {
-        await api.updateServiceConfig({
+      } else {
+        result = await api.updateServiceConfig({
           models: modelsConfig,
           model_defaults: modelDefaults,
           llm_params: llmParams,
         });
         localStorage.setItem('cxhms-current-model', modelsConfig.main.model);
       }
+
+      // Task 8.1：根据返回结构生成详细成功消息（简化方案，不轮询）
+      let message = '配置已生效';
+      if (result.message === 'Configuration saved, manual reinit required') {
+        message = '配置已保存，需手动重新初始化';
+      } else if (result.estimated_components && result.estimated_components.length > 0) {
+        message = `配置已生效（正在重新初始化：${result.estimated_components.join(', ')}）`;
+      } else if (result.reinit_task_id) {
+        message = '配置已生效，正在后台重新初始化...';
+      }
+      setSaveMessage(message);
       setSaveStatus('saved');
     } catch {
       setSaveStatus('error');
+      setSaveMessage(null);
     }
     saveStatusTimeoutRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
   };
@@ -307,7 +391,28 @@ export function SettingsPage() {
 
   return (
     <div className={`max-w-6xl mx-auto ${themeTransition ? 'transition-colors duration-300' : ''}`}>
-      <PageHeader title={t('settings.title')} description={t('settings.pageDescription')} />
+      <PageHeader
+        title={t('settings.title')}
+        description={t('settings.pageDescription')}
+        actions={
+          <Button
+            onClick={() => setShowReinitConfirm(true)}
+            disabled={!isBackendRunning || reinitPolling}
+            variant="secondary"
+            icon={
+              <RefreshCw className={cn('w-4 h-4', reinitPolling && 'animate-spin')} />
+            }
+          >
+            {reinitPolling ? '正在重新初始化...' : '重新初始化'}
+          </Button>
+        }
+      />
+
+      {reinitStatusMessage && (
+        <div className="mb-4 p-3 rounded-[var(--radius-md)] bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] text-sm text-[var(--color-text-secondary)] whitespace-pre-line">
+          {reinitStatusMessage}
+        </div>
+      )}
 
       <div className="flex gap-6">
         <nav className="w-56 flex-shrink-0 space-y-1">
@@ -582,6 +687,11 @@ export function SettingsPage() {
                       {saveStatus === 'saved' ? t('settings.savedLabel') : t('settings.saveConfig')}
                     </Button>
                   </div>
+                  {saveStatus === 'saved' && saveMessage && (
+                    <p className="text-sm text-[var(--color-text-secondary)] mt-2 text-right">
+                      {saveMessage}
+                    </p>
+                  )}
                 </CardBody>
               </Card>
             </div>
@@ -715,12 +825,54 @@ export function SettingsPage() {
                       {saveStatus === 'saved' ? t('settings.savedLabel') : t('settings.saveConfig')}
                     </Button>
                   </div>
+                  {saveStatus === 'saved' && saveMessage && (
+                    <p className="text-sm text-[var(--color-text-secondary)] mt-2 text-right">
+                      {saveMessage}
+                    </p>
+                  )}
                 </CardBody>
               </Card>
             </div>
           )}
         </div>
       </div>
+
+      {showReinitConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-6 max-w-md mx-4">
+            <h3 className="text-lg font-semibold mb-2 text-[var(--color-text-primary)]">
+              确认重新初始化
+            </h3>
+            <p className="text-sm text-[var(--color-text-secondary)] mb-4">
+              这将重初始化以下组件（无需重启）：
+            </p>
+            <ul className="text-sm space-y-1 mb-4 max-h-48 overflow-y-auto text-[var(--color-text-secondary)]">
+              <li>• model_router — 模型路由器</li>
+              <li>• llm_client — LLM 客户端</li>
+              <li>• memory_manager — 记忆管理器（含向量存储）</li>
+              <li>• context_manager — 上下文管理器</li>
+              <li>• secondary_router — 副模型路由器</li>
+              <li>• acp_manager — ACP 管理器</li>
+              <li>• cxfc_manager — CXFC 管理器</li>
+            </ul>
+            <p className="text-xs text-yellow-600 dark:text-yellow-500 mb-4 flex items-center gap-1">
+              <AlertCircle className="w-3 h-3 flex-shrink-0" />
+              注意：ACP/CXFC 重初始化可能断开活动连接
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setShowReinitConfirm(false)}>
+                取消
+              </Button>
+              <Button
+                onClick={() => reinitMutation.mutate()}
+                loading={reinitMutation.isPending}
+              >
+                确认重新初始化
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

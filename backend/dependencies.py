@@ -1,8 +1,12 @@
+import inspect
+import logging
 import threading
 from typing import Optional, Any, Dict
 
 from fastapi import HTTPException, Request
 from fastapi import Depends
+
+logger = logging.getLogger(__name__)
 
 
 class ServiceState:
@@ -16,6 +20,56 @@ class ServiceState:
         self.mcp_manager = None
         self.model_router = None
         self.cxfc_manager: Optional[Any] = None
+        # 组件原子替换锁：保护并发场景下的属性赋值
+        self._lock = threading.Lock()
+
+    def update_component(self, name: str, new_instance: Any) -> Optional[Any]:
+        """原子替换某个组件实例，返回旧实例。
+
+        线程安全：使用 _lock 保护属性赋值。
+        不在锁内调用旧实例的 close()/shutdown()（避免死锁）。
+        旧实例的安全关闭在锁外执行；若旧实例的 close 是 async 协程，
+        则跳过同步关闭（应由调用方在事件循环中处理）。
+
+        Args:
+            name: ServiceState 属性名（如 "memory_manager"）。
+            new_instance: 新的组件实例。
+
+        Returns:
+            被替换的旧实例（若无则返回 None）。
+        """
+        with self._lock:
+            old = getattr(self, name, None)
+            setattr(self, name, new_instance)
+        # 锁外安全关闭旧实例，避免长 IO 拖累锁
+        # 单例组件（如 model_router）old 与 new_instance 是同一对象，
+        # reinit 方法已自行 close/reinitialize，此处跳过避免关闭刚初始化的实例
+        if old is not None and old is not new_instance:
+            self._safe_close(old)
+        return old
+
+    @staticmethod
+    def _safe_close(instance: Any) -> None:
+        """安全关闭实例，失败仅记录日志。
+
+        优先调用 shutdown()；若不存在则尝试 close()。
+        若 close() 是协程函数，则跳过（async 关闭应由调用方处理）。
+        """
+        try:
+            if hasattr(instance, "shutdown"):
+                instance.shutdown()
+            elif hasattr(instance, "close"):
+                if inspect.iscoroutinefunction(instance.close):
+                    logger.debug(
+                        f"{type(instance).__name__} 的 close() 是 async，"
+                        "已在同步 update_component 中跳过，由调用方处理"
+                    )
+                else:
+                    instance.close()
+        except Exception as e:
+            logger.warning(
+                f"关闭旧实例失败 [{type(instance).__name__}/{type(e).__name__}]: {e}"
+            )
 
 
 _service_state: Optional[ServiceState] = None

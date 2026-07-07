@@ -34,3 +34,11 @@ export { cxfcApi } from './cxfc';
 export { configApi } from './config';
 // 基础设施
 export { apiClient, controlClient, API_BASE_URL, CONTROL_SERVICE_URL } from './client';
+// Task 9.4：重新导出 reinit / config reload 相关类型，供页面层使用
+export type {
+  ConfigDiff,
+  ReinitResult,
+  ReinitStatus,
+  ReinitResponse,
+  ConfigSaveResponse,
+} from './client';

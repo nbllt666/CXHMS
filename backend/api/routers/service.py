@@ -4,16 +4,19 @@
 支持使用内置 Conda 环境或系统 Python
 """
 
+import asyncio
 import os
 import signal
 import subprocess
 import sys
 import time
+import uuid
 from dataclasses import asdict
-from typing import Optional
+from typing import Any, Dict, Optional, Set
 
 import psutil
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from backend.core.logging_config import get_contextual_logger
@@ -485,8 +488,16 @@ async def get_service_config():
 
 
 @router.post("/service/config")
-async def update_service_config(config: dict):
-    """更新服务配置（需要重启生效）"""
+async def update_service_config(request: Request, config: dict):
+    """更新服务配置（可选自动触发组件重初始化）。
+
+    请求体：
+        原有配置字段（vector/models/llm_params/system/...）+
+        auto_reinit: bool = True  # 是否在保存后自动触发异步 reinit
+
+    auto_reinit=True  → reload 配置 + 异步触发 reinit，返回 diff 与 reinit_task_id
+    auto_reinit=False → 仅保存 YAML，返回 "manual reinit required"
+    """
     try:
         # 基本配置验证
         if not config:
@@ -495,6 +506,9 @@ async def update_service_config(config: dict):
             raise HTTPException(status_code=400, detail="port 必须为整数")
         if "host" in config and not isinstance(config["host"], str):
             raise HTTPException(status_code=400, detail="host 必须为字符串")
+
+        # 解析 auto_reinit（默认 True），从 config 中弹出避免写入 YAML
+        auto_reinit = config.pop("auto_reinit", True)
 
         import yaml
 
@@ -589,10 +603,245 @@ async def update_service_config(config: dict):
         with open(config_path, "w", encoding="utf-8") as f:
             yaml.dump(current_config, f, allow_unicode=True, sort_keys=False)
 
-        return {"status": "success", "message": "Configuration updated, restart to apply changes"}
+        # auto_reinit=False → 仅保存，返回提示信息
+        if not auto_reinit:
+            return {
+                "status": "success",
+                "message": "Configuration saved, manual reinit required",
+            }
+
+        # auto_reinit=True → reload 配置并异步触发 reinit
+        from config.settings import settings
+
+        try:
+            diff = settings.reload_config_with_diff()
+        except Exception as e:
+            logger.error(f"auto_reinit: reload 配置失败: {e}", exc_info=True)
+            return {
+                "status": "success",
+                "message": "Configuration saved, but reload failed",
+                "error": str(e),
+            }
+
+        reinit_manager = _get_reinit_manager(request)
+        if reinit_manager is None:
+            # reinit_manager 不可用 → 仅返回 diff，提示需手动重启
+            return {
+                "status": "success",
+                "message": "Configuration saved, reinit_manager unavailable",
+                "diff": _diff_to_dict(diff),
+            }
+
+        # 并发保护：若已有 reinit 在执行，不重复触发
+        rm_status = reinit_manager.get_status()
+        if rm_status.get("status") == "running":
+            return {
+                "status": "success",
+                "message": "Configuration saved, reinit already in progress",
+                "diff": _diff_to_dict(diff),
+                "current_component": rm_status.get("current_component"),
+            }
+
+        # 决策组件集合
+        try:
+            component_set = reinit_manager.decide_components(diff)
+        except Exception as e:
+            logger.error(f"auto_reinit: decide_components 失败: {e}", exc_info=True)
+            return {
+                "status": "success",
+                "message": "Configuration saved, decide_components failed",
+                "diff": _diff_to_dict(diff),
+                "error": str(e),
+            }
+
+        # 空集合 → 跳过 reinit
+        if not component_set:
+            return {
+                "status": "success",
+                "message": "Configuration saved, no components need reinit",
+                "diff": _diff_to_dict(diff),
+                "reinit_skipped": True,
+            }
+
+        # 异步触发 reinit
+        task_id = str(uuid.uuid4())
+        task = asyncio.create_task(
+            reinit_manager.reinit(components=component_set, diff=diff)
+        )
+        reinit_manager._current_task = task
+
+        return {
+            "status": "accepted",
+            "message": "Configuration saved, reinit triggered",
+            "diff": _diff_to_dict(diff),
+            "reinit_task_id": task_id,
+            "estimated_components": list(component_set),
+        }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save config: {str(e)}")
+
+
+# --------------------------------------------------------------------------- #
+# 配置热重载与组件重初始化端点（Task 5）
+# --------------------------------------------------------------------------- #
+
+
+def _diff_to_dict(diff: Any) -> Optional[Dict[str, Any]]:
+    """将 ConfigDiff 转换为可 JSON 序列化的 dict。
+
+    Args:
+        diff: ConfigDiff 实例（或 None）。
+
+    Returns:
+        {"changed_sections": [...], "field_changes": [...]} 或 None。
+    """
+    if diff is None:
+        return None
+    return {
+        "changed_sections": list(diff.changed_sections),
+        "field_changes": list(diff.field_changes),
+    }
+
+
+def _get_reinit_manager(request: Request) -> Any:
+    """从 app.state 获取 ReinitManager 实例。
+
+    ReinitManager 由 lifespan 挂载到 app.state.reinit_manager；
+    若未挂载（旧版兼容或启动失败），返回 None。
+    """
+    return getattr(request.app.state, "reinit_manager", None)
+
+
+@router.post("/service/reload-config")
+async def reload_config():
+    """手动触发配置文件重载（不重初始化组件），返回 diff。
+
+    读取 config/default.yaml 与环境变量，重新构造 CXHMSConfig 并替换
+    settings 中的旧实例。返回 ConfigDiff 描述本次重载引起的变化。
+    """
+    from config.settings import settings
+
+    try:
+        diff = settings.reload_config_with_diff()
+        return {
+            "status": "success",
+            "diff": _diff_to_dict(diff),
+        }
+    except Exception as e:
+        logger.error(f"重载配置失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"重载失败: {str(e)}")
+
+
+@router.post("/service/reinit")
+async def reinit_components(request: Request, body: Optional[dict] = None):
+    """手动触发组件重初始化（异步执行，返回 202）。
+
+    请求体（可选）：
+        {
+            "components": ["model_router", "llm_client"],  # 显式指定组件
+            "reload_first": false                          # 是否先 reload 配置
+        }
+
+    行为：
+        1. 检查 reinit_manager 是否可用（503 if not）
+        2. 并发保护：若已有任务在执行，返回 409 conflict
+        3. 决策组件集合：
+           - components 显式指定 → 使用该集合
+           - reload_first=True → reload_config_with_diff 后用 decide_components
+           - 都未指定 → 全量 REINIT_ORDER
+        4. 空集合 → 返回 skipped（200）
+        5. 非空集合 → asyncio.create_task 异步执行，返回 202 accepted + task_id
+    """
+    body = body or {}
+    components = body.get("components")
+    reload_first = body.get("reload_first", False)
+
+    reinit_manager = _get_reinit_manager(request)
+    if reinit_manager is None:
+        raise HTTPException(status_code=503, detail="重初始化管理器未启用")
+
+    # 并发保护：检查是否已有任务在执行
+    status = reinit_manager.get_status()
+    if status.get("status") == "running":
+        return JSONResponse(
+            status_code=409,
+            content={
+                "status": "conflict",
+                "message": "reinit in progress",
+                "current_component": status.get("current_component"),
+            },
+        )
+
+    # 决策 diff
+    diff = None
+    if reload_first:
+        from config.settings import settings
+
+        try:
+            diff = settings.reload_config_with_diff()
+        except Exception as e:
+            logger.error(f"reinit 前 reload 配置失败: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"重载配置失败: {str(e)}")
+
+    # 决策组件集合
+    if components is not None:
+        # 显式指定优先
+        component_set: Optional[Set[str]] = set(components)
+    elif diff is not None:
+        # 由 diff 决定
+        component_set = reinit_manager.decide_components(diff)
+    else:
+        # 全量
+        component_set = None
+
+    # diff 为空且 components 为 None 时，component_set 为 None → 全量
+    # 若显式指定了 components 或由 diff 决策出空集合 → 跳过
+    if component_set is not None and len(component_set) == 0:
+        return {
+            "status": "success",
+            "message": "no components need reinit",
+            "diff": _diff_to_dict(diff),
+            "result": {"affected": [], "skipped": True, "success": True},
+        }
+
+    # 异步执行 reinit
+    task_id = str(uuid.uuid4())
+    task = asyncio.create_task(
+        reinit_manager.reinit(components=component_set, diff=diff)
+    )
+    # 让 manager 跟踪当前 task（get_status 据此判定 running）
+    reinit_manager._current_task = task
+
+    # 计算预计影响的组件列表
+    if component_set is not None:
+        estimated = list(component_set)
+    else:
+        estimated = list(reinit_manager.REINIT_ORDER)
+
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "accepted",
+            "task_id": task_id,
+            "estimated_components": estimated,
+            "diff": _diff_to_dict(diff),
+        },
+    )
+
+
+@router.get("/service/reinit/status")
+async def get_reinit_status(request: Request):
+    """查询重初始化状态。
+
+    返回 ReinitManager.get_status() 的内容：
+        运行中：{"status": "running", "current_component": ..., "progress": "N/M"}
+        空闲：  {"status": "idle", "last_result": ..., "last_at": ...}
+    """
+    reinit_manager = _get_reinit_manager(request)
+    if reinit_manager is None:
+        raise HTTPException(status_code=503, detail="重初始化管理器未启用")
+    return reinit_manager.get_status()
 
 
 @router.get("/service/environment")

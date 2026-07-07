@@ -25,13 +25,11 @@ database:
   acp_db: data/acp
   echo: false
 llm:
-  # 工具调用最大轮数（流式与非流式统一），防止无限循环和高成本
   max_tool_rounds: 10
+  temperature: 0.7
 models:
   main:
     provider: vllm
-    # 宿主机直连 Docker vLLM: http://localhost:8002 (当前使用)
-    # Docker 网络访问 vLLM: http://vllm:8000
     host: http://localhost:8002
     model: gemma4-e4b
     apiKey: ''
@@ -43,8 +41,6 @@ models:
     api_key: ''
   embedding:
     provider: vllm
-    # 宿主机直连 Docker vLLM Embedding: http://localhost:8101
-    # Docker 网络访问 vLLM Embedding: http://vllm-embedding:8000
     host: http://localhost:8101
     model: /models/Qwen3-Embedding-0.6B
     apiKey: ''
@@ -116,8 +112,6 @@ memory:
     port: 6333
     vector_size: 768
   weaviate:
-    # 宿主机直连: localhost + 8090
-    # Docker 网络访问: weaviate + 8080
     host: localhost
     port: 8090
     grpc_port: 50061
