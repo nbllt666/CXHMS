@@ -2,6 +2,27 @@
 
 > 遵循 AC 范式 v6 rules-3 §六 契约版本化规则。所有契约变更必须记录版本号、变更内容、变更原因、影响范围。
 
+## [1.1.0] - 2026-07-14
+
+### 变更内容
+- **数据契约新增（MINOR）**：新增 `anythingllm_workspace.json`（AnythingLLM 兼容 workspace 数据契约）和 `openai_chat_completion.json`（OpenAI ChatCompletion 响应契约），共 2 份 JSON Schema (draft-07+)。
+- **接口契约新增（MINOR）**：新增 `anythingllm_service.pyi`，包含 11 个端点方法签名 + 1 个 verify_api_key 认证依赖，对应 AnythingLLM Developer API Phase 1 兼容层。
+- **测试套件新增**：新增 `test_anythingllm_contract.py`，校验 workspace/chat_completion schema + 接口存根 11 签名完整性。
+
+### 变更原因
+- 用户需求：加入 AnythingLLM 兼容 API，使支持 AnythingLLM API 的工具/客户端可直接对接 CXHMS。
+- spec 三件套已通过 GN-004 第五次独立审查（14/14 检查点 PASS），人类已显式授权创建 public/ 下契约文件（rules-0 §四-10）。
+
+### 影响范围
+- MINOR 变更（新增可选接口）：通知依赖模块，不阻断。新增的契约独立于现有 5 份 schema 和 5 份 .pyi，不影响现有模块。
+- 下游影响：AnythingLLM 兼容路由模块（`backend/api/routers/anythingllm.py`）的实现必须严格匹配本批契约。
+
+### 闭合判据
+- [x] `anythingllm_workspace.json` 存在且通过 jsonschema 自校验
+- [x] `openai_chat_completion.json` 存在且通过 jsonschema 自校验
+- [x] `anythingllm_service.pyi` 存在且包含 11 个端点方法签名 + verify_api_key
+- [x] `test_anythingllm_contract.py` 全部 PASS
+
 ## [1.0.2] - 2026-07-04
 
 ### 变更内容

@@ -321,12 +321,19 @@ def register_master_tools():
     # 10. acp_send_message - 向远程 Agent 发送消息
     tool_registry.register(
         name="acp_send_message",
-        description="向远程 Agent 发送消息。",
+        description=(
+            "向远程 ACP Agent 发送消息。当主系统收到外部 ACP Agent 发来的消息（系统消息形式，"
+            "内容形如 [ACP 消息] 来自 xxx: yyy）需要回复时，调用此工具向指定 Agent 发送回复。"
+            "消息将通过 HTTP 投递到目标 Agent 的 /acp/message 端点。"
+        ),
         parameters={
             "type": "object",
             "properties": {
-                "agent_id": {"type": "string", "description": "目标 Agent ID"},
-                "message": {"type": "string", "description": "要发送的消息内容"},
+                "agent_id": {
+                    "type": "string",
+                    "description": "目标 Agent ID（来自 ACP 系统消息的 from_agent_id 字段）",
+                },
+                "message": {"type": "string", "description": "要发送的消息内容（纯文本）"},
                 "message_type": {
                     "type": "string",
                     "enum": ["chat", "task", "query"],
@@ -338,8 +345,12 @@ def register_master_tools():
         },
         function=acp_send_message,
         category="acp",
-        tags=["acp", "message", "network"],
-        examples=["向 Agent 发送消息", "请求其他 Agent 帮助处理任务"],
+        tags=["acp", "message", "network", "reply"],
+        examples=[
+            "回复 ACP Agent 的消息",
+            "向远程 Agent 发送消息",
+            "请求其他 Agent 帮助处理任务",
+        ],
     )
 
     # 11. acp_create_group - 创建 Agent 群组
@@ -755,7 +766,11 @@ async def acp_disconnect(connection_id: str) -> Dict[str, Any]:
 async def acp_send_message(
     agent_id: str, message: str, message_type: str = "chat"
 ) -> Dict[str, Any]:
-    """向远程 Agent 发送消息"""
+    """向远程 Agent 发送消息
+
+    通过 ACP 协议向指定 Agent 投递消息。若目标 Agent 已注册（有 host:port），
+    会通过 HTTP /acp/message 端点投递；否则仅存入本地消息历史。
+    """
     acp = get_acp_manager()
     if not acp:
         return {"error": "ACP 管理器不可用"}
@@ -767,11 +782,13 @@ async def acp_send_message(
 
         msg = ACPMessageInfo(
             id=str(uuid.uuid4()),
+            msg_type=message_type,
             from_agent_id=acp._local_agent_id,
+            from_agent_name=acp._local_agent_name,
             to_agent_id=agent_id,
-            message_type=message_type,
-            content=message,
-            created_at=datetime.now().isoformat(),
+            content={"text": message},
+            timestamp=datetime.now().isoformat(),
+            is_sent=True,
         )
 
         await acp.send_message(msg)
@@ -781,6 +798,7 @@ async def acp_send_message(
             "message_id": msg.id,
             "to_agent_id": agent_id,
             "message_type": message_type,
+            "message": "消息已发送",
         }
     except Exception as e:
         return {"error": f"发送消息失败: {str(e)}"}

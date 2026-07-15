@@ -234,6 +234,7 @@ async def generate_chat_stream(
     state: ChatStreamState,
     is_cancelled: Optional[Callable[[], bool]] = None,
     on_tool_result: Optional[Callable[[str, Dict, Dict], None]] = None,
+    is_background: bool = False,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """共享聊天流核心逻辑，产出标准化事件字典。
 
@@ -290,6 +291,7 @@ async def generate_chat_stream(
                 ),
                 tools=tools if tools else None,
                 enable_thinking=agent_config.get("enable_thinking", False),
+                is_background=is_background,
             )
             async for chunk in current_upstream:
                 # 检查取消（流式过程中也可能被取消）

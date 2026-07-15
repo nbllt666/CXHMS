@@ -1,0 +1,181 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cxhms.local/schema/anythingllm_document.json",
+  "title": "AnythingLLMDocument",
+  "description": "AnythingLLM Document API 兼容端点文档数据契约。Phase 2 新增。定义文档响应结构、字段约束、错误码与异常契约。doc_name 在文档集合中必须唯一（由实现层保证），格式为 {title}-{uuid}.json。",
+  "type": "object",
+  "required": [
+    "doc_name",
+    "title",
+    "doc_author",
+    "description",
+    "word_count",
+    "token_count_estimate",
+    "folder",
+    "created_at",
+    "is_deleted"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "doc_name": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^.+-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.json$",
+      "description": "文档唯一名（含 hash），格式 {title}-{uuid}.json。在同一文档集合中必须唯一，唯一性由实现层（数据库约束 / 集合去重）保证。"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "文档标题（人类可读，不含 hash 与扩展名）"
+    },
+    "doc_author": {
+      "type": "string",
+      "default": "Unknown",
+      "description": "文档作者。未知时填 'Unknown'。"
+    },
+    "description": {
+      "type": "string",
+      "default": "Unknown",
+      "description": "文档描述。未知时填 'Unknown'。"
+    },
+    "doc_source": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "文档来源描述（如 'upload' / 'raw-text' / 'URI'），可为 null。"
+    },
+    "mime_type": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "MIME 类型（如 'text/plain' / 'application/pdf'），可为 null。"
+    },
+    "word_count": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "文档字数（解析后纯文本的字数统计），必须 >= 0。"
+    },
+    "token_count_estimate": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Token 数估算值（用于嵌入成本预估），必须 >= 0。"
+    },
+    "text_content": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "解析后的纯文本内容。未解析或不可用时为 null。"
+    },
+    "memory_id": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "default": null,
+      "description": "关联的 permanent_memory_id。未关联时为 null。"
+    },
+    "folder": {
+      "type": "string",
+      "minLength": 1,
+      "default": "custom-documents",
+      "description": "文档所属文件夹名，默认 'custom-documents'。"
+    },
+    "file_path": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "文档在存储层（文件系统 / 对象存储）的路径。无物理文件时为 null。"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "创建时间，ISO 8601 格式字符串（如 '2026-07-15T10:00:00Z'）。"
+    },
+    "updated_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "default": null,
+      "description": "最后更新时间，ISO 8601 格式字符串。未更新时为 null。"
+    },
+    "is_deleted": {
+      "type": "boolean",
+      "default": false,
+      "description": "软删除标记。true 表示已逻辑删除（不再出现在常规列表中）。"
+    }
+  },
+  "definitions": {
+    "error_codes": {
+      "type": "object",
+      "description": "Document API 错误码定义。响应体应遵循 public/schema/error.json 结构，http_status 字段对应以下值。",
+      "properties": {
+        "DOCUMENT_NOT_FOUND": {
+          "const": 404,
+          "description": "文档不存在：GET /api/v1/document/{docName} 或 DELETE /api/v1/document/{docName} 找不到对应 doc_name。"
+        },
+        "FILE_TOO_LARGE": {
+          "const": 413,
+          "description": "文件超限：POST /api/v1/document/upload 上传文件大小超过 max_file_size 配置项。"
+        },
+        "INTERNAL_ERROR": {
+          "const": 500,
+          "description": "内部错误：解析失败、数据库写入失败、IO 异常等未分类的服务端错误。"
+        }
+      },
+      "additionalProperties": false
+    },
+    "exceptions": {
+      "type": "object",
+      "description": "Document API 异常契约。调用方必须处理以下约定的异常（接口契约 .pyi 中每个端点显式声明）。",
+      "properties": {
+        "HTTPException_404": {
+          "type": "object",
+          "properties": {
+            "status_code": {"const": 404},
+            "trigger_endpoints": {
+              "type": "array",
+              "items": {"type": "string"},
+              "enum": [
+                "GET /api/v1/document/{docName}",
+                "DELETE /api/v1/document/{docName}",
+                "POST /api/v1/workspace/{slug}/update-embeddings"
+              ]
+            },
+            "reason": {"type": "string"}
+          }
+        },
+        "HTTPException_413": {
+          "type": "object",
+          "properties": {
+            "status_code": {"const": 413},
+            "trigger_endpoints": {
+              "type": "array",
+              "items": {"type": "string"},
+              "enum": ["POST /api/v1/document/upload"]
+            },
+            "reason": {"type": "string"}
+          }
+        },
+        "HTTPException_500": {
+          "type": "object",
+          "properties": {
+            "status_code": {"const": 500},
+            "trigger_endpoints": {
+              "type": "array",
+              "items": {"type": "string"},
+              "enum": [
+                "POST /api/v1/document/upload",
+                "POST /api/v1/document/raw-text"
+              ]
+            },
+            "reason": {"type": "string"}
+          }
+        },
+        "sqlite3_Error": {
+          "type": "object",
+          "description": "MemoryManager.search_all_memories 抛出，数据库查询失败。",
+          "properties": {
+            "trigger_method": {"const": "search_all_memories"},
+            "reason": {"type": "string"}
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

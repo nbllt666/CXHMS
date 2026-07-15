@@ -163,14 +163,14 @@ class ModelRouter:
             provider = config.provider.lower()
 
             if provider == "ollama":
-                async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
+                async with httpx.AsyncClient(timeout=10.0, trust_env=False, verify=False) as client:
                     response = await client.get(f"{config.host}/api/tags")
                     available = response.status_code == 200
                     if not available:
                         error_msg = f"HTTP {response.status_code}"
 
             elif provider == "vllm":
-                async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
+                async with httpx.AsyncClient(timeout=10.0, trust_env=False, verify=False) as client:
                     response = await client.get(f"{config.host}/health")
                     available = response.status_code == 200
                     if not available:

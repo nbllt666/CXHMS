@@ -20,7 +20,12 @@ from backend.core.chat.stream import ChatStreamState, generate_chat_stream
 from backend.core.llm.tools import is_empty_tool_args, parse_text_tool_calls, strip_text_tool_calls
 from backend.core.logging_config import get_contextual_logger
 from backend.core.tools import tool_registry
-from backend.core.tools.builtin import BUILTIN_TOOL_NAMES, call_builtin_tool, get_builtin_tools
+from backend.core.tools.builtin import (
+    BUILTIN_TOOL_NAMES,
+    call_builtin_tool,
+    call_builtin_tool_async,
+    get_builtin_tools,
+)
 from backend.core.tools.graph_tools import set_current_agent_id
 
 logger = get_contextual_logger(__name__)
@@ -153,7 +158,7 @@ def _auto_extract_memory(user_message: str, assistant_response: str) -> Optional
     return f"用户信息: {', '.join(extracted_parts)} (来源: {user_message[:100]})"
 
 
-def _try_auto_store_memory(
+async def _try_auto_store_memory(
     user_message: str,
     assistant_response: str,
     llm,
@@ -174,7 +179,8 @@ def _try_auto_store_memory(
     try:
         memory_content = _auto_extract_memory(user_message, assistant_response)
         if memory_content:
-            result = tool_registry.call_tool(
+            # 必须用异步版本，避免阻塞事件循环——见变更文档 20260714_模块0_修复async上下文同步工具调用死锁
+            result = await tool_registry.call_tool_async(
                 "write_long_term_memory",
                 {"content": memory_content, "importance": 3},
             )
@@ -201,6 +207,22 @@ def _get_tools_for_agent(agent_id: str) -> List[Dict]:
         "set_alarm", "mono", "write_permanent_memory",
         "acp_list_agents", "acp_connect", "acp_disconnect", "acp_send_message",
         "acp_create_group", "acp_join_group", "acp_leave_group",
+        # 图数据库工具 - 用户图
+        "user_graph_create_entity", "user_graph_create_relation",
+        "user_graph_query_entities", "user_graph_find_paths",
+        "user_graph_search_related_memories",
+        # 图数据库工具 - 事物图
+        "thing_graph_create_entity", "thing_graph_create_relation",
+        "thing_graph_query_entities", "thing_graph_find_paths",
+        "thing_graph_search_related_memories",
+        # 图数据库工具 - 概念图
+        "concept_graph_create_entity", "concept_graph_create_relation",
+        "concept_graph_query_entities", "concept_graph_find_paths",
+        "concept_graph_search_related_memories",
+        # 图数据库工具 - 事件图
+        "event_graph_create_entity", "event_graph_create_relation",
+        "event_graph_query_entities", "event_graph_find_paths",
+        "event_graph_search_related_memories",
     }
     main_tools = []
     for tool_name in main_tool_names:
@@ -469,12 +491,12 @@ async def chat(request: ChatRequest):
                         except Exception:
                             tool_args = {}
 
-                # 执行工具
+                # 执行工具（必须用异步版本，避免阻塞事件循环——见变更文档 20260714_模块0_修复async上下文同步工具调用死锁）
                 try:
                     if tool_name in BUILTIN_TOOL_NAMES:
-                        tool_result = call_builtin_tool(tool_name, tool_args or {})
+                        tool_result = await call_builtin_tool_async(tool_name, tool_args or {})
                     else:
-                        tool_result = tool_registry.call_tool(tool_name, tool_args)
+                        tool_result = await tool_registry.call_tool_async(tool_name, tool_args)
                 except Exception as e:
                     logger.warning(f"工具 {tool_name} 执行失败: {e}")
                     tool_result = {"success": False, "error": str(e)}
@@ -500,7 +522,7 @@ async def chat(request: ChatRequest):
         _t8 = time.monotonic()
 
         # 11. 当 LLM 不支持 tools 时，自动提取并存储记忆
-        _try_auto_store_memory(request.message, final_response, llm, session_id)
+        await _try_auto_store_memory(request.message, final_response, llm, session_id)
         _t9 = time.monotonic()
         logger.info(
             f"[CHAT_TIMING_POST] add_asst={int((_t8-_t7)*1000)}ms auto_store={int((_t9-_t8)*1000)}ms"

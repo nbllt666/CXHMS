@@ -13,6 +13,7 @@ from typing import Optional, Dict, Any
 class WeaviateConfig:
     url: str = "http://localhost:8080"
     api_key: Optional[str] = None
+    grpc_port: int = 50061
     vector_dim: int = 768
     batch_size: int = 100
     ef_construction: int = 128
@@ -60,13 +61,14 @@ def get_graph_config(agent_id: Optional[str] = None) -> GraphConfig:
             if hasattr(unified, 'graph') and unified.graph.enabled:
                 gc = unified.graph
                 _config = GraphConfig(
-                    database_path=gc.database_path,
+                    database_path=gc.db_path,
                     auto_create_schema=gc.auto_create_schema,
                     pool_size=gc.pool_size,
                     timeout=gc.timeout,
                     weaviate=WeaviateConfig(
                         url=gc.weaviate.url,
                         api_key=gc.weaviate.api_key,
+                        grpc_port=gc.weaviate.grpc_port,
                         vector_dim=gc.weaviate.vector_dim,
                         batch_size=gc.weaviate.batch_size,
                         ef_construction=gc.weaviate.ef_construction,
@@ -99,8 +101,9 @@ def _load_config_from_env() -> GraphConfig:
         pool_size=int(os.getenv("GRAPH_POOL_SIZE", "10")),
         timeout=int(os.getenv("GRAPH_TIMEOUT", "30")),
         weaviate=WeaviateConfig(
-            url=os.getenv("WEAVIATE_URL", "http://localhost:8080"),
+            url=os.getenv("WEAVIATE_URL", "http://localhost:8090"),
             api_key=os.getenv("WEAVIATE_API_KEY"),
+            grpc_port=int(os.getenv("WEAVIATE_GRPC_PORT", "50061")),
             vector_dim=int(os.getenv("WEAVIATE_VECTOR_DIM", "768")),
             batch_size=int(os.getenv("WEAVIATE_BATCH_SIZE", "100")),
             ef_construction=int(os.getenv("WEAVIATE_EF_CONSTRUCTION", "128")),

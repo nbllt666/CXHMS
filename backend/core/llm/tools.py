@@ -251,7 +251,8 @@ class LLMTools:
                 arguments = json.loads(arguments)
             tool_call_id = tool_call.get("id", "")
 
-            result = tool_registry.call_tool(tool_name, arguments)
+            # 必须用异步版本，避免阻塞事件循环——见变更文档 20260714_模块0_修复async上下文同步工具调用死锁
+            result = await tool_registry.call_tool_async(tool_name, arguments)
 
             message = self.create_tool_result_message(
                 tool_call_id=tool_call_id,

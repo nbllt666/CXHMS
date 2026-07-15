@@ -163,6 +163,9 @@ class MCPManager:
     async def start_server(self, name: str) -> bool:
         """启动MCP服务器
 
+        对于子进程模式（有 command）：启动进程并同步工具
+        对于 HTTP 模式（无 command 但有 endpoint_url）：健康检查并同步工具
+
         Args:
             name: 服务器名称
 
@@ -177,6 +180,25 @@ class MCPManager:
             logger.info(f"MCP服务器已在运行: {name}")
             return True
 
+        # HTTP 模式：无 command 但有 endpoint_url，直接健康检查 + 同步工具
+        if not server.command and server.endpoint_url:
+            try:
+                health = await self.check_server_health(name)
+                if health.get("status") == "connected":
+                    await self._sync_tools(name)
+                    logger.info(f"MCP服务器(HTTP模式)已连接: {name}, endpoint={server.endpoint_url}")
+                    return True
+                else:
+                    raise MCPError(f"MCP服务器健康检查失败: {health.get('error', '未知错误')}")
+            except MCPError:
+                raise
+            except Exception as e:
+                server.status = "error"
+                server.error = str(e)
+                logger.error(f"启动MCP服务器(HTTP模式)失败: {name}, {e}")
+                raise MCPError(f"启动MCP服务器失败: {e}")
+
+        # 子进程模式：有 command，启动进程
         try:
             env = os.environ.copy()
             env.update(server.env)
@@ -242,6 +264,9 @@ class MCPManager:
     async def stop_server(self, name: str) -> bool:
         """停止MCP服务器
 
+        对于子进程模式：终止进程
+        对于 HTTP 模式：仅标记为已断开（无法停止外部 HTTP 服务）
+
         Args:
             name: 服务器名称
 
@@ -264,6 +289,13 @@ class MCPManager:
                 logger.error(f"停止MCP服务器失败: {name}, {e}")
                 raise MCPError(f"停止MCP服务器失败: {e}")
 
+        # HTTP 模式：无进程，仅标记为已断开
+        if server.endpoint_url:
+            server.status = "disconnected"
+            server.last_check = datetime.now().isoformat()
+            logger.info(f"MCP服务器(HTTP模式)已断开: {name}")
+            return True
+
         return False
 
     async def check_server_health(self, name: str) -> Dict:
@@ -279,19 +311,51 @@ class MCPManager:
         if not server:
             raise MCPError(f"服务器不存在: {name}")
 
-        if server.process and server.process.poll() is None:
-            server.status = "connected"
-            server.last_check = datetime.now().isoformat()
-            server.error = None
-        else:
-            if server.process and server.process.poll() is not None:
+        # 子进程模式：检查进程是否存活
+        if server.process:
+            if server.process.poll() is None:
+                server.status = "connected"
+                server.last_check = datetime.now().isoformat()
+                server.error = None
+            else:
                 try:
                     server.process.wait()
                 except Exception:
                     pass
+                server.status = "disconnected"
+                server.last_check = datetime.now().isoformat()
+                server.error = "进程已退出"
+            return {
+                "name": name,
+                "status": server.status,
+                "last_check": server.last_check,
+                "error": server.error,
+            }
+
+        # HTTP 模式：无进程但有 endpoint_url，通过 HTTP 健康检查
+        if server.endpoint_url:
+            try:
+                if name not in self._http_clients:
+                    self._http_clients[name] = httpx.AsyncClient(timeout=10.0, trust_env=False, verify=False)
+                response = await self._http_clients[name].get(
+                    f"{server.endpoint_url}/health", timeout=5.0
+                )
+                if response.status_code == 200:
+                    server.status = "connected"
+                    server.last_check = datetime.now().isoformat()
+                    server.error = None
+                else:
+                    server.status = "error"
+                    server.last_check = datetime.now().isoformat()
+                    server.error = f"HTTP {response.status_code}"
+            except Exception as e:
+                server.status = "disconnected"
+                server.last_check = datetime.now().isoformat()
+                server.error = f"健康检查失败: {e}"
+        else:
             server.status = "disconnected"
             server.last_check = datetime.now().isoformat()
-            server.error = "进程已退出"
+            server.error = "无进程且无端点URL"
 
         return {
             "name": name,
@@ -312,7 +376,7 @@ class MCPManager:
 
         try:
             if server_name not in self._http_clients:
-                self._http_clients[server_name] = httpx.AsyncClient(timeout=30.0, trust_env=False)
+                self._http_clients[server_name] = httpx.AsyncClient(timeout=30.0, trust_env=False, verify=False)
 
             client = self._http_clients[server_name]
 
@@ -355,6 +419,19 @@ class MCPManager:
             logger.error(f"同步MCP工具失败: {server_name}, {e}")
             server.error = str(e)
 
+    async def sync_all_tools(self) -> int:
+        """同步所有已连接MCP服务器的工具
+
+        Returns:
+            同步的工具总数
+        """
+        total = 0
+        for server_name, server in self.servers.items():
+            if server.status == "connected":
+                await self._sync_tools(server_name)
+                total += len(server.tools or [])
+        return total
+
     async def list_servers(self) -> List[Dict]:
         """列出所有MCP服务器
 
@@ -393,12 +470,14 @@ class MCPManager:
         if not server:
             return {"success": False, "error": f"服务器不存在: {server_name}"}
 
-        if server.status != "connected":
+        # 子进程模式：检查进程状态
+        if server.process and server.status != "connected":
             return {"success": False, "error": f"服务器未连接: {server_name}"}
+        # HTTP 模式：无进程但有 endpoint_url，允许直接调用（连接失败由 HTTP 异常处理）
 
         try:
             if server_name not in self._http_clients:
-                self._http_clients[server_name] = httpx.AsyncClient(timeout=30.0, trust_env=False)
+                self._http_clients[server_name] = httpx.AsyncClient(timeout=30.0, trust_env=False, verify=False)
 
             # 使用 endpoint_url 而非 command
             url = f"{server.endpoint_url}/call"

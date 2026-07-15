@@ -44,7 +44,7 @@ class CXFCManager:
     async def start(self):
         await self._storage.init_db()
         plugins = await self._storage.load_plugins()
-        self._http_client = httpx.AsyncClient(timeout=10.0, trust_env=False)
+        self._http_client = httpx.AsyncClient(timeout=10.0, trust_env=False, verify=False)
         for plugin in plugins:
             self._plugins[plugin.plugin_id] = plugin
             asyncio.create_task(self._connect_to_plugin_if_alive(plugin))

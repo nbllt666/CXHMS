@@ -1789,6 +1789,82 @@ class MemoryManager:
             "verified": bool(row["verified"]) if "verified" in row.keys() else True,
         }
 
+    def search_all_memories(
+        self,
+        query: str,
+        workspace_id: Optional[str] = None,
+        limit: int = 10,
+    ) -> List[Dict]:
+        """同时查询 memories 表和 permanent_memories 表，合并结果返回。
+
+        人类裁定方向（Phase 2 文档记忆管理）：查询时同时查询两个表，确保文档
+        （存于 permanent_memories）可通过记忆检索。
+
+        Args:
+            query: 搜索关键词
+            workspace_id: 工作区ID（仅用于 memories 表过滤；permanent_memories 表
+                无 workspace_id 字段，不按 workspace_id 过滤——文档作为全局永久记忆）
+            limit: 返回数量限制（应用于合并后的总结果）
+
+        Returns:
+            合并后的记忆列表，每条记录附带 ``_source_table`` 字段标识来源
+           （"memories" 或 "permanent_memories"），按相关性排序后截断至 limit 条。
+        """
+        if not query:
+            return []
+
+        # 1. 查询 memories 表（复用现有 search_memories，按 workspace_id 过滤）
+        ws = workspace_id if workspace_id else "default"
+        memories_results = self.search_memories(
+            query=query,
+            workspace_id=ws,
+            limit=limit,
+        )
+        for item in memories_results:
+            item["_source_table"] = "memories"
+
+        # 2. 查询 permanent_memories 表（content LIKE + tags 过滤，无 workspace_id 过滤）
+        permanent_results: List[Dict] = []
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            escaped_query = query.replace("%", "\\%").replace("_", "\\_")
+            sql = (
+                "SELECT * FROM permanent_memories "
+                "WHERE content LIKE ? ESCAPE '\\' "
+                "ORDER BY importance_score DESC, created_at DESC LIMIT ?"
+            )
+            cursor.execute(sql, [f"%{escaped_query[:500]}%", limit])
+            rows = cursor.fetchall()
+            permanent_results = [
+                {**self._row_to_permanent_memory(row), "_source_table": "permanent_memories"}
+                for row in rows
+            ]
+        except Exception as e:
+            logger.error(f"搜索 permanent_memories 失败: {e}", exc_info=True)
+            permanent_results = []
+
+        # 3. 合并 + 去重（按 content 前 200 字符指纹去重）+ 排序 + 截断
+        seen_fingerprints: set = set()
+        merged: List[Dict] = []
+
+        # memories 表结果优先（含 workspace_id 过滤，相关性更高）
+        for item in memories_results:
+            fingerprint = (item.get("content") or "")[:200]
+            if fingerprint and fingerprint not in seen_fingerprints:
+                seen_fingerprints.add(fingerprint)
+                merged.append(item)
+
+        # permanent_memories 表结果补充
+        for item in permanent_results:
+            fingerprint = (item.get("content") or "")[:200]
+            if fingerprint and fingerprint not in seen_fingerprints:
+                seen_fingerprints.add(fingerprint)
+                merged.append(item)
+
+        # 截断至 limit 条
+        return merged[:limit]
+
     def search_memories_3d(
         self,
         query: str = None,

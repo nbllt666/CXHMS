@@ -152,9 +152,9 @@ async def trigger_session_summary(
                             "range": tool_args.get("summarized_message_range"),
                         })
 
-                # 执行工具
+                # 执行工具（必须用异步版本，避免阻塞事件循环——见变更文档 20260714_模块0_修复async上下文同步工具调用死锁）
                 try:
-                    tool_registry.call_tool(tool_name, tool_args)
+                    await tool_registry.call_tool_async(tool_name, tool_args)
                 except Exception as e:
                     logger.warning(f"自动摘要：工具 {tool_name} 执行失败: {e}")
 

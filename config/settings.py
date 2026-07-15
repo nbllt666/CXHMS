@@ -210,7 +210,7 @@ class ACPDiscoveryConfig:
     discovery_port: int = 9999
     broadcast_port: int = 9998
     broadcast_address: str = "255.255.255.255"
-    interval: int = 30
+    interval: int = 10
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ACPDiscoveryConfig":
@@ -219,7 +219,7 @@ class ACPDiscoveryConfig:
             discovery_port=data.get("discovery_port", 9999),
             broadcast_port=data.get("broadcast_port", 9998),
             broadcast_address=data.get("broadcast_address", "255.255.255.255"),
-            interval=data.get("interval", 30),
+            interval=data.get("interval", 10),
         )
 
 
@@ -361,24 +361,85 @@ class ChromaConfig:
 
 
 @dataclass
+class GraphWeaviateSection:
+    url: str = "http://localhost:8090"
+    api_key: Optional[str] = None
+    grpc_port: int = 50061
+    vector_dim: int = 768
+    batch_size: int = 100
+    ef_construction: int = 128
+    max_connections: int = 16
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "GraphWeaviateSection":
+        return cls(
+            url=data.get("url", "http://localhost:8090"),
+            api_key=data.get("api_key"),
+            grpc_port=data.get("grpc_port", 50061),
+            vector_dim=data.get("vector_dim", 768),
+            batch_size=data.get("batch_size", 100),
+            ef_construction=data.get("ef_construction", 128),
+            max_connections=data.get("max_connections", 16),
+        )
+
+
+@dataclass
+class GraphEmbeddingSection:
+    model: str = "nomic-embed-text"
+    batch_size: int = 32
+    device: str = "cpu"
+    cache_folder: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "GraphEmbeddingSection":
+        return cls(
+            model=data.get("model", "nomic-embed-text"),
+            batch_size=data.get("batch_size", 32),
+            device=data.get("device", "cpu"),
+            cache_folder=data.get("cache_folder"),
+        )
+
+
+@dataclass
 class GraphConfigSection:
     enabled: bool = False
     db_path: str = "data/graph.db"
+    auto_create_schema: bool = True
+    pool_size: int = 10
+    timeout: int = 30
     vector_size: int = 768
-    weaviate_host: str = "localhost"
-    weaviate_port: int = 8080
-    embedding_model: str = "nomic-embed-text"
+    weaviate: GraphWeaviateSection = field(default_factory=GraphWeaviateSection)
+    embedding: GraphEmbeddingSection = field(default_factory=GraphEmbeddingSection)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "GraphConfigSection":
         return cls(
             enabled=data.get("enabled", False),
             db_path=data.get("db_path", "data/graph.db"),
+            auto_create_schema=data.get("auto_create_schema", True),
+            pool_size=data.get("pool_size", 10),
+            timeout=data.get("timeout", 30),
             vector_size=data.get("vector_size", 768),
-            weaviate_host=data.get("weaviate_host", "localhost"),
-            weaviate_port=data.get("weaviate_port", 8080),
-            embedding_model=data.get("embedding_model", "nomic-embed-text"),
+            weaviate=GraphWeaviateSection.from_dict(data.get("weaviate", {})),
+            embedding=GraphEmbeddingSection.from_dict(data.get("embedding", {})),
         )
+
+    # 向后兼容：扁平字段转发到嵌套结构
+    @property
+    def weaviate_host(self) -> str:
+        from urllib.parse import urlparse
+        parsed = urlparse(self.weaviate.url)
+        return parsed.hostname or "localhost"
+
+    @property
+    def weaviate_port(self) -> int:
+        from urllib.parse import urlparse
+        parsed = urlparse(self.weaviate.url)
+        return parsed.port or 8090
+
+    @property
+    def embedding_model(self) -> str:
+        return self.embedding.model
 
 
 @dataclass
@@ -502,6 +563,31 @@ class SystemConfig:
 
 
 @dataclass
+class SecurityConfig:
+    """安全配置（API Key 认证 + 速率限制）。
+
+    对应 config/default.yaml 的 security 段。
+    AnythingLLM 兼容 API 使用 Bearer token 认证。
+    """
+
+    api_key_enabled: bool = False
+    api_key: str = ""
+    rate_limit_enabled: bool = False
+    rate_limit_requests: int = 100
+    rate_limit_period: int = 60
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "SecurityConfig":
+        return cls(
+            api_key_enabled=data.get("api_key_enabled", False),
+            api_key=data.get("api_key", ""),
+            rate_limit_enabled=data.get("rate_limit_enabled", False),
+            rate_limit_requests=data.get("rate_limit_requests", 100),
+            rate_limit_period=data.get("rate_limit_period", 60),
+        )
+
+
+@dataclass
 class CXHMSConfig:
     llm: LLMConfig = field(default_factory=LLMConfig)
     models: ModelsConfig = field(default_factory=ModelsConfig)
@@ -515,6 +601,7 @@ class CXHMSConfig:
     system: SystemConfig = field(default_factory=SystemConfig)
     graph: GraphConfigSection = field(default_factory=GraphConfigSection)
     cxfc: CXFCConfig = field(default_factory=CXFCConfig)
+    security: SecurityConfig = field(default_factory=SecurityConfig)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "CXHMSConfig":
@@ -532,6 +619,7 @@ class CXHMSConfig:
             system=SystemConfig.from_dict(server_data),
             graph=GraphConfigSection.from_dict(data.get("graph", {})),
             cxfc=CXFCConfig.from_dict(data.get("cxfc", {})),
+            security=SecurityConfig.from_dict(data.get("security", {})),
         )
 
 

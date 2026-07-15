@@ -20,6 +20,8 @@ class ServiceState:
         self.mcp_manager = None
         self.model_router = None
         self.cxfc_manager: Optional[Any] = None
+        # Phase 2: 文档记忆管理器（独立管理器，注入 memory_manager 实例）
+        self.document_memory_manager: Optional[Any] = None
         # 组件原子替换锁：保护并发场景下的属性赋值
         self._lock = threading.Lock()
 
@@ -216,6 +218,18 @@ def remove_graph_database(agent_id: str) -> None:
         remove_database(agent_id)
     except Exception:
         pass
+
+
+def get_document_memory_manager(state: ServiceState = Depends(get_service_state)) -> Any:
+    """获取文档记忆管理器实例。
+
+    Phase 2 新增：DocumentMemoryManager 依赖 MemoryManager 实例（在 app lifespan 中
+    完成注入）。服务未就绪时返回 503。
+    """
+    state = _resolve_state(state)
+    if state.document_memory_manager is None:
+        raise HTTPException(status_code=503, detail="文档记忆服务不可用")
+    return state.document_memory_manager
 
 
 def get_cxfc_manager(state: ServiceState = Depends(get_service_state)) -> Optional[Any]:

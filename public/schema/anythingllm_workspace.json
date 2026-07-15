@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cxhms.local/schema/anythingllm_workspace.json",
+  "title": "AnythingLLMWorkspace",
+  "description": "AnythingLLM 兼容 workspace 数据契约。对应 CXHMS AgentConfig 的映射视图。slug = agent_id。",
+  "type": "object",
+  "required": ["id", "name", "slug", "createdAt"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": ["string", "integer"],
+      "description": "workspace 唯一标识（对应 agent 的内部序号或 id）"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "workspace 显示名称（= agent.name）"
+    },
+    "slug": {
+      "type": "string",
+      "minLength": 1,
+      "description": "workspace slug（= agent_id），用于 URL 路径"
+    },
+    "createdAt": {
+      "type": ["string", "integer"],
+      "description": "创建时间戳（Unix 毫秒或 ISO 8601 字符串）"
+    },
+    "settings": {
+      "type": "object",
+      "description": "workspace 设置（映射 agent 配置子集）",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "使用的模型槽位或具体模型名"
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2,
+          "description": "采样温度"
+        },
+        "system_prompt": {
+          "type": "string",
+          "description": "系统提示词"
+        }
+      }
+    },
+    "embedCount": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "嵌入文档数量（Phase 1 恒为 0，不实现文档管理）"
+    }
+  }
+}

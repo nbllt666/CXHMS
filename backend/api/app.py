@@ -2,7 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -20,6 +20,7 @@ from backend.api.routers import (
     acp,
     admin,
     agents,
+    anythingllm,
     archive,
     backup,
     chat,
@@ -105,6 +106,31 @@ async def _build_sim_service_state(app: FastAPI):
         embedding_model=FakeEmbeddingModel(),
         vector_store=InMemoryVectorStore(),
     )
+
+    # 1.5 Phase 2: 初始化 DocumentMemoryManager（注入 memory_manager + 临时目录配置）
+    document_memory_manager = None
+    try:
+        from backend.core.document.memory import DocumentMemoryManager
+
+        # 构造临时配置文件指向 tmpdir，避免污染真实 data 目录
+        sim_doc_config = {
+            "db_path": os.path.join(tmpdir, "documents.db"),
+            "max_file_size": 10485760,
+            "default_folder": "custom-documents",
+        }
+        sim_doc_config_path = os.path.join(tmpdir, "doc_config.json")
+        import json as _json
+        with open(sim_doc_config_path, "w", encoding="utf-8") as _f:
+            _json.dump(sim_doc_config, _f)
+
+        document_memory_manager = DocumentMemoryManager(
+            memory_manager=memory_manager,
+            config_path=sim_doc_config_path,
+        )
+        logger.info("模拟模式：文档记忆管理器已启动")
+    except Exception as e:
+        logger.warning(f"模拟模式：文档记忆管理器启动失败: {e}")
+        document_memory_manager = None
 
     # 2. ContextManager：构造后把 _context_dir 指向临时目录，清空内存 _store
     context_manager = ContextManager(db_path=os.path.join(tmpdir, "sessions.db"))
@@ -192,6 +218,7 @@ async def _build_sim_service_state(app: FastAPI):
     service_state.mcp_manager = mcp_manager
     service_state.model_router = model_router
     service_state.cxfc_manager = cxfc_manager
+    service_state.document_memory_manager = document_memory_manager
 
     return service_state, tmpdir
 
@@ -225,6 +252,12 @@ async def lifespan(app: FastAPI):
         try:
             if service_state.memory_manager:
                 service_state.memory_manager.shutdown()
+        except Exception:
+            pass
+        # Phase 2: 关闭文档记忆管理器
+        try:
+            if service_state.document_memory_manager:
+                service_state.document_memory_manager.close()
         except Exception:
             pass
         # T11: 关闭 ContextManager 后台 flush 线程，避免 lifespan 退出时 daemon 线程被强杀
@@ -288,6 +321,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"记忆管理器启动失败: {e}")
         memory_manager = None
+
+    # Phase 2: 初始化文档记忆管理器（依赖 memory_manager 实例 + 配置契约）
+    document_memory_manager = None
+    try:
+        if memory_manager:
+            from backend.core.document.memory import DocumentMemoryManager
+
+            document_memory_manager = DocumentMemoryManager(
+                memory_manager=memory_manager,
+                config_path=None,  # 默认加载 public/config_template/anythingllm_document_config.json
+            )
+            logger.info("文档记忆管理器已启动")
+    except Exception as e:
+        logger.warning(f"文档记忆管理器启动失败: {e}")
+        document_memory_manager = None
 
     try:
         db_config = settings.config.database
@@ -679,6 +727,7 @@ async def lifespan(app: FastAPI):
     service_state.mcp_manager = mcp_manager
     service_state.model_router = model_router
     service_state.cxfc_manager = cxfc_manager
+    service_state.document_memory_manager = document_memory_manager
     app.state.services = service_state
     set_service_state(service_state)
 
@@ -795,6 +844,14 @@ async def lifespan(app: FastAPI):
     if memory_manager:
         memory_manager.shutdown()
 
+    # Phase 2: 关闭文档记忆管理器（需在 memory_manager.shutdown() 之后，
+    # 因为 DocumentMemoryManager 持有 memory_manager 引用但 close() 只关闭自身 SQLite 连接）
+    if document_memory_manager:
+        try:
+            document_memory_manager.close()
+        except Exception:
+            pass
+
     # T11: 关闭 ContextManager 后台 flush 线程，避免 lifespan 退出时 daemon 线程被强杀
     if context_manager:
         try:
@@ -872,6 +929,130 @@ app.include_router(config_router.router, prefix="/api")
 app.include_router(vector_router.router, prefix="/api")
 app.include_router(graph_router.router, prefix="/api")
 app.include_router(cxfc_router.router, prefix="/api")
+app.include_router(anythingllm.router, prefix="/api")
+
+
+@app.get("/acp/health")
+async def acp_health_root():
+    """ACP 协议根级健康检查端点。
+
+    供外部 ACP Agent 通过 GET /acp/health 验证主系统是否在线。
+    """
+    from backend.dependencies import get_acp_manager
+
+    acp_mgr = get_acp_manager()
+    if not acp_mgr:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "error", "error": "ACP 管理器不可用"},
+        )
+
+    return {
+        "status": "ok",
+        "agent_id": acp_mgr._local_agent_id,
+        "agent_name": acp_mgr._local_agent_name,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.get("/acp/info")
+async def acp_info_root():
+    """ACP 协议根级节点信息端点。
+
+    返回主系统 Agent 的基本信息（id/name/host/port/capabilities/version）。
+    """
+    from backend.dependencies import get_acp_manager
+
+    acp_mgr = get_acp_manager()
+    if not acp_mgr:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "error", "error": "ACP 管理器不可用"},
+        )
+
+    return {
+        "agent_id": acp_mgr._local_agent_id,
+        "agent_name": acp_mgr._local_agent_name,
+        "host": "0.0.0.0",
+        "port": acp_mgr.local_http_port,
+        "capabilities": ["chat", "tools"],
+        "version": "1.0.0",
+    }
+
+
+@app.post("/acp/message")
+async def acp_message_root(request: Request):
+    """标准 ACP 协议端点：接收其他 ACP Agent 通过 HTTP 投递的消息。
+
+    独立 ACP 节点（如测试工具）的 send_message 方法投递到此路径，
+    而非 /api/acp/receive。此端点将消息注入主系统 Agent 的聊天上下文。
+    """
+    from backend.dependencies import get_acp_manager
+    from backend.core.acp.manager import ACPMessageInfo, ACPAgentInfo
+    import uuid
+
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"status": "error", "error": "无效的 JSON"})
+
+    acp_mgr = get_acp_manager()
+    if not acp_mgr:
+        return JSONResponse(status_code=503, content={"status": "error", "error": "ACP 管理器不可用"})
+
+    try:
+        msg_id = payload.get("id") or str(uuid.uuid4())
+        message = ACPMessageInfo(
+            id=msg_id,
+            msg_type=payload.get("msg_type", payload.get("type", "chat")),
+            from_agent_id=payload.get("from_agent_id", ""),
+            from_agent_name=payload.get("from_agent_name", ""),
+            to_agent_id=payload.get("to_agent_id"),
+            to_group_id=payload.get("to_group_id"),
+            content=payload.get("content", {}),
+            timestamp=payload.get("timestamp") or datetime.now().isoformat(),
+            is_read=False,
+            is_sent=False,
+        )
+        await acp_mgr.receive_external_message(message)
+
+        # 注册/更新发送方 Agent 信息
+        from_agent_id = payload.get("from_agent_id", "")
+        metadata = payload.get("metadata") or {}
+        ext_host = str(metadata.get("from_host", "") or request.client.host if request.client else "")
+        ext_port = int(metadata.get("from_port", 0) or 0)
+
+        if from_agent_id and from_agent_id not in acp_mgr.agents:
+            external_agent = ACPAgentInfo(
+                id=from_agent_id,
+                name=payload.get("from_agent_name") or "External Agent",
+                host=ext_host,
+                port=ext_port,
+                status="online",
+                version="1.0.0",
+                capabilities=["chat"],
+                last_seen=datetime.now().isoformat(),
+                metadata={"source": "acp_message"},
+            )
+            await acp_mgr.register_agent(external_agent)
+        elif from_agent_id and (ext_host or ext_port):
+            existing = acp_mgr.agents.get(from_agent_id)
+            if existing:
+                if ext_host and existing.host != ext_host:
+                    existing.host = ext_host
+                if ext_port and existing.port != ext_port:
+                    existing.port = ext_port
+                existing.last_seen = datetime.now()
+
+        return {"status": "ok", "message_id": msg_id, "message": "消息已接收"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "error": f"内部错误: {e}"})
+
+
+@app.post("/acp/receive")
+async def acp_receive_root(request: Request):
+    """兼容端点：与 /acp/message 行为一致。"""
+    return await acp_message_root(request)
 
 # B3: 单一 handler 覆盖所有 CXHMSException 子类（core 层与 api 层共享基类）
 app.add_exception_handler(CXHMSException, cxhms_exception_handler)

@@ -151,7 +151,7 @@ acp:
   discovery_port: 9999
   broadcast_port: 9998
   broadcast_address: 255.255.255.255
-  discovery_interval: 30
+  discovery_interval: 10
 cxfc:
   enabled: true
   discovery_port: 19876
@@ -159,6 +159,26 @@ cxfc:
   heartbeat_timeout: 60
   auto_reconnect: true
   storage_path: data/cxfc_plugins.db
+graph:
+  enabled: true
+  db_path: data/graph.db
+  auto_create_schema: true
+  pool_size: 10
+  timeout: 30
+  vector_size: 768
+  weaviate:
+    url: http://localhost:8090
+    api_key: null
+    grpc_port: 50061
+    vector_dim: 768
+    batch_size: 100
+    ef_construction: 128
+    max_connections: 16
+  embedding:
+    model: nomic-embed-text
+    batch_size: 32
+    device: cpu
+    cache_folder: null
 security:
   api_key_enabled: false
   api_key: ''

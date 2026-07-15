@@ -133,7 +133,7 @@ class ConfigRepair:
         "acp.discovery_port": 9999,
         "acp.broadcast_port": 9998,
         "acp.broadcast_address": "255.255.255.255",
-        "acp.discovery_interval": 30,
+        "acp.discovery_interval": 10,
         # security
         "security.api_key_enabled": False,
         "security.api_key": "",

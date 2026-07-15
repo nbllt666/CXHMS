@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cxhms.local/schema/openai_chat_completion.json",
+  "title": "OpenAIChatCompletion",
+  "description": "OpenAI Chat Completions API 兼容响应契约。对应 POST /api/v1/openai/chat/completions 非流式响应。",
+  "type": "object",
+  "required": ["id", "object", "created", "model", "choices", "usage"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "补全唯一标识，格式 chatcmpl-{uuid}",
+      "pattern": "^chatcmpl-"
+    },
+    "object": {
+      "type": "string",
+      "enum": ["chat.completion"],
+      "description": "对象类型"
+    },
+    "created": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Unix 时间戳（秒）"
+    },
+    "model": {
+      "type": "string",
+      "description": "实际使用的模型名"
+    },
+    "choices": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["index", "message", "finish_reason"],
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "选项索引"
+          },
+          "message": {
+            "type": "object",
+            "required": ["role", "content"],
+            "additionalProperties": false,
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": ["assistant"],
+                "description": "消息角色"
+              },
+              "content": {
+                "type": ["string", "null"],
+                "description": "助手回复内容（可为 null 当触发工具调用时）"
+              }
+            }
+          },
+          "finish_reason": {
+            "type": "string",
+            "enum": ["stop", "length", "tool_calls", "content_filter"],
+            "description": "结束原因"
+          }
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "required": ["prompt_tokens", "completion_tokens", "total_tokens"],
+      "additionalProperties": false,
+      "properties": {
+        "prompt_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "提示 token 数"
+        },
+        "completion_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "补全 token 数"
+        },
+        "total_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "总 token 数"
+        }
+      }
+    }
+  }
+}

@@ -30,3 +30,7 @@ pytest-timeout>=2.1
 
 # Config file watching
 watchdog>=3.0.0
+
+# Document parsing (AnythingLLM attachments support)
+pypdf>=4.0
+python-docx>=1.1

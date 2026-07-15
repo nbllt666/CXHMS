@@ -69,7 +69,8 @@
         "port": {"type": "integer", "default": 8002, "minimum": 1, "maximum": 65535},
         "temperature": {"type": "number", "default": 0.7, "minimum": 0, "maximum": 2},
         "max_tokens": {"type": "integer", "default": 0, "minimum": 0},
-        "timeout": {"type": "integer", "default": 60, "minimum": 1}
+        "timeout": {"type": "integer", "default": 60, "minimum": 1},
+        "supports_tools": {"type": "boolean", "default": true}
       }
     }
   }

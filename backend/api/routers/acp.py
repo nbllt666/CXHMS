@@ -62,16 +62,43 @@ class ACPGroupMessageRequest(BaseModel):
     content: Dict
 
 
+class ACPReceiveMessageRequest(BaseModel):
+    """ACP接收外部Agent消息请求"""
+
+    id: str = ""
+    msg_type: str = "chat"
+    from_agent_id: str = ""
+    from_agent_name: str = ""
+    to_agent_id: Optional[str] = None
+    to_group_id: Optional[str] = None
+    content: Dict
+    timestamp: str = ""
+    metadata: Dict = {}
+
+
 @router.post("/acp/discover")
 async def discover_agents(request: ACPDiscoverRequest = None):
     """发现Agents"""
     from backend.dependencies import get_acp_manager
-    from backend.core.acp.discover import ACPLanDiscovery
 
+    print(f"[DEBUG] /api/acp/discover called, request={request}", flush=True)
     try:
         acp_mgr = get_acp_manager()
-        discovery = ACPLanDiscovery(acp_mgr=acp_mgr)
-        agents = await discovery.discover_once(timeout=request.timeout if request else 5.0)
+        print(f"[DEBUG] acp_mgr._discovery = {acp_mgr._discovery}", flush=True)
+        # 复用已启动的 _discovery 实例，避免新建临时 socket 与已绑定的监听 socket 冲突
+        discovery = acp_mgr._discovery
+        if discovery is None:
+            # 若发现服务未启动（settings 中 disabled），返回空列表而非报错
+            return {
+                "status": "success",
+                "agents": [],
+                "scanned_count": 0,
+                "message": "ACP 发现服务未启用",
+            }
+        timeout = request.timeout if request else 5.0
+        print(f"[DEBUG] calling discover_once(timeout={timeout})", flush=True)
+        agents = await discovery.discover_once(timeout=timeout)
+        print(f"[DEBUG] discover_once returned {len(agents)} agents", flush=True)
         return {
             "status": "success",
             "agents": agents,
@@ -79,10 +106,14 @@ async def discover_agents(request: ACPDiscoverRequest = None):
             "message": f"发现 {len(agents)} 个Agents",
         }
     except ACPError as e:
+        print(f"[DEBUG] ACPError: {e}", flush=True)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"发现Agents失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="内部服务器错误")
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[DEBUG] Exception: {e}\n{tb}", flush=True)
+        logger.error(f"发现Agents失败: {e}\n{tb}")
+        raise HTTPException(status_code=500, detail=f"内部服务器错误: {type(e).__name__}: {e}")
 
 
 @router.get("/acp/agents")
@@ -333,4 +364,70 @@ async def get_acp_stats():
         return {"status": "success", "statistics": stats}
     except Exception as e:
         logger.error(f"获取ACP统计失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="内部服务器错误")
+
+
+@router.post("/acp/receive")
+async def receive_external_message(request: ACPReceiveMessageRequest):
+    """接收外部 ACP Agent 发来的消息
+
+    此端点供独立 ACP 节点（如测试工具）通过 HTTP 直接投递消息使用，
+    实现真正的点对点通信，不依赖主系统中转。
+    """
+    from backend.dependencies import get_acp_manager
+    from backend.core.acp.manager import ACPMessageInfo
+    from datetime import datetime
+
+    try:
+        acp_mgr = get_acp_manager()
+
+        message = ACPMessageInfo(
+            id=request.id or str(uuid.uuid4()),
+            msg_type=request.msg_type,
+            from_agent_id=request.from_agent_id,
+            from_agent_name=request.from_agent_name,
+            to_agent_id=request.to_agent_id,
+            to_group_id=request.to_group_id,
+            content=request.content,
+            timestamp=request.timestamp or datetime.now().isoformat(),
+            is_read=False,
+            is_sent=False,
+        )
+
+        await acp_mgr.receive_external_message(message)
+
+        # 从 metadata 提取外部节点的回送地址
+        metadata = request.metadata or {}
+        ext_host = str(metadata.get("from_host", "") or "")
+        ext_port = int(metadata.get("from_port", 0) or 0)
+
+        # 若发送方不在已知 Agents 列表中，自动注册为外部 Agent
+        if request.from_agent_id and request.from_agent_id not in acp_mgr.agents:
+            from backend.core.acp.manager import ACPAgentInfo
+
+            external_agent = ACPAgentInfo(
+                id=request.from_agent_id,
+                name=request.from_agent_name or "External Agent",
+                host=ext_host,
+                port=ext_port,
+                status="online",
+                version="1.0.0",
+                capabilities=["chat"],
+                last_seen=datetime.now().isoformat(),
+                metadata={"source": "external_receive"},
+            )
+            await acp_mgr.register_agent(external_agent)
+        elif request.from_agent_id and (ext_host or ext_port):
+            # 已注册节点：当 host 或 port 发生变化时更新为最新地址（覆盖失效的旧端口）
+            existing = acp_mgr.agents.get(request.from_agent_id)
+            if existing:
+                if ext_host and existing.host != ext_host:
+                    existing.host = ext_host
+                if ext_port and existing.port != ext_port:
+                    existing.port = ext_port
+                existing.last_seen = datetime.now()
+
+        return {"status": "ok", "message_id": message.id, "message": "消息已接收"}
+    except Exception as e:
+        logger.error(f"接收外部消息失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="内部服务器错误")

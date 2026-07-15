@@ -17,17 +17,21 @@ from backend.core.graph.models import (
 from backend.core.graph.visualization import GraphExporter
 from backend.core.graph.semantic_query import SemanticQueryManager
 from backend.core.graph.monitoring import GraphMonitor
-from backend.dependencies import get_graph_database_if_exists
+from backend.dependencies import _get_or_create_graph_database
 
-router = APIRouter(tags=["graph"])
+router = APIRouter(prefix="/graph", tags=["graph"])
 
 
 def _get_graph_database(agent_id: str = Query("default")) -> GraphDatabase:
-    """按 agent_id 解析对应图数据库实例；未启用时返回 404。"""
-    graph = get_graph_database_if_exists(agent_id)
-    if graph is None:
-        raise HTTPException(status_code=404, detail="该助手尚未启用图数据库")
-    return graph
+    """按 agent_id 解析对应图数据库实例（按需创建）。
+
+    首次访问时通过 _get_or_create_graph_database 触发实例化与初始化，
+    避免启动时全局初始化的开销，同时保证 REST API 可用。
+    """
+    try:
+        return _get_or_create_graph_database(agent_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"图数据库初始化失败: {e}")
 
 
 

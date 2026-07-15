@@ -18,7 +18,7 @@ class ACPLanDiscovery:
         broadcast_port: int = 9998,
         discovery_port: int = 9999,
         broadcast_address: str = "255.255.255.255",
-        interval: int = 30,
+        interval: int = 10,
     ):
         self.acp_manager = acp_manager
         self.broadcast_port = broadcast_port
@@ -101,11 +101,16 @@ class ACPLanDiscovery:
                 "timestamp": datetime.now().isoformat(),
                 "version": "1.0.0",
                 "capabilities": ["memory", "tools", "chat"],
-                "port": self.discovery_port,
+                # BEACON 的 port 字段对外暴露本地 HTTP 端口（不是 UDP 发现端口），
+                # 其他节点通过此端口经 HTTP /acp/message 投递消息
+                "port": self.acp_manager.local_http_port,
             }
 
+            # 发送目标端口 = 监听端口 = discovery_port（9999），
+            # 保证两端绑定同一端口的 socket 都能收到广播包副本
             self._broadcast_socket.sendto(
-                json.dumps(message).encode(), (self.broadcast_address, self.broadcast_port)
+                json.dumps(message).encode(),
+                (self.broadcast_address, self.discovery_port),
             )
         except Exception as e:
             logger.warning(f"广播失败: {e}")
@@ -147,46 +152,26 @@ class ACPLanDiscovery:
             logger.info(f"发现 {len(found_agents)} 个Agents")
 
     async def discover_once(self, timeout: float = 5.0) -> List[Dict]:
+        """主动发现一次：触发一次 BEACON 广播，等待 timeout 秒，
+        然后从 acp_manager.agents 返回除本地 agent 外的所有已知 agent。
+
+        不再创建临时 socket 绑定 discovery_port（与已绑定的 _discovery_socket 冲突）。
+        BEACON 的接收由后台 _discovery_loop 的 _scan_network 负责。
+        """
+        # 触发一次额外广播
+        await self._broadcast_presence()
+
+        # 等待 timeout 秒，让 _scan_network 收到其他节点的 BEACON
+        end_time = asyncio.get_event_loop().time() + timeout
+        while asyncio.get_event_loop().time() < end_time:
+            await asyncio.sleep(0.5)
+
+        # 从 acp_manager.agents 返回除本地 agent 外的所有 agent
+        local_id = self.acp_manager._local_agent_id
         agents = []
-
-        async def receive_with_timeout():
-            found = []
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.bind(("", self.discovery_port))
-            sock.settimeout(timeout)
-
-            end_time = asyncio.get_event_loop().time() + timeout
-
-            while asyncio.get_event_loop().time() < end_time:
-                try:
-                    data, addr = sock.recvfrom(4096)
-                    message = json.loads(data.decode())
-
-                    if message.get("type") == "ACP_BEACON":
-                        agent = ACPAgentInfo(
-                            id=message.get("agent_id", ""),
-                            name=message.get("agent_name", ""),
-                            host=addr[0],
-                            port=message.get("port", 0),
-                            status="online",
-                            version=message.get("version", "1.0.0"),
-                            capabilities=message.get("capabilities", []),
-                            last_seen=message.get("timestamp", datetime.now().isoformat()),
-                        )
-
-                        if agent.id and agent.id != self.acp_manager._local_agent_id:
-                            await self.acp_manager.register_agent(agent)
-                            found.append(agent.to_dict())
-                except socket.timeout:
-                    break
-                except Exception as e:
-                    break
-
-            sock.close()
-            return found
-
-        agents = await receive_with_timeout()
+        for agent_id, agent in self.acp_manager.agents.items():
+            if agent_id and agent_id != local_id:
+                agents.append(agent.to_dict())
         return agents
 
     async def get_local_ip(self) -> str:

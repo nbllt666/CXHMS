@@ -1,1 +1,33 @@
-groups: []
+groups:
+- created_at: '2026-07-14T21:31:27.254794'
+  creator_id: cxhms-agent-001
+  creator_name: CXHMS Agent
+  description: deep test group
+  id: b0e22572-5a09-4309-8253-7dc2933d41ca
+  is_active: true
+  max_members: 10
+  members:
+  - agent_id: cxhms-agent-001
+    agent_name: CXHMS Agent
+    joined_at: '2026-07-14T21:31:27.254782'
+    last_active: '2026-07-14T21:31:27.254790'
+    role: admin
+  metadata: {}
+  name: E2E-Test-Group
+  updated_at: '2026-07-14T21:31:27.254796'
+- created_at: '2026-07-14T21:31:44.461359'
+  creator_id: cxhms-agent-001
+  creator_name: CXHMS Agent
+  description: deep test group
+  id: 74a41efc-8da8-4340-8480-0cd659ebfe60
+  is_active: true
+  max_members: 10
+  members:
+  - agent_id: cxhms-agent-001
+    agent_name: CXHMS Agent
+    joined_at: '2026-07-14T21:31:44.461344'
+    last_active: '2026-07-14T21:31:44.461353'
+    role: admin
+  metadata: {}
+  name: E2E-Test-Group
+  updated_at: '2026-07-14T21:31:44.461360'

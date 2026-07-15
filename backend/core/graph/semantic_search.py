@@ -4,6 +4,7 @@
 
 import logging
 from typing import Optional, List, Dict, Any, Callable
+from urllib.parse import urlparse
 import numpy as np
 
 from backend.core.graph.config import GraphConfig, get_graph_config
@@ -28,10 +29,24 @@ class SemanticSearch:
 
         try:
             import weaviate
-            self._client = weaviate.Client(
-                url=self.config.weaviate.url,
-                auth_client_secret=weaviate.AuthApiKey(self.config.weaviate.api_key)
-                    if self.config.weaviate.api_key else None,
+            from weaviate.classes.init import AdditionalConfig, Timeout
+
+            parsed = urlparse(self.config.weaviate.url)
+            host = parsed.hostname or "localhost"
+            port = parsed.port or 8090
+
+            headers = {}
+            if self.config.weaviate.api_key:
+                headers["X-OpenAI-Api-Key"] = self.config.weaviate.api_key
+
+            self._client = weaviate.connect_to_local(
+                host=host,
+                port=port,
+                grpc_port=self.config.weaviate.grpc_port,
+                headers=headers,
+                additional_config=AdditionalConfig(
+                    timeout=Timeout(init=2, query=3, insert=120)
+                ),
             )
             self._ensure_schema()
             self._initialized = True
@@ -47,28 +62,24 @@ class SemanticSearch:
         if not self._client:
             return
 
-        schema = {
-            "class": "GraphNode",
-            "description": "图数据库节点向量索引",
-            "vectorizer": "none",
-            "vectorIndexConfig": {
-                "efConstruction": self.config.weaviate.ef_construction,
-                "maxConnections": self.config.weaviate.max_connections,
-            },
-            "properties": [
-                {"name": "node_id", "dataType": ["string"]},
-                {"name": "node_type", "dataType": ["string"]},
-                {"name": "text_content", "dataType": ["text"]},
-                {"name": "agent_id", "dataType": ["string"]},
-            ]
-        }
-
         try:
-            if not self._client.schema.exists("GraphNode"):
-                self._client.schema.create_class(schema)
-                logger.info("创建 Weaviate schema: GraphNode")
+            from weaviate.classes.config import Configure, DataType, Property
+
+            if not self._client.collections.exists("GraphNode"):
+                self._client.collections.create(
+                    name="GraphNode",
+                    description="图数据库节点向量索引",
+                    vectorizer_config=Configure.Vectorizer.none(),
+                    properties=[
+                        Property(name="node_id", data_type=DataType.TEXT),
+                        Property(name="node_type", data_type=DataType.TEXT),
+                        Property(name="text_content", data_type=DataType.TEXT),
+                        Property(name="agent_id", data_type=DataType.TEXT),
+                    ],
+                )
+                logger.info("创建 Weaviate collection: GraphNode")
         except Exception as e:
-            logger.warning(f"创建 schema 失败: {e}")
+            logger.warning(f"创建 collection 失败: {e}")
 
     def add_vector(
         self,
@@ -83,10 +94,9 @@ class SemanticSearch:
 
         if self._client:
             try:
-                vector_id = f"{node_id}_vector"
-                self._client.data_object.create(
-                    class_name="GraphNode",
-                    data_object={
+                collection = self._client.collections.get("GraphNode")
+                uuid = collection.data.insert(
+                    properties={
                         "node_id": node_id,
                         "node_type": node_type,
                         "text_content": text_content,
@@ -94,7 +104,7 @@ class SemanticSearch:
                     },
                     vector=vector.tolist(),
                 )
-                return vector_id
+                return str(uuid)
             except Exception as e:
                 logger.error(f"添加向量失败: {e}")
                 return node_id
@@ -116,57 +126,38 @@ class SemanticSearch:
 
         if self._client:
             try:
+                from weaviate.classes.query import Filter
+
                 query_vector = self._vectorizer.encode(query)
+                collection = self._client.collections.get("GraphNode")
 
-                where_filter = None
-                if node_type and agent_id and agent_id != "default":
-                    where_filter = {
-                        "operator": "And",
-                        "operands": [
-                            {
-                                "path": ["node_type"],
-                                "operator": "Equal",
-                                "valueString": node_type,
-                            },
-                            {
-                                "path": ["agent_id"],
-                                "operator": "Equal",
-                                "valueString": agent_id,
-                            },
-                        ]
-                    }
-                elif node_type:
-                    where_filter = {
-                        "path": ["node_type"],
-                        "operator": "Equal",
-                        "valueString": node_type
-                    }
-                elif agent_id and agent_id != "default":
-                    where_filter = {
-                        "path": ["agent_id"],
-                        "operator": "Equal",
-                        "valueString": agent_id
-                    }
+                filter_conditions = []
+                if node_type:
+                    filter_conditions.append(Filter.by_property("node_type").equal(node_type))
+                if agent_id and agent_id != "default":
+                    filter_conditions.append(Filter.by_property("agent_id").equal(agent_id))
 
-                search = self._client.query.get(
-                    "GraphNode",
-                    ["node_id", "node_type", "text_content", "agent_id", "_additional {certainty}"]
-                ).with_near_vector(
-                    {"vector": query_vector.tolist()}
-                ).with_limit(limit)
+                filters = None
+                if len(filter_conditions) == 1:
+                    filters = filter_conditions[0]
+                elif len(filter_conditions) > 1:
+                    filters = Filter.all_of(filter_conditions)
 
-                if where_filter:
-                    search = search.with_where(where_filter)
+                result = collection.query.near_vector(
+                    near_vector=query_vector.tolist(),
+                    limit=limit,
+                    return_properties=["node_id", "node_type", "text_content", "agent_id"],
+                    return_metadata=["certainty"],
+                    filters=filters,
+                )
 
-                response = search.do()
-                nodes = response.get("data", {}).get("Get", {}).get("GraphNode", [])
-
-                for item in nodes:
-                    score = item.get("_additional", {}).get("certainty", 0.0)
+                for obj in result.objects:
+                    score = obj.metadata.certainty or 0.0
+                    props = obj.properties or {}
                     node = GraphNode(
-                        id=item["node_id"],
-                        type=item.get("node_type", ""),
-                        text_content=item.get("text_content"),
+                        id=props.get("node_id", ""),
+                        type=props.get("node_type", ""),
+                        text_content=props.get("text_content"),
                     )
                     results.append(SemanticSearchResult(
                         node=node,
@@ -227,9 +218,10 @@ class SemanticSearch:
     def delete_vector(self, node_id: str) -> bool:
         if self._client:
             try:
-                self._client.data_object.delete(
-                    class_name="GraphNode",
-                    where={"path": ["node_id"], "operator": "Equal", "valueString": node_id}
+                from weaviate.classes.query import Filter
+                collection = self._client.collections.get("GraphNode")
+                collection.data.delete_many(
+                    where=Filter.by_property("node_id").equal(node_id)
                 )
                 return True
             except Exception as e:
@@ -240,8 +232,7 @@ class SemanticSearch:
         if not self._client:
             return False
         try:
-            self._client.schema.get()
-            return True
+            return self._client.is_ready()
         except Exception as e:
             logger.error(f"Weaviate 健康检查失败: {e}")
             return False
@@ -261,5 +252,9 @@ class SemanticSearch:
 
     def close(self) -> None:
         if self._client:
+            try:
+                self._client.close()
+            except Exception:
+                pass
             self._client = None
         self._initialized = False

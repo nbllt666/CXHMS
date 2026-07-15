@@ -66,6 +66,11 @@ STUB_BACKEND_LOCATOR: Dict[str, Dict[str, str]] = {
         "backend_class": None,
         "kind": "module",
     },
+    "AnythingLLMService": {
+        "backend_module": "backend.api.routers.anythingllm",
+        "backend_class": None,
+        "kind": "module",
+    },
 }
 
 

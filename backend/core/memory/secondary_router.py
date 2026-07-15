@@ -8,7 +8,12 @@ from backend.api.routers.agents import _load_agents
 from backend.api.routers.chat import MEMORY_AGENT_HIDDEN_SYSTEM_PROMPT
 from backend.core.logging_config import get_contextual_logger
 from backend.core.tools import tool_registry
-from backend.core.tools.builtin import BUILTIN_TOOL_NAMES, call_builtin_tool, get_builtin_tools
+from backend.core.tools.builtin import (
+    BUILTIN_TOOL_NAMES,
+    call_builtin_tool,
+    call_builtin_tool_async,
+    get_builtin_tools,
+)
 from backend.core.utils import format_messages_for_summary
 
 logger = get_contextual_logger(__name__)
@@ -1060,12 +1065,12 @@ class SecondaryModelRouter:
                             except Exception:
                                 tool_args = {}
 
-                    # 执行工具
+                    # 执行工具（必须用异步版本，避免阻塞事件循环——见变更文档 20260714_模块0_修复async上下文同步工具调用死锁）
                     try:
                         if tool_name in BUILTIN_TOOL_NAMES:
-                            tool_result = call_builtin_tool(tool_name, tool_args or {})
+                            tool_result = await call_builtin_tool_async(tool_name, tool_args or {})
                         else:
-                            tool_result = tool_registry.call_tool(tool_name, tool_args)
+                            tool_result = await tool_registry.call_tool_async(tool_name, tool_args)
                     except Exception as e:
                         logger.warning(f"工具 {tool_name} 执行失败: {e}")
                         tool_result = {"success": False, "error": str(e)}

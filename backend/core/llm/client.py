@@ -144,7 +144,7 @@ class OllamaClient(LLMClient):
             if tools:
                 request_body["tools"] = tools
 
-            async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
+            async with httpx.AsyncClient(timeout=120.0, trust_env=False, verify=False) as client:
                 response = await client.post(f"{self.host}/api/chat", json=request_body)
 
                 if response.status_code == 200:
@@ -241,7 +241,7 @@ class OllamaClient(LLMClient):
             if self.api_key:
                 headers["Authorization"] = f"Bearer {self.api_key}"
 
-            async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
+            async with httpx.AsyncClient(timeout=120.0, trust_env=False, verify=False) as client:
                 async with client.stream(
                     "POST", f"{self.host}/api/chat", json=request_body, headers=headers
                 ) as response:
@@ -280,7 +280,7 @@ class OllamaClient(LLMClient):
     async def is_available(self) -> bool:
         """检查Ollama模型是否可用"""
         try:
-            async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
+            async with httpx.AsyncClient(timeout=10.0, trust_env=False, verify=False) as client:
                 response = await client.get(f"{self.host}/api/tags")
                 return response.status_code == 200
         except Exception:
@@ -289,7 +289,7 @@ class OllamaClient(LLMClient):
     async def get_embedding(self, text: str) -> Optional[List[float]]:
         """使用Ollama获取文本的向量嵌入"""
         try:
-            async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
+            async with httpx.AsyncClient(timeout=30.0, trust_env=False, verify=False) as client:
                 response = await client.post(
                     f"{self.host}/api/embeddings", json={"model": self.model, "prompt": text}
                 )
@@ -480,7 +480,7 @@ class VLLMClient(LLMClient):
             url = f"{self.host}/v1/chat/completions"
             logger.info(f"VLLM请求: {url}, model={self.model}, supports_tools={self.supports_tools}, has_tools={bool(tools)}")
 
-            async with httpx.AsyncClient(timeout=120.0, trust_env=False) as http_client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(timeout=120.0, connect=5.0), trust_env=False, verify=False) as http_client:
                 response = await http_client.post(url, json=request_body, headers=headers)
 
                 if response.status_code == 200:
@@ -545,7 +545,7 @@ class VLLMClient(LLMClient):
                 logger.warning(f"带 tools 请求超时，尝试不带 tools 降级请求")
                 try:
                     request_body_fallback = {k: v for k, v in request_body.items() if k != "tools"}
-                    async with httpx.AsyncClient(timeout=120.0, trust_env=False) as fallback_client:
+                    async with httpx.AsyncClient(timeout=120.0, trust_env=False, verify=False) as fallback_client:
                         response = await fallback_client.post(url, json=request_body_fallback, headers=headers)
                         if response.status_code == 200:
                             result = response.json()
@@ -621,17 +621,6 @@ class VLLMClient(LLMClient):
 
             logger.debug(f"vLLM stream_chat 请求体: model={request_body.get('model')}, max_tokens={request_body.get('max_tokens', '未设置')}, tools={len(request_body.get('tools', []))}个")
 
-            # 临时调试日志：捕获多轮工具调用第2轮的请求特征
-            msg_summary = []
-            for m in messages:
-                role = m.get("role", "?")
-                content = m.get("content")
-                content_len = len(content) if isinstance(content, str) else 0
-                has_tc = "tool_calls" in m
-                tc_id = m.get("tool_call_id", "")
-                msg_summary.append(f"{role}(content={content_len},tc={has_tc},tc_id={tc_id})")
-            logger.info(f"stream_chat 请求消息概览: total={len(messages)}, summary={msg_summary}")
-
             headers = {"Content-Type": "application/json"}
             if self.api_key:
                 headers["Authorization"] = f"Bearer {self.api_key}"
@@ -649,20 +638,8 @@ class VLLMClient(LLMClient):
             content_buffer = ""
             in_tool_call = False
 
-            # 临时调试：流式 chunk 统计
-            _dbg_chunks = 0
-            _dbg_content_chars = 0
-            _dbg_reasoning_chars = 0
-            _dbg_tool_call_chunks = 0
-            _dbg_finish_reason = None
-            _dbg_first_chunk_preview = None
-            # 新增：完整文本捕获（定位 tool_call 失败根因）
-            _dbg_full_content = []  # 全部 content 文本
-            _dbg_full_reasoning = []  # 全部 reasoning 文本
-            _dbg_special_chunks = []  # 含特殊 token 的原始 delta（限前 20 条）
-            _dbg_raw_first_chunks = []  # 前 5 条原始 delta JSON
-
-            async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0), trust_env=False) as client:
+            client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0), trust_env=False, verify=False)
+            async with client:
                 async with client.stream("POST", url, json=request_body, headers=headers) as response:
                     if response.status_code != 200:
                         error_text = await response.aread()
@@ -675,7 +652,6 @@ class VLLMClient(LLMClient):
                         if line:
                             decoded = line if isinstance(line, str) else line.decode("utf-8")
                             if decoded.startswith("data: "):
-                                _dbg_chunks += 1
                                 data = decoded[6:]
                                 if data == "[DONE]":
                                     break
@@ -683,37 +659,10 @@ class VLLMClient(LLMClient):
                                     chunk = json.loads(data)
                                     choice = chunk["choices"][0]
                                     delta = choice.get("delta", {})
-                                    # 临时调试：捕获 finish_reason
-                                    _fr = choice.get("finish_reason")
-                                    if _fr:
-                                        _dbg_finish_reason = _fr
-                                    # 新增：前 5 条原始 delta JSON（用于排查字段结构）
-                                    if len(_dbg_raw_first_chunks) < 5:
-                                        _dbg_raw_first_chunks.append({
-                                            "idx": _dbg_chunks,
-                                            "delta": delta,
-                                            "finish_reason": _fr,
-                                        })
-                                    # 新增：检测含特殊 token 的 chunk（限前 20 条）
-                                    _delta_str = json.dumps(delta, ensure_ascii=False)
-                                    if ("<|" in _delta_str or "tool_call" in _delta_str or "channel" in _delta_str) and len(_dbg_special_chunks) < 20:
-                                        _dbg_special_chunks.append({
-                                            "idx": _dbg_chunks,
-                                            "delta": delta,
-                                            "finish_reason": _fr,
-                                        })
                                     reasoning_content = delta.get("reasoning_content", "") or delta.get("reasoning", "")
                                     if reasoning_content and reasoning_content != "<pad>":
-                                        _dbg_reasoning_chars += len(reasoning_content)
-                                        _dbg_full_reasoning.append(reasoning_content)
                                         yield {"type": "thinking", "content": reasoning_content}
                                     content = delta.get("content", "")
-                                    if content and content != "<pad>":
-                                        _dbg_content_chars += len(content)
-                                        _dbg_full_content.append(content)
-                                    # 临时调试：捕获首 chunk 预览
-                                    if _dbg_first_chunk_preview is None and (content or reasoning_content):
-                                        _dbg_first_chunk_preview = (content or reasoning_content)[:80]
                                     if content and content != "<pad>":
                                         # gemma4 流式 tool_call 文本检测
                                         content_buffer += content
@@ -741,7 +690,6 @@ class VLLMClient(LLMClient):
                                             content_buffer = ""
                                     tool_calls = delta.get("tool_calls")
                                     if tool_calls:
-                                        _dbg_tool_call_chunks += 1
                                         # 标准结构化 tool_calls（非 gemma4 文本格式）
                                         for tc in tool_calls:
                                             idx = tc.get("index", 0)
@@ -772,33 +720,8 @@ class VLLMClient(LLMClient):
                     # yield 拼接完成的 tool_calls
                     if tool_calls_accumulator:
                         complete_tool_calls = [tool_calls_accumulator[i] for i in sorted(tool_calls_accumulator.keys())]
-                        logger.info(f"流式 tool_calls 拼接完成: {len(complete_tool_calls)} 个工具调用")
+                        logger.debug(f"流式 tool_calls 拼接完成: {len(complete_tool_calls)} 个工具调用")
                         yield {"type": "tool_calls", "tool_calls": complete_tool_calls}
-
-                    # 临时调试：流式统计汇总
-                    logger.info(
-                        f"stream_chat 流式统计: chunks={_dbg_chunks}, "
-                        f"content_chars={_dbg_content_chars}, "
-                        f"reasoning_chars={_dbg_reasoning_chars}, "
-                        f"tool_call_chunks={_dbg_tool_call_chunks}, "
-                        f"finish_reason={_dbg_finish_reason}, "
-                        f"first_chunk_preview={repr(_dbg_first_chunk_preview) if _dbg_first_chunk_preview else None}"
-                    )
-                    # 新增：完整文本输出（截断到 1500 字符避免日志爆炸）
-                    _full_content_text = "".join(_dbg_full_content)
-                    _full_reasoning_text = "".join(_dbg_full_reasoning)
-                    logger.info(
-                        f"stream_chat 完整 content ({len(_full_content_text)} chars): "
-                        f"{repr(_full_content_text[:1500])}"
-                    )
-                    logger.info(
-                        f"stream_chat 完整 reasoning ({len(_full_reasoning_text)} chars): "
-                        f"{repr(_full_reasoning_text[:1500])}"
-                    )
-                    # 新增：前 5 条原始 delta（排查字段结构）
-                    logger.info(f"stream_chat 前5条原始 delta: {_dbg_raw_first_chunks}")
-                    # 新增：含特殊 token 的 chunk（最多 20 条）
-                    logger.info(f"stream_chat 特殊 token chunks ({len(_dbg_special_chunks)} 条): {_dbg_special_chunks}")
 
         except Exception as e:
             logger.error(f"VLLM流式调用失败: {e}")
@@ -817,7 +740,7 @@ class VLLMClient(LLMClient):
             if self.api_key:
                 headers["Authorization"] = f"Bearer {self.api_key}"
             # 先尝试 /health（本地 vLLM），再尝试 /models（NVIDIA NIM 等云服务）
-            async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
+            async with httpx.AsyncClient(timeout=10.0, trust_env=False, verify=False) as client:
                 for endpoint in [f"{self.host}/health", f"{self.host}/models"]:
                     try:
                         response = await client.get(endpoint, headers=headers)
@@ -853,7 +776,7 @@ class VLLMClient(LLMClient):
 
         try:
             async with httpx.AsyncClient(
-                timeout=httpx.Timeout(timeout, connect=10.0), trust_env=False
+                timeout=httpx.Timeout(timeout, connect=10.0), trust_env=False, verify=False
             ) as client:
                 response = await client.post(url, json=request_body, headers=headers)
                 if response.status_code == 200:
@@ -877,7 +800,7 @@ class VLLMClient(LLMClient):
         使用独立的 embedding_host 和 embedding_model 配置
         """
         try:
-            async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
+            async with httpx.AsyncClient(timeout=30.0, trust_env=False, verify=False) as client:
                 response = await client.post(
                     f"{self.embedding_host}/v1/embeddings",
                     json={"model": self.embedding_model, "input": text},

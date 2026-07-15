@@ -1,1 +1,447 @@
-agents: []
+agents:
+- capabilities:
+  - chat
+  host: ''
+  id: probe
+  last_seen: '2026-07-13T14:35:36.851159'
+  metadata:
+    source: external_receive
+  name: probe
+  port: 0
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 192.168.0.101
+  id: e2e-acp-node
+  last_seen: '2026-07-14T21:25:59.629653'
+  metadata: {}
+  name: E2E ACP Node
+  port: 8541
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 192.168.0.101
+  id: e2e-bidir-node
+  last_seen: '2026-07-14T21:26:20.760669'
+  metadata: {}
+  name: E2E Bidir Node
+  port: 8542
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 192.168.0.101
+  id: e2e-bidir-1783930682
+  last_seen: '2026-07-13T16:18:07.450782'
+  metadata:
+    source: external_receive
+  name: E2E Bidir Node
+  port: 8542
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 192.168.0.101
+  id: test-tool-001
+  last_seen: '2026-07-14T19:34:09.384832'
+  metadata: {}
+  name: TEST
+  port: 8505
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  - tools
+  host: 192.168.0.101
+  id: acp-e2e-test-545fe810
+  last_seen: '2026-07-14T14:29:52.165605'
+  metadata: {}
+  name: E2E测试Agent
+  port: 8506
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  - tools
+  host: 192.168.0.101
+  id: acp-e2e-test-28d296e4
+  last_seen: '2026-07-14T14:36:10.032181'
+  metadata: {}
+  name: E2E测试Agent
+  port: 8506
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  - tools
+  host: 192.168.0.101
+  id: acp-e2e-test-3980bd39
+  last_seen: '2026-07-14T14:42:14.110549'
+  metadata: {}
+  name: E2E测试Agent
+  port: 8506
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  - tools
+  host: 192.168.0.101
+  id: acp-e2e-test-aee349b2
+  last_seen: '2026-07-14T14:45:06.469089'
+  metadata: {}
+  name: E2E测试Agent
+  port: 8506
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  - tools
+  host: 192.168.0.101
+  id: acp-e2e-test-3fa7e879
+  last_seen: '2026-07-14T14:53:59.454476'
+  metadata: {}
+  name: E2E测试Agent
+  port: 8506
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  - tools
+  host: 192.168.0.101
+  id: acp-e2e-test-246db9e6
+  last_seen: '2026-07-14T15:12:06.828134'
+  metadata: {}
+  name: E2E测试Agent
+  port: 8506
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  - tools
+  host: 192.168.0.101
+  id: acp-e2e-test-090d1e1c
+  last_seen: '2026-07-14T15:16:03.914927'
+  metadata: {}
+  name: E2E测试Agent
+  port: 8506
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  - tools
+  host: 192.168.0.101
+  id: acp-e2e-test-56616e94
+  last_seen: '2026-07-14T15:26:17.408508'
+  metadata: {}
+  name: E2E测试Agent
+  port: 8506
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  - tools
+  host: 192.168.0.101
+  id: acp-e2e-test-0bf02ee6
+  last_seen: '2026-07-14T15:33:52.089993'
+  metadata: {}
+  name: E2E测试Agent
+  port: 8506
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  - tools
+  host: 192.168.0.101
+  id: acp-e2e-test-c7f862e4
+  last_seen: '2026-07-14T15:52:18.976699'
+  metadata: {}
+  name: E2E测试Agent
+  port: 8506
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 127.0.0.1
+  id: verify-test-agent
+  last_seen: '2026-07-14T16:24:22.008566'
+  metadata:
+    source: external_receive
+  name: 验证测试Agent
+  port: 9999
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 127.0.0.1
+  id: verify-tool-agent
+  last_seen: 2026-07-14 21:27:32.888122
+  metadata:
+    source: external_receive
+  name: 工具回复验证Agent
+  port: 9999
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: ''
+  id: verify-deadlock
+  last_seen: '2026-07-14T18:31:09.874500'
+  metadata:
+    source: external_receive
+  name: 死锁验证Agent
+  port: 0
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: ''
+  id: perf
+  last_seen: '2026-07-14T18:52:38.651120'
+  metadata:
+    source: external_receive
+  name: Perf
+  port: 0
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: ''
+  id: perf3
+  last_seen: '2026-07-14T18:56:18.126879'
+  metadata:
+    source: external_receive
+  name: Perf3
+  port: 0
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: ''
+  id: perf5
+  last_seen: '2026-07-14T18:59:01.442674'
+  metadata:
+    source: external_receive
+  name: Perf5
+  port: 0
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: ''
+  id: t1
+  last_seen: '2026-07-14T19:02:35.377821'
+  metadata:
+    source: external_receive
+  name: T1
+  port: 0
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: ''
+  id: t2
+  last_seen: '2026-07-14T19:02:45.998100'
+  metadata:
+    source: external_receive
+  name: T2
+  port: 0
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: ''
+  id: t3
+  last_seen: '2026-07-14T19:02:56.682067'
+  metadata:
+    source: external_receive
+  name: T3
+  port: 0
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: ''
+  id: diag1
+  last_seen: '2026-07-14T19:04:59.093390'
+  metadata:
+    source: external_receive
+  name: Diag1
+  port: 0
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 127.0.0.1
+  id: diag-test-001
+  last_seen: '2026-07-14T19:14:56.143538'
+  metadata:
+    source: external_receive
+  name: DiagTest
+  port: 8505
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 127.0.0.1
+  id: diag-test-002
+  last_seen: '2026-07-14T19:20:10.767544'
+  metadata:
+    source: external_receive
+  name: DiagTest2
+  port: 8505
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 127.0.0.1
+  id: diag-test-003
+  last_seen: '2026-07-14T19:21:43.166734'
+  metadata:
+    source: external_receive
+  name: DiagTest3
+  port: 8505
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 127.0.0.1
+  id: diag-test-004
+  last_seen: '2026-07-14T19:24:42.312545'
+  metadata:
+    source: external_receive
+  name: DiagTest4
+  port: 8505
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 127.0.0.1
+  id: diag-test-005
+  last_seen: '2026-07-14T19:27:44.855877'
+  metadata:
+    source: external_receive
+  name: DiagTest5
+  port: 8505
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 127.0.0.1
+  id: diag-test-006
+  last_seen: '2026-07-14T19:27:53.657874'
+  metadata:
+    source: acp_message
+  name: DiagTest6
+  port: 8505
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 127.0.0.1
+  id: diag-test-007
+  last_seen: '2026-07-14T19:29:41.870079'
+  metadata:
+    source: external_receive
+  name: DiagTest7
+  port: 8505
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 127.0.0.1
+  id: diag-test-008
+  last_seen: '2026-07-14T19:34:11.722500'
+  metadata:
+    source: external_receive
+  name: DiagTest8
+  port: 8505
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: ''
+  id: diag-test-009
+  last_seen: '2026-07-14T20:06:50.007295'
+  metadata:
+    source: external_receive
+  name: DiagTest009
+  port: 0
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: ''
+  id: diag-test-010
+  last_seen: '2026-07-14T20:10:46.795401'
+  metadata:
+    source: external_receive
+  name: DiagTest010
+  port: 0
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: ''
+  id: diag-test-011
+  last_seen: '2026-07-14T20:16:17.435286'
+  metadata:
+    source: external_receive
+  name: DiagTest011
+  port: 0
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: ''
+  id: diag-test-013
+  last_seen: '2026-07-14T20:28:57.162126'
+  metadata:
+    source: external_receive
+  name: DiagTest013
+  port: 0
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 127.0.0.1
+  id: perf-test-001
+  last_seen: '2026-07-14T21:02:51.574239'
+  metadata:
+    source: external_receive
+  name: PerfTest
+  port: 8505
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 127.0.0.1
+  id: perf-test-002
+  last_seen: '2026-07-14T21:03:08.345339'
+  metadata:
+    source: external_receive
+  name: PerfTest2
+  port: 8505
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 192.168.0.101
+  id: udp-test-node
+  last_seen: '2026-07-14T21:38:44.661092'
+  metadata: {}
+  name: UDP Test Node
+  port: 8543
+  status: online
+  version: 1.0.0
+- capabilities:
+  - chat
+  host: 192.168.0.101
+  id: udp-test-node2
+  last_seen: '2026-07-14T21:39:27.306665'
+  metadata: {}
+  name: UDP Test Node 2
+  port: 8544
+  status: online
+  version: 1.0.0

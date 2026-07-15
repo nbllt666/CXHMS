@@ -55,9 +55,10 @@ class MCPServerAddRequest(BaseModel):
     """MCP服务器添加请求"""
 
     name: str
-    command: str
+    command: str = ""
     args: List[str] = []
     env: Dict = {}
+    endpoint_url: Optional[str] = None
 
 
 class MCPServerStartRequest(BaseModel):
@@ -196,7 +197,8 @@ async def execute_tool(request: ToolCallRequest):
     from backend.core.tools.registry import tool_registry
 
     try:
-        result = tool_registry.call_tool(request.name, request.arguments)
+        # 必须用异步版本，避免阻塞事件循环——见变更文档 20260714_模块0_修复async上下文同步工具调用死锁
+        result = await tool_registry.call_tool_async(request.name, request.arguments)
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result["error"])
         return result
@@ -255,7 +257,8 @@ async def test_tool(name: str, request: ToolTestRequest):
         if not tool:
             raise HTTPException(status_code=404, detail=f"工具 {name} 不存在")
 
-        result = tool_registry.call_tool(name, request.arguments)
+        # 必须用异步版本，避免阻塞事件循环——见变更文档 20260714_模块0_修复async上下文同步工具调用死锁
+        result = await tool_registry.call_tool_async(name, request.arguments)
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result.get("error", "调用失败"))
 
@@ -351,7 +354,11 @@ async def add_mcp_server(request: MCPServerAddRequest):
     try:
         mcp_mgr = get_mcp_manager()
         server = await mcp_mgr.add_server(
-            name=request.name, command=request.command, args=request.args, env=request.env
+            name=request.name,
+            command=request.command,
+            args=request.args,
+            env=request.env,
+            endpoint_url=request.endpoint_url,
         )
         return {
             "status": "success",
@@ -422,7 +429,7 @@ async def check_mcp_server_health(name: str):
 
     try:
         mcp_mgr = get_mcp_manager()
-        health = await mcp_mgr.check_health(name)
+        health = await mcp_mgr.check_server_health(name)
         return {"status": "success", "server": name, "healthy": health}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -437,7 +444,7 @@ async def get_mcp_server_tools(name: str):
 
     try:
         mcp_mgr = get_mcp_manager()
-        tools = await mcp_mgr.list_server_tools(name)
+        tools = await mcp_mgr.get_tools(name)
         return {"status": "success", "server": name, "tools": tools}
     except ToolError as e:
         raise HTTPException(status_code=400, detail=str(e))
