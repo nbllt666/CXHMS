@@ -731,6 +731,18 @@ async def lifespan(app: FastAPI):
     app.state.services = service_state
     set_service_state(service_state)
 
+    # 初始化 DistillationService（RADIX-Lite v1.3.0：合并到后端 8001）
+    # rules-0 §三 try-except fallback：实例化失败不阻断主服务，distillation 端点返回 503
+    try:
+        from modules.模块9_蒸馏服务.distillation_service import DistillationService
+
+        distillation_service = DistillationService()
+        app.state.distillation_service = distillation_service
+        logger.info("DistillationService 已合并到后端（/api/v1/distillation/*）")
+    except Exception as e:
+        logger.warning(f"DistillationService 初始化失败（蒸馏端点将返回 503）: {e}")
+        app.state.distillation_service = None
+
     # vLLM 预热：触发模型加载与 kernel 编译，消除首请求冷启动延迟
     try:
         if llm_client and hasattr(llm_client, "warmup"):
@@ -930,6 +942,17 @@ app.include_router(vector_router.router, prefix="/api")
 app.include_router(graph_router.router, prefix="/api")
 app.include_router(cxfc_router.router, prefix="/api")
 app.include_router(anythingllm.router, prefix="/api")
+
+# RADIX-Lite v1.3.0：DistillationService 路由静态注册（实例在 lifespan 中初始化）
+try:
+    from modules.模块9_蒸馏服务.api.routes import router as distillation_router
+    from modules.模块9_蒸馏服务.api.batch_routes import router as distillation_batch_router
+
+    app.include_router(distillation_router)
+    app.include_router(distillation_batch_router)
+except Exception as e:
+    import logging as _logging
+    _logging.getLogger(__name__).warning(f"DistillationService 路由注册失败: {e}")
 
 
 @app.get("/acp/health")

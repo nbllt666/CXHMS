@@ -60,6 +60,7 @@ CXHMS (晨曦人格化记忆系统, CX-O History & Memory Service) 是基于 Fas
 - **前端**: React 18 + TypeScript / Vite 6 / Zustand + React Query / Tailwind CSS
 - **AI 与向量**: vLLM (默认主模型) / Ollama / OpenAI / Anthropic / DeepSeek；Weaviate (默认) / Chroma / Milvus Lite / Qdrant；MCP / CXFC 协议
 - **协议**: ACP (Agent Communication Protocol) — UDP 9999/9998；CXFC 插件协议
+- **Per-Agent 资源隔离**（v3.1.0 新增）: 每个 agent 独立 Weaviate collection（`CXHMSMemory_{agent_id}`，懒创建）+ 独立 SQLite 图数据库（`data/graph_{agent_id}.db`，懒加载）；agent 删除时自动清理。`agent_id="default"` 时回退到 `CXHMSMemory` collection 与 `data/graph.db`（向后兼容）。
 
 ### 2.2 目录结构与模块边界
 
@@ -75,7 +76,7 @@ Project_Root (c:\CXHMS):
     test_cases/           # 通用测试用例
   backend/:               # 后端业务代码（FastAPI 应用、core 模块、api 路由）
   frontend/:              # 前端 React 应用
-  modules/:               # 业务模块区（模块N_中文名，当前为骨架）
+  modules/:               # 业务模块区（模块N_中文名，11 个模块：模块0_全局调度面板 ~ 模块10_管理Agent扩展）
   interfaces/:            # 入口层（app.py / main.py / start.bat）
   workspace/:             # 用户数据区
   config/:                # 配置文件目录（default.yaml 真相源）
@@ -91,24 +92,30 @@ Project_Root (c:\CXHMS):
 ```
 
 **模块边界**：
-- 后端核心模块位于 `backend/core/`：memory / context / llm / tools / acp / graph / cxfc / alarm / backup / plugins / websocket / session / exceptions
+- 后端核心模块位于 `backend/core/`：memory / context / llm / tools / acp / graph / cxfc / alarm / backup / plugins / websocket / session / document / exceptions（13 个子模块）
 - 后端 API 路由位于 `backend/api/routers/`（17 个路由模块）
 - 前端页面位于 `frontend/src/pages/`，组件位于 `frontend/src/components/`
+- AC 范式业务模块位于 `modules/`（11 个：模块0_全局调度面板 / 模块1_记忆服务 / 模块2_对话服务 / 模块3_工具与ACP / 模块4_图数据库 / 模块5_前端展示 / 模块6_辅助服务 / 模块7_模板引擎 / 模块8_多模态管线 / 模块9_蒸馏服务 / 模块10_管理Agent扩展）
 - AI 协同行为受 `.trae/rules/` 约束，技能位于 `.trae/skills/`
 
 ### 2.3 真相源与配置
 
 - **唯一配置真相源**: `config/default.yaml`。所有文档、代码、部署配置以 default.yaml 为准。
 - **当前默认配置**:
-  - 主模型: vLLM / `gemma4-e4b` @ http://localhost:8002
+  - 主模型: vLLM / `gemma4-e4b` @ http://localhost:8002，`temperature: 0.7`
   - 嵌入模型: vLLM / `/models/Qwen3-Embedding-0.6B` @ http://localhost:8101
-  - 摘要/记忆副模型: Ollama `qwen3-vl:8b`（默认禁用，回退主模型）
+  - 摘要/记忆副模型: Ollama `qwen3-vl:8b`（默认禁用，`model_defaults.summary: main` / `model_defaults.memory: main` 回退主模型）
   - 后端 API: 0.0.0.0:8001（Swagger / ReDoc 同端口）
   - 前端开发服务器: 3000
   - 控制服务: 8765
-  - 向量后端: Weaviate @ 8090 (HTTP) / 50051 (gRPC)，`hybrid_search_enabled: false`
+  - RADIX-Lite 蒸馏服务: 8011（`public/config_template/radix_config.json`）
+  - 向量后端: Weaviate @ 8090 (HTTP) / 50061 (gRPC)，`hybrid_search_enabled: false`
   - ACP 发现: UDP 9999 / 广播 9998
-  - `llm.max_tool_rounds: 10`
+  - `llm.max_tool_rounds: 10`、`llm.temperature: 1.5`
+  - `context.max_summaries_in_context: 10`
+  - `cxfc.enabled: true`、`graph.enabled: true`
+  - `memory.decay_rate: 0.1`、`memory.decay_interval_days: 7`、`memory.reactivation_boost: 0.2`、`memory.dedup_threshold: 0.85`
+- **三层契约版本**: v1.2.0（2026-07-16）— 13 schema + 13 .pyi + 5 config + 12 pre_generated_mock。变更日志见 `public/schema/CHANGELOG.md`
 - **配置孤儿注意**: default.yaml 中的 `llm_params`、`agent`、`security`、`monitoring`、`tools` 配置节未被 CXHMSConfig 加载到运行时配置对象，仅作参考。
 - **Docker 端口例外**: Dockerfile 与 docker-compose 沿用 8000 端口（Docker 部署上下文），不视为与 default.yaml 冲突。
 
@@ -136,10 +143,15 @@ logging:
 
 合流前必须通过三重测试（顺序固定，不可跳关：单测 → E2E → Mock 回归）：
 
-1. **后端单元测试**: pytest + pytest-asyncio（`asyncio_mode=auto`），位于 `backend/tests`（18 文件：test_api / test_core / test_integration）
-2. **前端测试**: Vitest + React Testing Library，位于 `frontend/src`（6 文件）
-3. **LLM E2E 测试**: 8 文件，验证 LLM 集成完整性
-4. **统一运行器**: `run_tests.py` 提供统一入口，支持覆盖率报告
+1. **后端单元测试**: pytest + pytest-asyncio（`asyncio_mode=auto`），位于 `tests/units/` + `tests/simulation/`（753 passed）
+2. **RADIX-Lite 单元测试**: pytest，位于 `tests/contract/`（262 passed：contract 105 + distillation 50 + decision 55 + multimodal 28 + template 24）
+3. **契约测试**: pytest，位于 `public/test_cases/` + `tests/contracts/`（437 passed，含 RADIX-Lite 6 类 locator 扩展 +156）
+4. **E2E 测试**: pytest，位于 `tests/e2e/`（37 passed，含 `test_radix_task6_integration.py`）
+5. **前端测试**: Vitest + React Testing Library，位于 `frontend/src`（19 文件 / 299 项）
+6. **Playwright E2E**: 位于 `frontend/e2e/`（2 文件）
+7. **LLM E2E 测试**: 8 文件，验证 LLM 集成完整性
+8. **统一运行器**: `run_tests.py` 提供统一入口，支持覆盖率报告
+9. **测试合计**: 1489 passed（753 + 262 + 437 + 37）
 
 - 代码产出后必须自主运行测试套件，结果记录于 `.trae/documents/` 或 note。
 - 前端变更必须通过 s0402 三重闸门（单测、E2E、Mock 回归）。
@@ -159,12 +171,16 @@ logging:
 - **数据与安全**: JSON 主力存储；API Key 仅存本地 `config.json`（模板隔离）；MD5 内容指纹防重复。
 - **三段交接**: 所有工程交接锚点（spec 三件套 / note / .trae/documents/）必须显式包含 (1) 工程过程、(2) 交接状态（三值：已闭合/未闭合/当前不可判定）、(3) 最终结果。
 
-### 2.9 当前项目状态（2026-07-02）
+### 2.9 当前项目状态（2026-07-17）
 
-- 后端与前端已实现核心功能（记忆管理、对话、ACP、工具系统、图数据库、CXFC、WebSocket 等）。
+- 后端与前端已实现核心功能（记忆管理、对话、ACP、工具系统、图数据库、CXFC、WebSocket、备份恢复、插件管理等）。
 - AC 范式 v6 基础设施已部署（`.trae/rules/`、`.trae/skills/`、GN-004、Pipeline）。
-- `public/` 当前为契约骨架（.gitkeep 占位），三层契约冻结（D6）尚未完成。
-- `modules/`、`interfaces/`、`workspace/` 为骨架目录，待 s0203 模块拆分后填充。
+- **三层契约版本 v1.2.0**（2026-07-16）— `public/` 已填充 13 schema + 13 .pyi + 5 config + 12 pre_generated_mock，D6 契约冻结已完成。
+- **11 个业务模块**已就位：模块0_全局调度面板 ~ 模块10_管理Agent扩展，其中模块7-10 为 RADIX-Lite v1.2.0 新增。
+- **RADIX-Lite spec `add-management-agent-radix` 已闭合**（2026-07-16）：4 个新模块 + write_with_decision 决策化写入 + 7 状态机多轮蒸馏 + 6 决策点自主决策 + Jinja2 DSL 模板引擎 + 3 worker 多模态管线。
+- **write_with_decision** 已实现：`backend/core/memory/manager.py` 新增 3 方法（write_with_decision / get_rejected_content / cleanup_expired_rejected_content）+ `rejected_content` 表（保留 30 天）。
+- **Weaviate per-agent collection 改造已闭合**（2026-07-17）：`backend/core/memory/weaviate_store.py` 实现 per-agent collection 隔离（懒创建 + 生命周期清理 + 向后兼容）；图数据库 per-agent 懒加载机制已存在；真实 Weaviate 端到端验证通过（6 步骤全 PASS）。详见 `.trae/documents/20260717_模块0_图数据库agent自建图.md`。
+- **测试统计**：1489 passed（后端单测 753 + RADIX-Lite 262 + 接口契约 437 + E2E 37）。Weaviate per-agent collection 改造回归测试：units 111 passed + simulation/contracts 670 passed + memory/hybrid/fakes 18 passed，无回归。
 - 契约变更须走 s0601 流程；AGENTS.md 的项目专属规则更新由项目负责人或 s0301 触发，禁止 AI 自行修改本文件。
 
 ---

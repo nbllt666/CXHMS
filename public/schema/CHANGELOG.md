@@ -2,6 +2,56 @@
 
 > 遵循 AC 范式 v6 rules-3 §六 契约版本化规则。所有契约变更必须记录版本号、变更内容、变更原因、影响范围。
 
+## [1.2.0] - 2026-07-16
+
+### 变更内容
+- **数据契约新增（MINOR）**：新增 6 份 JSON Schema (draft-07+)
+  - `distillation_session.schema.json`：蒸馏会话状态机契约（7 状态 + turns 数组 + final_decision）
+  - `multimodal_artifact.schema.json`：多模态预处理产出契约（3 模态 type 枚举 + confidence + vision_degraded）
+  - `template_registry.schema.json`：模板仓库契约（frontmatter + body + CRUD 元数据）
+  - `storage_decision.schema.json`：存储决策契约（3 location 枚举 + rubric_snapshot + quality_score）
+  - `distillation_log.schema.json`：决策审计日志契约（6 决策点 + llm_reasoning + final_decision）
+  - `agent_config_v2.schema.json`：管理 Agent 配置契约（tools_config 8 工具 + decision_rubric 4 阈值 + distillation_enabled）
+- **接口契约新增（MINOR）**：新增 6 份 .pyi 存根
+  - `distillation_service.pyi`：4 API 端点 + 1 内部方法（start/advance/finalize/get + _transition_state）
+  - `template_engine.pyi`：7 方法（render_template + CRUD + _parse_frontmatter）
+  - `multimodal_pipeline.pyi`：7 方法（preprocess + 3 worker + _merge_ocr_vision）
+  - `decision_core.pyi`：9 方法（6 决策点 + _load_rubric + _llm_decide + _write_audit_log）
+  - `memory_manager_v2.pyi`：3 方法（write_with_decision + get_rejected_content + cleanup_expired_rejected_content）
+  - `agent_tools_v2.pyi`：8 工具方法
+- **配置契约新增（MINOR）**：新增 `radix_config.json`（5 段：distillation_service / multimodal_pipeline / template_engine / decision_core / vllm）
+- **预生成 Mock 新增**：6 份对应接口的 Mock 实现
+- **测试套件新增**：
+  - `tests/contract/radix_contract_test.py`（105 用例）
+  - `tests/contract/test_distillation_service_unit.py`（50 用例）
+  - `tests/contract/test_decision_core_unit.py`（55 用例）
+  - `tests/contract/test_multimodal_pipeline_unit.py`（28 用例）
+  - `tests/units/test_template_engine_smoke.py`（24 用例）
+  - `tests/e2e/test_radix_task6_integration.py`（37 用例）
+  - `tests/contracts/test_interface_stub.py` 扩展（+156 用例，RADIX-Lite 6 类 locator）
+
+### 变更原因
+- spec `add-management-agent-radix` 实施：RADIX-Lite 融合方案（方案 C 去除音视频模态，保留 3 独立子系统 + 7 状态机多轮蒸馏 + Jinja2 DSL 模板 + 6 决策点自主决策）
+- spec 三件套已通过 GN-004 交付前独立审查（6 维度全 PASS，0 阻断 0 警示 3 观察项非阻断）
+- [V] 双重闸门已闭合：GN-004 通过 + 人类批准交付（2026-07-16）
+- public/ 文件已获人类显式授权（rules-0 §四-10 + rules-4 §4.3）
+
+### 影响范围
+- MINOR 变更（新增可选接口）：通知依赖模块，不阻断。新增的 6 schema + 6 .pyi + 1 config 独立于现有 11 schema 和 11 .pyi，不影响现有模块
+- 下游影响：
+  - `backend/core/document/parser.py` 新增 `parse_attachments_v2` 双模式入口（legacy_parser_enabled 开关，默认 True 向后兼容）
+  - `backend/core/memory/manager.py` 新增 `write_with_decision` + `rejected_content` 表（保留 30 天）
+  - 模块间通过 try-except fallback 到 Mock（rules-0 §三），不硬依赖真实实现
+
+### 闭合判据
+- [x] 6 份数据契约存在且通过 jsonschema 自校验
+- [x] 6 份接口存根存在且仅含签名（零实现）
+- [x] 1 份配置契约存在且含默认值（5 段）
+- [x] 6 份预生成 Mock 存在且签名匹配 .pyi
+- [x] 测试套件可自主执行：262 RADIX-Lite + 437 interface_stub + 37 E2E = 736 PASS
+- [x] GN-004 交付前审查通过（6 维度全 PASS）
+- [x] [V] 双重闸门闭合（GN-004 通过 + 人类批准交付）
+
 ## [1.1.0] - 2026-07-14
 
 ### 变更内容

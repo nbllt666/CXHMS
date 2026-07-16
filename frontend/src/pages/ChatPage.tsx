@@ -303,6 +303,7 @@ export function ChatPage() {
   const [autoStartSummary, setAutoStartSummary] = useState(false);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [alarms, setAlarms] = useState<{ id: string; message: string; triggeredAt: string }[]>([]);
+  const [introExpanded, setIntroExpanded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const tempAssistantIdRef = useRef<string>('');
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -598,7 +599,6 @@ export function ChatPage() {
     <div className="w-full h-[calc(100vh-var(--header-height)-3rem)] flex flex-col">
       <PageHeader
         title={currentAgent?.name || t('chat.defaultTitle')}
-        description={currentAgent?.description}
         className="flex-shrink-0"
         actions={
           <div className="flex gap-2">
@@ -677,6 +677,40 @@ export function ChatPage() {
           </div>
         }
       />
+
+      {/* Agent 简介折叠区 */}
+      {currentAgent?.description && (
+        <div className="flex-shrink-0 mb-2 border border-[var(--color-border)] rounded-[var(--radius-md)] overflow-hidden">
+          <button
+            onClick={() => setIntroExpanded(!introExpanded)}
+            className="w-full flex items-center justify-between px-3 py-2 bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-bg-hover)] transition-colors text-sm"
+          >
+            <span className="flex items-center gap-2 text-[var(--color-text-secondary)]">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {t('chat.agentIntro')}
+            </span>
+            <svg
+              className={`w-4 h-4 transition-transform text-[var(--color-text-tertiary)] ${introExpanded ? 'rotate-180' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <div
+            className={`overflow-hidden transition-all duration-200 ${
+              introExpanded ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
+            }`}
+          >
+            <div className="px-3 py-2 bg-[var(--color-bg-secondary)] text-sm text-[var(--color-text-secondary)]">
+              {currentAgent.description}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto space-y-4 mb-4">
         {messages.length === 0 ? (

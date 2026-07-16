@@ -14,10 +14,25 @@ from .agent_mock import MockAgentService
 from .tool_mock import MockToolService
 from .graph_mock import MockGraphService
 
+# RADIX-Lite 6 个预生成 Mock（对应 public/interface_stub/*.pyi）
+from .mock_distillation_service import MockDistillationService
+from .mock_template_engine import MockTemplateEngine
+from .mock_multimodal_pipeline import MockMultimodalPipeline
+from .mock_decision_core import MockDecisionCore
+from .mock_memory_manager_v2 import MockMemoryManagerV2
+from .mock_agent_tools_v2 import MockAgentToolsV2
+
 __all__ = [
     "MockMemoryService",
     "MockChatService",
     "MockAgentService",
     "MockToolService",
     "MockGraphService",
+    # RADIX-Lite
+    "MockDistillationService",
+    "MockTemplateEngine",
+    "MockMultimodalPipeline",
+    "MockDecisionCore",
+    "MockMemoryManagerV2",
+    "MockAgentToolsV2",
 ]

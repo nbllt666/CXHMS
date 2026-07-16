@@ -1,0 +1,216 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cxhms.local/schema/template_registry.schema.json",
+  "title": "TemplateRegistry",
+  "description": "RADIX-Lite 模板注册表数据契约。TemplateEngine 使用 YAML frontmatter + Jinja2 原生渲染。模板仓库 data/templates/ 分 presets/（预设）和 custom/（自定义）目录。支持 extends/block/if/for/include/filter。",
+  "type": "object",
+  "required": [
+    "template_id",
+    "name",
+    "category",
+    "frontmatter",
+    "body",
+    "created_at",
+    "updated_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "template_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "description": "模板唯一 ID。仅允许字母、数字、下划线、连字符。"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "模板显示名（人类可读）。"
+    },
+    "category": {
+      "type": "string",
+      "enum": ["preset", "custom"],
+      "description": "模板分类。preset=预设模板（data/templates/presets/），custom=自定义模板（data/templates/custom/）。"
+    },
+    "frontmatter": {
+      "type": "object",
+      "required": ["workflow_mode", "expected_turns"],
+      "additionalProperties": false,
+      "description": "YAML frontmatter 解析结果。替代 Jinja2 自定义 {% meta %} 标签。",
+      "properties": {
+        "workflow_mode": {
+          "type": "string",
+          "enum": ["single_turn", "multi_turn"],
+          "default": "multi_turn",
+          "description": "工作流模式。single_turn=单轮渲染，multi_turn=多轮蒸馏。"
+        },
+        "expected_turns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6,
+          "default": 4,
+          "description": "预期轮次数。用于 DistillationService 初始化 max_turns。"
+        },
+        "required_vars": {
+          "type": "array",
+          "items": {"type": "string"},
+          "default": [],
+          "description": "必需变量名列表。渲染时缺失则报错。"
+        },
+        "optional_vars": {
+          "type": "array",
+          "items": {"type": "string"},
+          "default": [],
+          "description": "可选变量名列表。渲染时缺失则使用默认值。"
+        },
+        "extends": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "父模板 ID（Jinja2 extends）。null=无继承。"
+        },
+        "description": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "模板描述（frontmatter 中的 description 字段）。"
+        }
+      }
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Jinja2 模板体。支持 extends/block/if/elif/else/for/include/filter。YAML frontmatter 已剥离，仅包含渲染体。"
+    },
+    "file_path": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "模板文件物理路径。preset=data/templates/presets/{template_id}.j2，custom=data/templates/custom/{template_id}.j2。"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "模板创建时间。"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "模板最后更新时间。"
+    },
+    "is_deleted": {
+      "type": "boolean",
+      "default": false,
+      "description": "软删除标记。仅 custom 模板可删除，preset 模板不可删除。"
+    }
+  },
+  "definitions": {
+    "render_result": {
+      "type": "object",
+      "description": "render_template 返回结构。",
+      "required": ["rendered_prompt", "workflow_definition", "expected_turns"],
+      "additionalProperties": false,
+      "properties": {
+        "rendered_prompt": {
+          "type": "string",
+          "description": "渲染后的提示词（Jinja2 渲染结果）。"
+        },
+        "workflow_definition": {
+          "type": "object",
+          "description": "工作流定义（frontmatter 解析结果）。",
+          "properties": {
+            "workflow_mode": {"type": "string"},
+            "expected_turns": {"type": "integer"}
+          }
+        },
+        "expected_turns": {
+          "type": "integer",
+          "description": "预期轮次（来自 frontmatter.expected_turns）。"
+        }
+      }
+    },
+    "error_codes": {
+      "type": "object",
+      "description": "TemplateEngine 错误码定义。",
+      "properties": {
+        "TEMPLATE_NOT_FOUND": {
+          "const": 404,
+          "description": "模板不存在：template_id 在 presets/ 和 custom/ 中均未找到。"
+        },
+        "TEMPLATE_ALREADY_EXISTS": {
+          "const": 409,
+          "description": "模板已存在：create_template 时 template_id 已被占用。"
+        },
+        "INVALID_FRONTMATTER": {
+          "const": 422,
+          "description": "frontmatter 解析失败：YAML 格式错误或缺少必需字段。"
+        },
+        "RENDER_ERROR": {
+          "const": 422,
+          "description": "渲染失败：Jinja2 语法错误 / 缺少 required_vars / extends 循环引用。"
+        },
+        "PRESET_NOT_DELETABLE": {
+          "const": 403,
+          "description": "预设模板不可删除：delete_template 对 category=preset 的模板执行。"
+        },
+        "INTERNAL_ERROR": {
+          "const": 500,
+          "description": "内部错误：文件 IO 异常、Jinja2 Environment 初始化失败等。"
+        }
+      },
+      "additionalProperties": false
+    },
+    "exceptions": {
+      "type": "object",
+      "description": "TemplateEngine 异常契约。调用方必须处理以下异常。",
+      "properties": {
+        "KeyError_404": {
+          "type": "object",
+          "properties": {
+            "exception_type": {"const": "KeyError"},
+            "trigger_methods": {
+              "type": "array",
+              "items": {"type": "string"},
+              "enum": ["get_template", "render_template", "update_template", "delete_template"]
+            },
+            "reason": {"type": "string"}
+          }
+        },
+        "ValueError_422": {
+          "type": "object",
+          "properties": {
+            "exception_type": {"const": "ValueError"},
+            "trigger_methods": {
+              "type": "array",
+              "items": {"type": "string"},
+              "enum": ["create_template", "render_template", "_parse_frontmatter"]
+            },
+            "reason": {"type": "string"}
+          }
+        },
+        "PermissionError_403": {
+          "type": "object",
+          "properties": {
+            "exception_type": {"const": "PermissionError"},
+            "trigger_method": {"const": "delete_template"},
+            "reason": {"type": "string"}
+          }
+        },
+        "FileExistsError_409": {
+          "type": "object",
+          "properties": {
+            "exception_type": {"const": "FileExistsError"},
+            "trigger_method": {"const": "create_template"},
+            "reason": {"type": "string"}
+          }
+        },
+        "jinja2_TemplateError_422": {
+          "type": "object",
+          "description": "Jinja2 渲染异常（TemplateSyntaxError / TemplateNotFound 等）。",
+          "properties": {
+            "exception_type": {"type": "string", "enum": ["TemplateSyntaxError", "TemplateNotFound", "TemplateAssertionError"]},
+            "trigger_method": {"const": "render_template"},
+            "reason": {"type": "string"}
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

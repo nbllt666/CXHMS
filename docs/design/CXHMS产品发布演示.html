@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CXHMS · 晨曦人格化记忆系统 · 产品发布演示</title>
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --bg-2: #0f1424;
+    --panel: rgba(20, 26, 48, 0.7);
+    --panel-solid: #141a30;
+    --border: rgba(120, 140, 200, 0.15);
+    --border-strong: rgba(120, 140, 200, 0.3);
+    --text: #e6ebf5;
+    --text-dim: #8b94b3;
+    --text-faint: #5b6480;
+    --accent: #0066ff;
+    --accent-2: #ec4899;
+    --accent-3: #06b6d4;
+    --accent-4: #10b981;
+    --accent-5: #f59e0b;
+    --grad-1: linear-gradient(135deg, #0066ff 0%, #ec4899 100%);
+    --grad-2: linear-gradient(135deg, #06b6d4 0%, #0066ff 100%);
+    --grad-3: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
+    --grad-4: linear-gradient(135deg, #f59e0b 0%, #ec4899 100%);
+    --shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    --shadow-glow: 0 0 40px rgba(0, 102, 255, 0.3);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    font-size: 14px;
+  }
+  a { color: inherit; text-decoration: none; }
+
+  .deck {
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse at 20% 0%, rgba(0, 102, 255, 0.15) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 100%, rgba(236, 72, 153, 0.12) 0%, transparent 50%),
+      var(--bg);
+  }
+  .slide {
+    position: absolute; inset: 0;
+    padding: 64px 80px 80px;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+    animation: slideIn 0.4s ease-out;
+  }
+  .slide.active { display: flex; }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(40px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    height: 48px; padding: 0 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    background: rgba(10, 14, 26, 0.7);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 13px; }
+  .topbar .brand .logo {
+    width: 26px; height: 26px; border-radius: 6px;
+    background: var(--grad-1);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: var(--shadow-glow);
+    font-weight: 900; color: white; font-size: 11px;
+  }
+  .topbar .brand .sub { color: var(--text-dim); font-weight: 400; font-size: 11px; }
+  .topbar .progress {
+    flex: 1; max-width: 400px; margin: 0 32px;
+    height: 3px; background: rgba(255,255,255,0.05); border-radius: 2px; overflow: hidden;
+  }
+  .topbar .progress .bar { height: 100%; background: var(--grad-1); transition: width 0.3s; }
+  .topbar .counter { font-size: 12px; color: var(--text-dim); font-family: monospace; }
+
+  .dots {
+    position: fixed; right: 20px; top: 50%; transform: translateY(-50%);
+    z-index: 100; display: flex; flex-direction: column; gap: 6px;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: rgba(255,255,255,0.15); cursor: pointer;
+    transition: all 0.2s; position: relative;
+  }
+  .dot:hover { background: rgba(255,255,255,0.3); }
+  .dot.active { background: var(--accent); transform: scale(1.4); box-shadow: 0 0 8px var(--accent); }
+  .dot .tip {
+    position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+    background: var(--panel-solid); padding: 4px 10px; border-radius: 4px;
+    font-size: 11px; white-space: nowrap; opacity: 0; pointer-events: none;
+    border: 1px solid var(--border); transition: opacity 0.2s;
+  }
+  .dot:hover .tip { opacity: 1; }
+
+  .nav-arrow {
+    position: fixed; top: 50%; transform: translateY(-50%);
+    z-index: 100; width: 40px; height: 40px; border-radius: 50%;
+    background: rgba(20, 26, 48, 0.7); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.2s; backdrop-filter: blur(10px);
+    font-size: 18px; color: var(--text-dim);
+  }
+  .nav-arrow:hover { background: rgba(0, 102, 255, 0.2); border-color: var(--accent); color: var(--text); }
+  .nav-arrow.prev { left: 20px; }
+  .nav-arrow.next { right: 50px; }
+  .nav-arrow.disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .slide-head { margin-bottom: 24px; }
+  .slide-head .tag {
+    display: inline-block; font-size: 11px; font-weight: 700;
+    color: var(--accent); letter-spacing: 0.1em; text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .slide-head h2 {
+    font-size: 32px; font-weight: 800;
+    letter-spacing: -0.02em; margin-bottom: 6px;
+    background: linear-gradient(135deg, #fff 0%, #80b3ff 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .slide-head p { color: var(--text-dim); font-size: 13px; max-width: 880px; }
+  .slide-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+  .grid { display: grid; gap: 14px; flex: 1; min-height: 0; }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid-5 { grid-template-columns: repeat(5, 1fr); }
+  .grid-6 { grid-template-columns: repeat(6, 1fr); }
+
+  .card {
+    background: var(--panel); backdrop-filter: blur(10px);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; transition: all 0.2s;
+    position: relative; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .card:hover { border-color: var(--border-strong); transform: translateY(-2px); }
+  .card .icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; margin-bottom: 8px; font-weight: 700;
+    background: rgba(0, 102, 255, 0.1); color: var(--accent);
+  }
+  .card .icon.g2 { background: rgba(236, 72, 153, 0.1); color: var(--accent-2); }
+  .card .icon.g3 { background: rgba(6, 182, 212, 0.1); color: var(--accent-3); }
+  .card .icon.g4 { background: rgba(16, 185, 129, 0.1); color: var(--accent-4); }
+  .card .icon.g5 { background: rgba(245, 158, 11, 0.1); color: var(--accent-5); }
+  .card h3 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+  .card p { color: var(--text-dim); font-size: 12px; line-height: 1.5; }
+  .card ul { list-style: none; margin-top: 6px; }
+  .card ul li {
+    padding: 3px 0; font-size: 11px; color: var(--text-dim);
+    display: flex; align-items: flex-start; gap: 6px; line-height: 1.4;
+  }
+  .card ul li::before { content: '▸'; color: var(--accent); flex-shrink: 0; font-size: 10px; }
+  .card ul li code {
+    background: rgba(0, 102, 255, 0.1); padding: 0 4px;
+    border-radius: 3px; font-size: 10px; color: #80b3ff;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+  }
+
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 10px; font-weight: 600;
+    background: rgba(0, 102, 255, 0.1); color: var(--accent);
+    border: 1px solid rgba(0, 102, 255, 0.2);
+  }
+  .pill.g2 { background: rgba(236, 72, 153, 0.1); color: var(--accent-2); border-color: rgba(236, 72, 153, 0.2); }
+  .pill.g3 { background: rgba(6, 182, 212, 0.1); color: var(--accent-3); border-color: rgba(6, 182, 212, 0.2); }
+  .pill.g4 { background: rgba(16, 185, 129, 0.1); color: var(--accent-4); border-color: rgba(16, 185, 129, 0.2); }
+  .pill.g5 { background: rgba(245, 158, 11, 0.1); color: var(--accent-5); border-color: rgba(245, 158, 11, 0.2); }
+
+  .stat-grid { display: grid; gap: 12px; }
+  .stat {
+    padding: 16px 12px; border-radius: 10px;
+    background: var(--panel); border: 1px solid var(--border);
+    text-align: center; transition: all 0.2s;
+  }
+  .stat:hover { border-color: var(--accent); box-shadow: var(--shadow-glow); }
+  .stat .v {
+    font-size: 28px; font-weight: 900;
+    background: var(--grad-1);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .stat .l { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+  .big-stat {
+    padding: 20px; border-radius: 12px;
+    background: var(--panel); backdrop-filter: blur(10px);
+    border: 1px solid var(--border); text-align: center;
+  }
+  .big-stat .v {
+    font-size: 36px; font-weight: 900;
+    background: var(--grad-1);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .big-stat .l { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+
+  .code-block {
+    background: #060810; border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 11px; color: #80b3ff;
+    overflow: auto; flex: 1;
+  }
+  .code-block .k { color: #ec4899; }
+  .code-block .c { color: #5b6480; font-style: italic; }
+
+  .ep-table {
+    width: 100%; border-collapse: collapse;
+    background: var(--panel); border-radius: 8px; overflow: hidden;
+    border: 1px solid var(--border); font-size: 12px;
+  }
+  .ep-table th, .ep-table td {
+    padding: 6px 10px; text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .ep-table th {
+    background: rgba(0, 102, 255, 0.08); color: var(--accent);
+    font-weight: 700; font-size: 11px;
+  }
+  .ep-table tr:last-child td { border-bottom: none; }
+  .ep-table .method {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    font-size: 10px; font-weight: 700; font-family: monospace;
+  }
+  .method.GET { background: rgba(16, 185, 129, 0.15); color: var(--accent-4); }
+  .method.POST { background: rgba(0, 102, 255, 0.15); color: var(--accent); }
+  .method.PUT { background: rgba(245, 158, 11, 0.15); color: var(--accent-5); }
+  .method.DELETE { background: rgba(236, 72, 153, 0.15); color: var(--accent-2); }
+  .method.WS { background: rgba(6, 182, 212, 0.15); color: var(--accent-3); }
+  .ep-table .path { font-family: monospace; color: #80b3ff; }
+
+  .arch-layer {
+    margin-bottom: 8px; padding: 10px 14px;
+    border-radius: 8px; border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .arch-layer .layer-title {
+    font-size: 10px; font-weight: 700; color: var(--accent);
+    letter-spacing: 0.1em; text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .arch-modules { display: flex; flex-wrap: wrap; gap: 4px; }
+  .arch-module {
+    padding: 3px 8px; border-radius: 4px;
+    background: rgba(0, 102, 255, 0.08); border: 1px solid rgba(0, 102, 255, 0.2);
+    font-size: 10px; color: var(--text);
+  }
+  .arch-module.l2 { background: rgba(236, 72, 153, 0.08); border-color: rgba(236, 72, 153, 0.2); }
+  .arch-module.l3 { background: rgba(6, 182, 212, 0.08); border-color: rgba(6, 182, 212, 0.2); }
+  .arch-module.l4 { background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.2); }
+  .arch-module.l5 { background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.2); }
+
+  .chat-mockup {
+    background: #0a0e1a; border-radius: 10px; padding: 14px;
+    border: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px;
+  }
+  .chat-msg { display: flex; gap: 8px; max-width: 80%; }
+  .chat-msg.user { align-self: flex-end; flex-direction: row-reverse; }
+  .chat-msg .avatar {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--grad-1); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: white; font-weight: 700;
+  }
+  .chat-msg.user .avatar { background: var(--grad-3); }
+  .chat-msg .bubble {
+    padding: 6px 10px; border-radius: 8px; font-size: 11px;
+    background: rgba(0, 102, 255, 0.1); border: 1px solid var(--border);
+  }
+  .chat-msg.user .bubble { background: rgba(6, 182, 212, 0.1); }
+  .chat-thinking {
+    font-size: 10px; color: var(--text-faint);
+    padding: 4px 8px; background: rgba(255, 255, 255, 0.02);
+    border-radius: 4px; border-left: 2px solid var(--accent-5);
+    margin-bottom: 2px;
+  }
+  .chat-tool {
+    font-size: 10px; padding: 4px 8px; margin-top: 2px;
+    background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 4px; color: var(--accent-4);
+    font-family: monospace;
+  }
+  .chat-banner {
+    align-self: center; padding: 3px 10px; border-radius: 999px;
+    background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.2);
+    font-size: 10px; color: var(--accent-5);
+  }
+
+  .memory-tier { display: flex; flex-direction: column; gap: 6px; }
+  .tier {
+    padding: 10px 12px; border-radius: 8px;
+    border: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .tier-label { font-size: 11px; font-weight: 700; min-width: 50px; }
+  .tier-bar { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.05); overflow: hidden; }
+  .tier-fill { height: 100%; border-radius: 3px; }
+  .tier-desc { font-size: 10px; color: var(--text-dim); min-width: 80px; text-align: right; }
+  .tier.permanent { background: rgba(245, 158, 11, 0.05); border-color: rgba(245, 158, 11, 0.2); }
+  .tier.permanent .tier-fill { background: var(--grad-4); width: 100%; }
+  .tier.long_term { background: rgba(0, 102, 255, 0.05); border-color: rgba(0, 102, 255, 0.2); }
+  .tier.long_term .tier-fill { background: var(--grad-1); width: 65%; }
+  .tier.short_term { background: rgba(6, 182, 212, 0.05); border-color: rgba(6, 182, 212, 0.2); }
+  .tier.short_term .tier-fill { background: var(--grad-2); width: 30%; }
+
+  .graph-viz {
+    position: relative; height: 100%; min-height: 200px;
+    background:
+      radial-gradient(circle at 30% 30%, rgba(0, 102, 255, 0.1) 0%, transparent 30%),
+      radial-gradient(circle at 70% 70%, rgba(236, 72, 153, 0.1) 0%, transparent 30%);
+    border-radius: 10px; border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .graph-node {
+    position: absolute; width: 50px; height: 50px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; color: white;
+    box-shadow: 0 0 16px rgba(0, 102, 255, 0.4);
+  }
+  .graph-node.user { background: var(--grad-1); top: 15%; left: 15%; }
+  .graph-node.thing { background: var(--grad-3); top: 60%; left: 35%; }
+  .graph-node.concept { background: var(--grad-4); top: 25%; right: 20%; }
+  .graph-node.event { background: var(--grad-2); top: 70%; right: 15%; }
+
+  .ports { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
+  .port {
+    padding: 10px 12px; border-radius: 8px;
+    background: var(--panel); border: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .port .name { font-size: 12px; }
+  .port .addr { font-family: monospace; font-size: 11px; color: var(--accent-3); }
+
+  .hero-slide {
+    align-items: center; justify-content: center; text-align: center;
+    background:
+      radial-gradient(ellipse at 20% 0%, rgba(0, 102, 255, 0.2) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 100%, rgba(236, 72, 153, 0.15) 0%, transparent 50%),
+      var(--bg);
+  }
+  .hero-slide::before {
+    content: ''; position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(0, 102, 255, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 102, 255, 0.04) 1px, transparent 1px);
+    background-size: 50px 50px;
+    mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+    -webkit-mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero-slide .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 999px;
+    background: rgba(0, 102, 255, 0.1);
+    border: 1px solid rgba(0, 102, 255, 0.3);
+    font-size: 11px; color: #80b3ff;
+    margin-bottom: 20px;
+  }
+  .hero-slide .badge .dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--accent-4); box-shadow: 0 0 6px var(--accent-4);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(1.3); }
+  }
+  .hero-slide h1 {
+    font-size: 72px; font-weight: 900; letter-spacing: -0.03em;
+    background: linear-gradient(135deg, #fff 0%, #80b3ff 50%, #ec4899 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 12px;
+  }
+  .hero-slide .tagline {
+    font-size: 16px; color: var(--text-dim); max-width: 720px;
+    margin-bottom: 28px;
+  }
+  .hero-slide .tagline strong { color: var(--text); font-weight: 600; }
+  .hero-slide .metrics {
+    display: grid; grid-template-columns: repeat(7, 1fr);
+    gap: 12px; max-width: 980px; width: 100%;
+    margin-bottom: 24px;
+  }
+  .hero-slide .cta {
+    display: flex; gap: 12px; justify-content: center;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 20px; border-radius: 6px;
+    font-weight: 600; font-size: 12px; cursor: pointer;
+    transition: all 0.2s; border: none;
+  }
+  .btn.primary {
+    background: var(--grad-1); color: white;
+    box-shadow: 0 4px 16px rgba(0, 102, 255, 0.4);
+  }
+  .btn.primary:hover { transform: translateY(-2px); }
+  .btn.ghost {
+    background: rgba(255, 255, 255, 0.05); color: var(--text);
+    border: 1px solid var(--border-strong);
+  }
+
+  .roadmap-item {
+    display: flex; gap: 16px; padding: 16px;
+    border-radius: 10px; background: var(--panel);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent-5);
+  }
+  .roadmap-item .status {
+    flex-shrink: 0; padding: 3px 10px; border-radius: 4px;
+    font-size: 10px; font-weight: 700;
+    background: rgba(245, 158, 11, 0.15); color: var(--accent-5);
+    height: fit-content;
+  }
+
+  .footer-slide {
+    align-items: center; justify-content: center; text-align: center;
+  }
+  .footer-slide .brand { font-size: 48px; font-weight: 900; margin-bottom: 8px;
+    background: linear-gradient(135deg, #fff 0%, #80b3ff 50%, #ec4899 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .split-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; flex: 1; min-height: 0; }
+  .split-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; flex: 1; min-height: 0; }
+  .panel-box {
+    background: var(--panel-solid); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; overflow: auto;
+    display: flex; flex-direction: column;
+  }
+  .panel-title {
+    font-size: 11px; font-weight: 700; color: var(--accent);
+    letter-spacing: 0.05em; text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .kbd-hint {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    z-index: 100; font-size: 10px; color: var(--text-faint);
+    background: rgba(10, 14, 26, 0.7); padding: 4px 12px; border-radius: 4px;
+    border: 1px solid var(--border); backdrop-filter: blur(10px);
+  }
+  .kbd-hint kbd {
+    display: inline-block; padding: 1px 5px; border-radius: 3px;
+    background: rgba(255,255,255,0.1); font-family: monospace; font-size: 10px;
+    margin: 0 2px;
+  }
+
+  @media (max-width: 1024px) {
+    .slide { padding: 56px 40px 60px; }
+    .hero-slide h1 { font-size: 56px; }
+    .hero-slide .metrics { grid-template-columns: repeat(4, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="logo">CX</div>
+    <div>
+      <div>CXHMS</div>
+      <div class="sub">晨曦人格化记忆系统</div>
+    </div>
+  </div>
+  <div class="progress"><div class="bar" id="progressBar"></div></div>
+  <div class="counter" id="counter">1 / 8</div>
+</div>
+
+<div class="dots" id="dots"></div>
+
+<div class="nav-arrow prev" id="prevBtn">‹</div>
+<div class="nav-arrow next" id="nextBtn">›</div>
+
+<div class="kbd-hint">
+  <kbd>←</kbd> <kbd>→</kbd> 翻页 · <kbd>Space</kbd> 下一页 · <kbd>Home</kbd>/<kbd>End</kbd> 首尾
+</div>
+
+<div class="deck" id="deck">
+
+<!-- Slide 1: Hero -->
+<section class="slide hero-slide active" data-title="封面">
+  <div class="badge"><span class="dot"></span> 产品发布演示 · 2026</div>
+  <h1>CXHMS</h1>
+  <p class="tagline">
+    <strong>晨曦人格化记忆系统</strong>（CX-O History & Memory Service）<br>
+    面向人格化 Agent 的仿生记忆中间层 — 三级记忆 · 混合检索 · 知识图谱 · 多协议通信 · 工具生态
+  </p>
+  <div class="metrics">
+    <div class="big-stat"><div class="v">218+</div><div class="l">REST API 端点</div></div>
+    <div class="big-stat"><div class="v">14</div><div class="l">核心后端模块</div></div>
+    <div class="big-stat"><div class="v">9</div><div class="l">前端页面</div></div>
+    <div class="big-stat"><div class="v">56</div><div class="l">图工具函数</div></div>
+    <div class="big-stat"><div class="v">3</div><div class="l">向量后端</div></div>
+    <div class="big-stat"><div class="v">4</div><div class="l">通信协议</div></div>
+    <div class="big-stat"><div class="v">2</div><div class="l">语言支持</div></div>
+  </div>
+  <div class="cta">
+    <button class="btn primary" onclick="nextSlide()">开始浏览 →</button>
+    <button class="btn ghost" onclick="goTo(6)">查看路线图</button>
+  </div>
+</section>
+
+<!-- Slide 2: Memory System -->
+<section class="slide" data-title="记忆系统">
+  <div class="slide-head">
+    <div class="tag">核心能力 · 智能记忆</div>
+    <h2>三级记忆 · 混合搜索 · 文档持久化</h2>
+    <p>短期/长期/永久分层 + 双阶段指数衰减 + 三路融合检索 + 文档自动解析入永久记忆，构建类人仿生记忆。</p>
+  </div>
+  <div class="slide-body">
+    <div class="split-2" style="margin-bottom:14px;">
+      <div class="panel-box">
+        <div class="panel-title">三级分层与重要性晋升</div>
+        <div class="memory-tier" style="margin-bottom:12px;">
+          <div class="tier permanent">
+            <span class="tier-label" style="color:var(--accent-5);">永久</span>
+            <div class="tier-bar"><div class="tier-fill"></div></div>
+            <span class="tier-desc">importance ≥ 0.7</span>
+          </div>
+          <div class="tier long_term">
+            <span class="tier-label" style="color:var(--accent);">长期</span>
+            <div class="tier-bar"><div class="tier-fill"></div></div>
+            <span class="tier-desc">0.4 ≤ i &lt; 0.7</span>
+          </div>
+          <div class="tier short_term">
+            <span class="tier-label" style="color:var(--accent-3);">短期</span>
+            <div class="tier-bar"><div class="tier-fill"></div></div>
+            <span class="tier-desc">i &lt; 0.4</span>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);line-height:1.6;">
+          <strong style="color:var(--text);">艾宾浩斯衰减</strong>：双阶段指数 + _ebbinghaus_factor，permanent 免疫衰减<br>
+          <strong style="color:var(--text);">双重去重</strong>：MD5 内容指纹 + Weaviate nearVector，60× 性能提升<br>
+          <strong style="color:var(--text);">多向量后端</strong>：Weaviate / Chroma / Milvus Lite 工厂切换
+        </div>
+      </div>
+      <div class="panel-box">
+        <div class="panel-title">代表性搜索与批量端点</div>
+        <div class="code-block">
+<span class="c"># 多维搜索</span>
+<span class="k">POST</span>   /api/memories/3d              <span class="c"># importance×time×relevance</span>
+<span class="k">POST</span>   /api/memories/rag             <span class="c"># RAG 向量优先</span>
+<span class="k">POST</span>   /api/memories/semantic-search <span class="c"># 语义搜索</span>
+<span class="k">POST</span>   /api/memories/recall/{id}     <span class="c"># 召回+情绪</span>
+<span class="k">GET</span>    /api/memories/diary           <span class="c"># 日记条目</span>
+
+<span class="c"># 永久记忆 CRUD（独立索引）</span>
+<span class="k">POST</span>   /api/memories/permanent
+<span class="k">DELETE</span> /api/memories/permanent/{id}
+
+<span class="c"># 批量操作（9 个）</span>
+<span class="k">POST</span>   /api/memories/batch/write
+<span class="k">POST</span>   /api/memories/batch/tag-by-query
+<span class="k">POST</span>   /api/memories/batch/archive-by-query
+
+<span class="c"># 衰减与副模型</span>
+<span class="k">POST</span>   /api/memories/sync-decay
+<span class="k">POST</span>   /api/memories/secondary/execute
+        </div>
+      </div>
+    </div>
+    <div class="grid grid-4">
+      <div class="card">
+        <div class="icon">H</div>
+        <h3>HybridSearch 三路融合</h3>
+        <p>向量 + FTS5 trigram + 时间衰减，归一化加权打分，Agent 隔离。</p>
+      </div>
+      <div class="card">
+        <div class="icon g3">D</div>
+        <h3>文档记忆管理（Phase 2）</h3>
+        <p>PDF/Word/TXT/MD → 永久记忆 + 元数据 + workspace 关联，SQLite 持久化。</p>
+      </div>
+      <div class="card">
+        <div class="icon g2">A</div>
+        <h3>归档与压缩</h3>
+        <p>归档层级 + 二次压缩，相似度阈值可调（0.5–1.0），自动归档。</p>
+      </div>
+      <div class="card">
+        <div class="icon g4">3</div>
+        <h3>三维搜索与 RAG</h3>
+        <p>importance × time × relevance 权重可调，按标签/类型/时间多维过滤。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 3: Chat - Streaming + Features -->
+<section class="slide" data-title="双通道流式对话">
+  <div class="slide-head">
+    <div class="tag">核心能力 · 对话系统</div>
+    <h2>双通道流式 · 思考分离 · 工具循环</h2>
+    <p>WebSocket 优先 + SSE 自动降级；思考过程显示在气泡上方，工具调用嵌入气泡内部，系统消息横幅居中。</p>
+  </div>
+  <div class="slide-body">
+    <div class="split-2">
+      <div class="panel-box">
+        <div class="panel-title">架构关键点</div>
+        <ul style="list-style:none;font-size:12px;line-height:1.9;color:var(--text);">
+          <li>✓ WS 端点：<code style="background:rgba(0,102,255,0.1);padding:1px 5px;border-radius:3px;color:#80b3ff;font-family:monospace;font-size:11px;">/ws/{agent_id}</code> · <code style="background:rgba(0,102,255,0.1);padding:1px 5px;border-radius:3px;color:#80b3ff;font-family:monospace;font-size:11px;">/ws/chat</code></li>
+          <li>✓ SSE 端点：<code style="background:rgba(0,102,255,0.1);padding:1px 5px;border-radius:3px;color:#80b3ff;font-family:monospace;font-size:11px;">/api/chat/stream</code></li>
+          <li>✓ chatStreamReducer 处理 7 种 chunk 类型</li>
+          <li>✓ 5 轮工具调用循环 + 4 种文本兜底解析</li>
+          <li>✓ ThinkingBlock（气泡上方可折叠）+ ToolCallBlock（气泡内部三态着色）</li>
+          <li>✓ SystemMessageBanner QQ 风格横幅（diary_summary）</li>
+          <li>✓ 指数退避重连（5 次，1s × 2ⁿ）+ 30s 心跳保活</li>
+          <li>✓ MessageItem memo + 结构性共享（slice + push）</li>
+          <li>✓ 多 Agent 上下文隔离 + 多模态视觉（最多 4 张图片）</li>
+          <li>✓ 自动日记摘要（阈值 20 条触发，多事件拆分）</li>
+        </ul>
+        <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px;">
+          <span class="pill g4">WebSocket</span>
+          <span class="pill">SSE Fallback</span>
+          <span class="pill g3">5 轮工具</span>
+          <span class="pill g5">7 种 chunk</span>
+          <span class="pill g2">多模态</span>
+        </div>
+      </div>
+      <div class="panel-box">
+        <div class="panel-title">实际聊天界面渲染</div>
+        <div class="chat-mockup">
+          <div class="chat-banner">日记摘要 · 2026-07-15</div>
+          <div class="chat-msg user">
+            <div class="avatar">我</div>
+            <div class="bubble">帮我搜索一下系统功能测试相关的记忆</div>
+          </div>
+          <div class="chat-msg">
+            <div class="avatar">A</div>
+            <div>
+              <div class="chat-thinking">思考过程：用户想查找系统功能测试相关的记忆，调用 search_all_memories 工具...</div>
+              <div class="bubble">好的，我来帮您搜索相关记忆。</div>
+              <div class="chat-tool">tool_call: search_all_memories({"query":"系统功能测试"}) → count=10</div>
+            </div>
+          </div>
+          <div class="chat-msg user">
+            <div class="avatar">我</div>
+            <div class="bubble">找到了，请帮我保存这条记忆</div>
+          </div>
+          <div class="chat-msg">
+            <div class="avatar">A</div>
+            <div>
+              <div class="bubble">已保存为长期记忆，importance=4。</div>
+              <div class="chat-tool">tool_call: write_long_term_memory({...}) → saved id=1393</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 4: Knowledge Graph -->
+<section class="slide" data-title="知识图谱">
+  <div class="slide-head">
+    <div class="tag">核心能力 · 知识图谱</div>
+    <h2>4 库 × 14 函数 = 56 工具</h2>
+    <p>SQLite 存储 + Weaviate 语义搜索的双层图引擎，4 类实体 × 4 类关系，完整图算法套件，全部注册到 ToolRegistry。</p>
+  </div>
+  <div class="slide-body">
+    <div class="split-2">
+      <div class="panel-box">
+        <div class="panel-title">知识图谱可视化（4 类实体）</div>
+        <div class="graph-viz">
+          <div class="graph-node user">User</div>
+          <div class="graph-node thing">Thing</div>
+          <div class="graph-node concept">Concept</div>
+          <div class="graph-node event">Event</div>
+          <svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;">
+            <line x1="25%" y1="30%" x2="42%" y2="68%" stroke="rgba(120,140,200,0.4)" stroke-width="1.5"/>
+            <line x1="42%" y1="68%" x2="68%" y2="35%" stroke="rgba(120,140,200,0.4)" stroke-width="1.5"/>
+            <line x1="68%" y1="35%" x2="78%" y2="75%" stroke="rgba(120,140,200,0.4)" stroke-width="1.5"/>
+            <line x1="25%" y1="30%" x2="68%" y2="35%" stroke="rgba(120,140,200,0.2)" stroke-width="1" stroke-dasharray="4 4"/>
+          </svg>
+        </div>
+        <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px;">
+          <span class="pill">user (10 函数)</span>
+          <span class="pill g3">thing (10)</span>
+          <span class="pill g5">concept (10)</span>
+          <span class="pill g2">event (10)</span>
+          <span class="pill g4">relation (16)</span>
+        </div>
+      </div>
+      <div class="panel-box">
+        <div class="panel-title">图算法与语义搜索</div>
+        <div class="grid grid-2" style="gap:10px;">
+          <div class="card" style="padding:12px;">
+            <h3 style="font-size:13px;color:var(--accent);">图遍历与算法</h3>
+            <ul style="margin-top:6px;">
+              <li>BFS / DFS 遍历</li>
+              <li>Dijkstra 最短路径（heapq）</li>
+              <li>PageRank 重要性排序</li>
+              <li>社区检测（LPA + Louvain）</li>
+            </ul>
+          </div>
+          <div class="card" style="padding:12px;">
+            <h3 style="font-size:13px;color:var(--accent-3);">跨跳语义查询</h3>
+            <ul style="margin-top:6px;">
+              <li>semantic_query_with_hops（多跳 BFS）</li>
+              <li>path_constrained_semantic_search</li>
+              <li>semantic_path_discovery（加权）</li>
+              <li>semantic_neighbors</li>
+            </ul>
+          </div>
+          <div class="card" style="padding:12px;">
+            <h3 style="font-size:13px;color:var(--accent-4);">监控与导出</h3>
+            <ul style="margin-top:6px;">
+              <li>QueryMetrics（p95 / cache 命中率）</li>
+              <li>GraphMonitor（图密度 / 平均度）</li>
+              <li>export_json / graphml / dot</li>
+              <li>Neo4j 双向迁移</li>
+            </ul>
+          </div>
+          <div class="card" style="padding:12px;">
+            <h3 style="font-size:13px;color:var(--accent-5);">前端 GraphManager</h3>
+            <ul style="margin-top:6px;">
+              <li>3 统计卡 + 4 类型分布卡</li>
+              <li>语义搜索框（实时）</li>
+              <li>5 Tab（全部/user/thing/concept/event）</li>
+              <li>节点详情 + 创建 Modal</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 5: Tools Ecosystem -->
+<section class="slide" data-title="工具生态">
+  <div class="slide-head">
+    <div class="tag">核心能力 · 工具生态</div>
+    <h2>5 类工具来源 · 插件系统</h2>
+    <p>内置/主模型/记忆管理/图/摘要/MCP 协议 6 类工具 + 15 钩子插件系统，覆盖 LLM 对话与记忆管理全场景。</p>
+  </div>
+  <div class="slide-body">
+    <div class="stat-grid grid-5" style="margin-bottom:16px;">
+      <div class="stat"><div class="v">56</div><div class="l">图工具函数</div></div>
+      <div class="stat"><div class="v">16</div><div class="l">记忆管理工具</div></div>
+      <div class="stat"><div class="v">15</div><div class="l">主模型工具</div></div>
+      <div class="stat"><div class="v">15</div><div class="l">插件钩子</div></div>
+      <div class="stat"><div class="v">8</div><div class="l">任务提醒工具</div></div>
+    </div>
+    <div class="grid grid-3">
+      <div class="card">
+        <div class="icon">M</div>
+        <h3>主模型工具（15）</h3>
+        <p>LLM 对话中主动调用。</p>
+        <ul>
+          <li><code>write_long_term_memory</code></li>
+          <li><code>search_all_memories</code></li>
+          <li><code>call_assistant</code> / <code>mono</code></li>
+          <li><code>set_alarm</code> / <code>get_alarms</code></li>
+          <li><code>write_permanent_memory</code></li>
+          <li>ACP 工具 ×7（connect/send/group）</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="icon g3">A</div>
+        <h3>记忆管理工具（16）</h3>
+        <p>MemoryAgentPage 专用。</p>
+        <ul>
+          <li><code>update_memory_node</code> / <code>delete_memory</code></li>
+          <li><code>merge_memories</code> / <code>clean_expired</code></li>
+          <li><code>export_memories</code>（json/csv）</li>
+          <li><code>search_similar_memories</code>（向量）</li>
+          <li><code>bulk_delete</code> / <code>restore_memory</code></li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="icon g4">M</div>
+        <h3>MCP 工具协议（9 端点）</h3>
+        <p>双模式 MCP 服务器管理。</p>
+        <ul>
+          <li>子进程模式（subprocess.Popen）</li>
+          <li>HTTP endpoint_url 模式</li>
+          <li>命令注入防护</li>
+          <li>工具自动同步 + 9 管理端点</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="icon g5">B</div>
+        <h3>内置工具（4）</h3>
+        <p>AST 安全实现。</p>
+        <ul>
+          <li><code>calculator</code> — AST 安全求值</li>
+          <li>白名单 sqrt/sin/cos/log</li>
+          <li><code>datetime_tool</code></li>
+          <li><code>random</code> / <code>json_format</code></li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="icon g2">S</div>
+        <h3>摘要工具（5）+ 任务（8）</h3>
+        <p>摘要助手 + 任务提醒。</p>
+        <ul>
+          <li><code>summarize_content</code></li>
+          <li><code>save_summary_memory</code></li>
+          <li><code>save_diary_entry</code></li>
+          <li><code>create_task</code> / <code>create_reminder</code></li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="icon">P</div>
+        <h3>插件系统（15 钩子）</h3>
+        <p>动态加载 + API 注入。</p>
+        <ul>
+          <li>plugin.json 自动发现 + importlib</li>
+          <li>依赖与冲突检查</li>
+          <li>15 钩子（MEMORY/CHAT/SESSION/TOOL/SYSTEM）</li>
+          <li>PluginContext API 注入 + 异步取消</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 6: Protocols -->
+<section class="slide" data-title="多协议通信">
+  <div class="slide-head">
+    <div class="tag">核心能力 · 多协议通信</div>
+    <h2>4 大通信协议</h2>
+    <p>ACP 局域网 Agent 协作 · CXFC 插件协议 · AnythingLLM 兼容 API · MCP 工具协议。</p>
+  </div>
+  <div class="slide-body">
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="icon">A</div>
+        <h3>ACP 协议（14 端点）</h3>
+        <p>Agent Communication Protocol — 局域网 Agent 间协作。</p>
+        <ul>
+          <li>UDP 9999 广播自动发现（ACP_BEACON）</li>
+          <li>HTTP 消息点对点投递（/acp/message）</li>
+          <li>群组管理与事件广播</li>
+          <li>接收外部消息自动注入聊天上下文</li>
+          <li>自动回复复用主聊天管线（含工具调用）</li>
+          <li>双 session 注入（agent-{id} + agent-default）</li>
+        </ul>
+        <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;">
+          <span class="pill">discover</span><span class="pill g3">connect</span>
+          <span class="pill g2">groups</span><span class="pill g4">send</span><span class="pill g5">receive</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="icon g3">C</div>
+        <h3>CXFC 插件协议（10 端点）</h3>
+        <p>CX-O Function Connector — 插件技能注册与事件推送。</p>
+        <ul>
+          <li>UDP 广播插件发现（CXFC_BEACON）</li>
+          <li>插件注册 / 心跳 / 事件推送</li>
+          <li>工具与技能自动同步（HTTP 拉取）</li>
+          <li>SkillRegistry 关键词 / 事件匹配</li>
+          <li>超时心跳检测自动断开</li>
+          <li>WebSocket 事件广播</li>
+        </ul>
+        <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;">
+          <span class="pill">register</span><span class="pill g3">heartbeat</span>
+          <span class="pill g2">skills</span><span class="pill g4">connect</span><span class="pill g5">call</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="icon g2">A</div>
+        <h3>AnythingLLM 兼容（18 端点）</h3>
+        <p>完整 AnythingLLM 协议兼容，支持 SillyTavern 等前端接入。</p>
+        <ul>
+          <li><strong>Phase 1（11）</strong>：auth / models / workspaces / chat / stream-chat / chats</li>
+          <li><strong>Phase 2 Document（7）</strong>：upload / raw-text / documents CRUD</li>
+          <li>OpenAI 兼容 chat/completions（流式/非流式）</li>
+          <li>workspace 多租户隔离</li>
+          <li>文档元数据 schema</li>
+        </ul>
+        <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;">
+          <span class="pill">/v1/auth</span><span class="pill g3">/v1/openai</span>
+          <span class="pill g2">/v1/workspace</span><span class="pill g4">/v1/document</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="icon g4">M</div>
+        <h3>MCP 工具协议（9 端点）</h3>
+        <p>Model Context Protocol — 双模式 MCP 服务器管理。</p>
+        <ul>
+          <li>子进程模式（subprocess.Popen）</li>
+          <li>HTTP endpoint_url 模式</li>
+          <li>命令注入防护</li>
+          <li>工具自动同步（HTTP GET /tools）</li>
+          <li>servers CRUD + health + sync</li>
+        </ul>
+        <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;">
+          <span class="pill">servers</span><span class="pill g3">start/stop</span>
+          <span class="pill g2">health</span><span class="pill g4">tools</span><span class="pill g5">sync</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 7: Roadmap - RADIX-Lite -->
+<section class="slide" data-title="路线图 RADIX-Lite">
+  <div class="slide-head">
+    <div class="tag">路线图 · 即将推出</div>
+    <h2>RADIX-Lite：管理 Agent 扩展</h2>
+    <p>基于方案 C（激进 RADIX）去音视频模态，3 独立子系统 + 7 状态机多轮蒸馏 + Jinja2 DSL 模板 + 6 决策点自主决策。</p>
+  </div>
+  <div class="slide-body">
+    <div class="roadmap-item" style="margin-bottom:14px;">
+      <div class="status">规划中 · S2</div>
+      <div style="flex:1;">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;">
+          <div>
+            <div style="font-size:11px;color:var(--accent-5);font-weight:700;margin-bottom:6px;">3 独立子系统</div>
+            <ul style="list-style:none;font-size:11px;color:var(--text-dim);line-height:1.7;">
+              <li>· DistillationService (:8011)</li>
+              <li>· TemplateEngine（进程内）</li>
+              <li>· MultimodalPipeline（worker 池）</li>
+              <li>· 3 模态：文本/角色卡/图片</li>
+            </ul>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--accent-5);font-weight:700;margin-bottom:6px;">7 状态机蒸馏</div>
+            <ul style="list-style:none;font-size:11px;color:var(--text-dim);line-height:1.7;">
+              <li>· S_INIT → S_PREREAD</li>
+              <li>· → S_QUESTION → S_REFLECT</li>
+              <li>· → S_CROSSVALIDATE</li>
+              <li>· → S_EXTRACT → S_STORAGE_DECISION</li>
+              <li>· → S_FINALIZE / S_REJECT</li>
+            </ul>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--accent-5);font-weight:700;margin-bottom:6px;">6 决策点自主</div>
+            <ul style="list-style:none;font-size:11px;color:var(--text-dim);line-height:1.7;">
+              <li>· D1 存入位置</li>
+              <li>· D2 元数据</li>
+              <li>· D3 追问 / D4 再次蒸馏</li>
+              <li>· D5 跨源验证</li>
+              <li>· D6 拒绝存储</li>
+            </ul>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--accent-5);font-weight:700;margin-bottom:6px;">8 新增工具</div>
+            <ul style="list-style:none;font-size:11px;color:var(--text-dim);line-height:1.7;">
+              <li>· add_agent / update / delete</li>
+              <li>· start_distillation</li>
+              <li>· advance_distillation</li>
+              <li>· finalize_distillation</li>
+              <li>· render_template / decide_storage</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel-box">
+      <div class="panel-title">关键决策（用户已裁决）与当前状态</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-size:12px;margin-bottom:12px;">
+        <div><strong style="color:var(--accent);">倾向方案 C</strong> — 保留激进 RADIX 设计</div>
+        <div><strong style="color:var(--accent-2);">去音视频模态</strong> — 3 模态（文本+角色卡+图片）</div>
+        <div><strong style="color:var(--accent-3);">保留 3 子系统</strong> — 原汁原味 C</div>
+        <div><strong style="color:var(--accent-4);">激进改造 parser.py</strong> — 下沉到 MultimodalPipeline</div>
+        <div><strong style="color:var(--accent-5);">扩展性优先</strong> — 未来功能同步到更强系统</div>
+        <div><strong style="color:var(--accent);">通信协议</strong> — HTTP REST API</div>
+      </div>
+      <div style="font-size:11px;color:var(--text-faint);">
+        Spec 路径：<code style="background:rgba(0,102,255,0.1);padding:1px 5px;border-radius:3px;color:#80b3ff;">.trae/specs/add-management-agent-radix/</code> · 状态：<strong style="color:var(--accent-5);">未闭合（S2 契约冻结进行中）</strong> · Jinja2 spike 已通过（5/5 PASS）
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 8: Footer -->
+<section class="slide footer-slide" data-title="封底">
+  <div class="badge" style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;background:rgba(0,102,255,0.1);border:1px solid rgba(0,102,255,0.3);font-size:11px;color:#80b3ff;margin-bottom:20px;">
+    <span style="width:5px;height:5px;border-radius:50%;background:var(--accent-4);box-shadow:0 0 6px var(--accent-4);"></span>
+    CXHMS · 2026 产品发布演示
+  </div>
+  <div class="brand">CXHMS</div>
+  <div style="color:var(--text-dim);margin-bottom:8px;font-size:14px;">晨曦人格化记忆系统 · CX-O History & Memory Service</div>
+  <div style="color:var(--text-faint);font-size:12px;max-width:680px;line-height:1.7;">
+    面向人格化 Agent 的仿生记忆中间层<br>
+    218+ API · 14 核心模块 · 9 前端页面 · 4 通信协议 · 56 图工具<br><br>
+    <strong style="color:var(--text-dim);">服务端口</strong>：API :8001 · 前端 :3000 · 控制 :8765 · vLLM :8002/:8101 · Weaviate :8090
+  </div>
+  <div style="margin-top:24px;display:flex;gap:12px;">
+    <button class="btn primary" onclick="goTo(0)">回到封面</button>
+    <button class="btn ghost" onclick="goTo(6)">查看路线图</button>
+  </div>
+</section>
+
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const dotsContainer = document.getElementById('dots');
+  const counter = document.getElementById('counter');
+  const progressBar = document.getElementById('progressBar');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  let current = 0;
+  const total = slides.length;
+
+  slides.forEach((s, i) => {
+    const dot = document.createElement('div');
+    dot.className = 'dot' + (i === 0 ? ' active' : '');
+    dot.onclick = () => goTo(i);
+    const tip = document.createElement('div');
+    tip.className = 'tip';
+    tip.textContent = (i + 1) + '. ' + (s.dataset.title || 'Slide');
+    dot.appendChild(tip);
+    dotsContainer.appendChild(dot);
+  });
+  const dots = document.querySelectorAll('.dot');
+
+  function update() {
+    slides.forEach((s, i) => s.classList.toggle('active', i === current));
+    dots.forEach((d, i) => d.classList.toggle('active', i === current));
+    counter.textContent = (current + 1) + ' / ' + total;
+    progressBar.style.width = ((current + 1) / total * 100) + '%';
+    prevBtn.classList.toggle('disabled', current === 0);
+    nextBtn.classList.toggle('disabled', current === total - 1);
+  }
+  function goTo(i) { current = Math.max(0, Math.min(total - 1, i)); update(); }
+  function nextSlide() { if (current < total - 1) { current++; update(); } }
+  function prevSlide() { if (current > 0) { current--; update(); } }
+
+  prevBtn.onclick = prevSlide;
+  nextBtn.onclick = nextSlide;
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); nextSlide(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); prevSlide(); }
+    else if (e.key === 'Home') { e.preventDefault(); goTo(0); }
+    else if (e.key === 'End') { e.preventDefault(); goTo(total - 1); }
+  });
+
+  let wheelLock = false;
+  document.addEventListener('wheel', e => {
+    if (wheelLock) return;
+    if (Math.abs(e.deltaY) < 30) return;
+    wheelLock = true;
+    setTimeout(() => wheelLock = false, 600);
+    if (e.deltaY > 0) nextSlide(); else prevSlide();
+  }, { passive: true });
+
+  update();
+</script>
+
+</body>
+</html>

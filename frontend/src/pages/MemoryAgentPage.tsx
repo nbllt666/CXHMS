@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Database, Brain, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { Send, Database, Brain, ChevronDown, ChevronUp, X, FlaskConical, UserPlus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api';
 import { formatRelativeTime } from '../lib/utils';
+import { DistillationModal } from '../components/DistillationModal';
+import { CharacterCardModal } from '../components/CharacterCardModal';
 
 import type { Message, ToolCall, StreamToolCall } from '../types';
 
@@ -144,9 +146,12 @@ export function MemoryAgentPage() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isDistillationModalOpen, setIsDistillationModalOpen] = useState(false);
+  const [isCharacterCardModalOpen, setIsCharacterCardModalOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -468,9 +473,32 @@ export function MemoryAgentPage() {
       </div>
 
       {/* Input Area */}
-      <div className="border-t border-border p-4">
+      <div className="border-t border-border p-4 space-y-3">
+        {/* 多轮蒸馏弹窗按钮 + 角色卡创建 Agent 按钮（RADIX-Lite v1.3.0） */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <button
+            onClick={() => setIsDistillationModalOpen(true)}
+            disabled={isLoading}
+            title={t('memoryAgent.openDistillationModalDesc')}
+            className="flex-shrink-0 px-3 py-1.5 text-xs rounded-full border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 hover:border-amber-500/60 text-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+          >
+            <FlaskConical className="w-3 h-3" />
+            {t('memoryAgent.openDistillationModal')}
+          </button>
+          <button
+            onClick={() => setIsCharacterCardModalOpen(true)}
+            disabled={isLoading}
+            title={t('memoryAgent.openCharacterCardModalDesc')}
+            className="flex-shrink-0 px-3 py-1.5 text-xs rounded-full border border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 hover:border-purple-500/60 text-purple-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+          >
+            <UserPlus className="w-3 h-3" />
+            {t('memoryAgent.openCharacterCardModal')}
+          </button>
+        </div>
+
         <div className="flex gap-2">
           <textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -491,6 +519,18 @@ export function MemoryAgentPage() {
           {t('memoryAgent.enterToSend')}
         </p>
       </div>
+
+      {/* 多轮蒸馏弹窗（RADIX-Lite v1.3.0：批量切分 + 角色卡 agent 创建） */}
+      <DistillationModal
+        isOpen={isDistillationModalOpen}
+        onClose={() => setIsDistillationModalOpen(false)}
+      />
+
+      {/* 角色卡创建 Agent 弹窗（RADIX-Lite v1.3.0：6 字段直接创建 agent） */}
+      <CharacterCardModal
+        isOpen={isCharacterCardModalOpen}
+        onClose={() => setIsCharacterCardModalOpen(false)}
+      />
     </div>
   );
 }

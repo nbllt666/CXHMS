@@ -1,14 +1,38 @@
 # CXHMS API 文档
 
+> **文档版本**: v3.0.0 | **最后更新**: 2026-07-17
+
 ## 概述
 
-CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用于管理记忆、上下文、ACP互联、工具调用等功能。
+CXHMS (CX-O History & Memory Service) 晨曦人格化记忆系统提供了一套完整的 RESTful API，覆盖记忆管理、上下文管理、ACP 协议通信、工具调用、图数据库、CXFC 插件协议、向量数据库、备份恢复，以及 RADIX-Lite 管理 Agent 扩展（模板引擎 / 多模态管线 / 蒸馏服务 / 决策核心）等功能。
 
-**基础URL**: `http://localhost:8001`
+**基础 URL**: `http://localhost:8001`
 
-**认证**: 当前版本暂未实现认证机制（生产环境请配置API密钥）
+**认证**: 当前版本暂未实现认证机制（生产环境请配置 API 密钥）
 
-**响应格式**: 所有API返回JSON格式，包含`status`字段表示请求状态。
+**响应格式**: 所有 API 返回 JSON 格式，包含 `status` 字段表示请求状态
+
+**契约版本**: v1.2.0（13 schema + 13 .pyi + 5 config + 12 mock，详见 [public/schema/CHANGELOG.md](../public/schema/CHANGELOG.md)）
+
+---
+
+## 服务端口说明
+
+CXHMS 采用多服务架构，各服务独立端口运行：
+
+| 服务 | 地址 | 说明 |
+|------|------|------|
+| 主 API 服务 | http://localhost:8001 | FastAPI 主后端，承载全部 REST API |
+| RADIX-Lite 蒸馏服务 | http://localhost:8011 | RADIX-Lite 蒸馏会话独立服务（v1.2.0 新增） |
+| API 文档 (Swagger) | http://localhost:8001/docs | OpenAPI 交互式文档 |
+| API 文档 (ReDoc) | http://localhost:8001/redoc | ReDoc 文档 |
+| 前端界面 | http://localhost:3000 | React 前端开发服务器 |
+| 控制服务 | http://localhost:8765 | 后端启停管理 |
+| vLLM 主模型 | http://localhost:8002 | 主模型 gemma4-e4b |
+| vLLM Embedding | http://localhost:8101 | Embedding 模型 Qwen3-Embedding-0.6B |
+| Weaviate 向量库 | http://localhost:8090 | 向量存储后端 |
+
+> 端口配置以 `config/default.yaml` 与 `public/config_template/radix_config.json` 为真相源。前端开发服务器通过代理转发请求至 8001 端口，Swagger/ReDoc 文档可通过前端代理访问。
 
 ---
 
@@ -17,6 +41,8 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 ### 1. 同步聊天
 
 **端点**: `POST /api/chat`
+
+**描述**: 同步方式发送消息并获取完整响应
 
 **请求体**:
 ```json
@@ -32,7 +58,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 - `message` (string, 必需): 用户消息
 - `agent_id` (string, 可选): Agent ID，默认为 "default"
 - `stream` (boolean, 可选): 是否流式响应，默认为 true
-- `images` (array, 可选): base64编码的图片列表（多模态支持）
+- `images` (array, 可选): base64 编码的图片列表（多模态支持）
 
 **响应示例**:
 ```json
@@ -48,7 +74,9 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 **端点**: `POST /api/chat/stream`
 
-**请求体**: 同`POST /api/chat`
+**描述**: 以 SSE (Server-Sent Events) 流式方式返回响应
+
+**请求体**: 同 `POST /api/chat`
 
 **响应**: Server-Sent Events (SSE) 流
 
@@ -67,8 +95,10 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 **端点**: `GET /api/chat/history/{session_id}`
 
+**描述**: 获取指定会话的聊天历史
+
 **参数**:
-- `limit` (integer, 可选): 返回消息数量限制，默认50
+- `limit` (integer, 可选): 返回消息数量限制，默认 50
 
 **响应示例**:
 ```json
@@ -87,9 +117,11 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 4. 记忆管理Agent流式对话
+### 4. 记忆管理 Agent 流式对话
 
 **端点**: `POST /api/memory-agent/chat/stream`
+
+**描述**: 专门用于记忆管理的流式聊天接口，使用 memory-agent 配置，支持 16 个记忆管理工具。该端点定义在 chat.py 中（非 memory_chat.py）
 
 **请求体**:
 ```json
@@ -98,15 +130,15 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-**说明**: 专门用于记忆管理的流式聊天接口，使用 memory-agent 配置，支持16个记忆管理工具。该端点定义在 chat.py 中（非 memory_chat.py）。
-
 ---
 
 ## 记忆管理 API
 
-### 1. 获取Agent记忆表列表
+### 1. 获取 Agent 记忆表列表
 
 **端点**: `GET /api/memories/agents`
+
+**描述**: 列出所有 Agent 对应的记忆表
 
 **响应示例**:
 ```json
@@ -124,11 +156,13 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 **端点**: `GET /api/memories`
 
+**描述**: 查询记忆列表，支持多维度过滤
+
 **参数**:
-- `workspace_id` (string, 可选): 工作区ID，默认为"default"
+- `workspace_id` (string, 可选): 工作区 ID，默认为 "default"
 - `memory_type` (string, 可选): 记忆类型（long_term, short_term, permanent）
-- `limit` (integer, 可选): 返回数量限制，默认为20
-- `offset` (integer, 可选): 偏移量，默认为0
+- `limit` (integer, 可选): 返回数量限制，默认为 20
+- `offset` (integer, 可选): 偏移量，默认为 0
 
 **响应示例**:
 ```json
@@ -156,6 +190,8 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 **端点**: `POST /api/memories`
 
+**描述**: 创建单条记忆
+
 **请求体**:
 ```json
 {
@@ -178,11 +214,105 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 4. 记忆统计
+### 4. 决策化写入（v1.2.0 新增）
+
+**端点**: `POST /api/memories/write-with-decision`
+
+**描述**: 决策化写入接口，由 RADIX-Lite 决策核心驱动。当决策结果为拒绝写入时，原始内容会保留到 `rejected_content` 表（30 天保留期），便于后续审计与回溯
+
+**请求体**:
+```json
+{
+  "content": "待写入的记忆内容",
+  "type": "long_term",
+  "importance": 3,
+  "tags": ["标签"],
+  "metadata": {},
+  "workspace_id": "default",
+  "agent_id": "default",
+  "rubric_snapshot": {
+    "quality_threshold": 0.6,
+    "dedup_threshold": 0.85
+  }
+}
+```
+
+**响应示例（接受写入）**:
+```json
+{
+  "status": "success",
+  "decision": "accept",
+  "memory_id": 42,
+  "quality_score": 0.78,
+  "rubric_snapshot": {...},
+  "message": "决策接受，记忆已写入"
+}
+```
+
+**响应示例（拒绝写入，内容保留 30 天）**:
+```json
+{
+  "status": "success",
+  "decision": "reject",
+  "memory_id": null,
+  "quality_score": 0.32,
+  "rejected_content_id": "rj-20260717-001",
+  "retention_days": 30,
+  "rubric_snapshot": {...},
+  "message": "决策拒绝，内容已保留至 rejected_content 表"
+}
+```
+
+### 5. 获取拒绝写入内容（v1.2.0 新增）
+
+**端点**: `GET /api/memories/rejected-content`
+
+**描述**: 获取被决策拒绝写入的内容列表（30 天保留期）
+
+**参数**:
+- `agent_id` (string, 可选): Agent ID 过滤
+- `limit` (integer, 可选): 返回数量限制，默认 50
+- `offset` (integer, 可选): 偏移量，默认 0
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "rejected_contents": [
+    {
+      "id": "rj-20260717-001",
+      "content": "被拒绝的内容",
+      "quality_score": 0.32,
+      "decision_reason": "质量分低于阈值",
+      "rubric_snapshot": {...},
+      "created_at": "2026-07-17T10:00:00",
+      "expires_at": "2026-08-16T10:00:00"
+    }
+  ],
+  "total": 1
+}
+```
+
+### 6. 清理过期拒绝内容（v1.2.0 新增）
+
+**端点**: `DELETE /api/memories/rejected-content/cleanup-expired`
+
+**描述**: 清理超过 30 天保留期的拒绝写入内容
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "cleaned_count": 12,
+  "message": "已清理 12 条过期拒绝内容"
+}
+```
+
+### 7. 记忆统计
 
 **端点**: `GET /api/memories/stats`
 
-### 5. 获取单条记忆
+### 8. 获取单条记忆
 
 **端点**: `GET /api/memories/{memory_id}`
 
@@ -202,7 +332,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 6. 更新记忆
+### 9. 更新记忆
 
 **端点**: `PUT /api/memories/{memory_id}`
 
@@ -215,11 +345,11 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 7. 删除记忆
+### 10. 删除记忆
 
 **端点**: `DELETE /api/memories/{memory_id}`
 
-### 8. 搜索记忆
+### 11. 搜索记忆
 
 **端点**: `POST /api/memories/search`
 
@@ -235,9 +365,11 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 9. RAG检索
+### 12. RAG 检索
 
 **端点**: `POST /api/memories/rag`
+
+**描述**: 检索增强生成 (RAG) 检索
 
 **请求体**:
 ```json
@@ -248,7 +380,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 10. 语义搜索
+### 13. 语义搜索
 
 **端点**: `POST /api/memories/semantic-search`
 
@@ -262,9 +394,11 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 11. 3D评分搜索
+### 14. 3D 评分搜索
 
 **端点**: `POST /api/memories/3d`
+
+**描述**: 基于重要性、时间、相关度三维评分的混合搜索
 
 **请求体**:
 ```json
@@ -292,32 +426,30 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 12. 按类型查询
+### 15. 按类型查询
 
 **端点**: `GET /api/memories/type/{memory_type}`
 
-### 13. 按标签搜索
+### 16. 按标签搜索
 
 **端点**: `GET /api/memories/search-by-tag`
 
 **参数**:
 - `tag` (string, 必需): 标签名称
 
-### 14. 永久记忆管理
+### 17. 永久记忆管理
 
-**创建永久记忆**: `POST /api/memories/permanent`
+- **创建永久记忆**: `POST /api/memories/permanent`
+- **列出永久记忆**: `GET /api/memories/permanent`
+- **获取永久记忆**: `GET /api/memories/permanent/{memory_id}`
+- **更新永久记忆**: `PUT /api/memories/permanent/{memory_id}`
+- **删除永久记忆**: `DELETE /api/memories/permanent/{memory_id}`
 
-**列出永久记忆**: `GET /api/memories/permanent`
-
-**获取永久记忆**: `GET /api/memories/permanent/{memory_id}`
-
-**更新永久记忆**: `PUT /api/memories/permanent/{memory_id}`
-
-**删除永久记忆**: `DELETE /api/memories/permanent/{memory_id}`
-
-### 15. 重新激活记忆
+### 18. 重新激活记忆
 
 **端点**: `POST /api/memories/recall/{memory_id}`
+
+**描述**: 重新激活衰减的记忆，提升其评分
 
 **请求体**:
 ```json
@@ -326,23 +458,24 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 16. 同步衰减
+### 19. 同步衰减
 
 **端点**: `POST /api/memories/sync-decay`
 
-### 17. 衰减统计
+**描述**: 触发记忆衰减同步（双阶段指数衰减 + 艾宾浩斯遗忘曲线）
+
+### 20. 衰减统计
 
 **端点**: `GET /api/memories/decay-stats`
 
-### 18. 向量状态
+### 21. 向量状态
 
 **端点**: `GET /api/memories/vectors/status`
 
-### 19. 批量操作
+### 22. 批量操作
 
-**批量写入**: `POST /api/memories/batch/write`
+- **批量写入**: `POST /api/memories/batch/write`
 
-**请求体**:
 ```json
 {
   "memories": [
@@ -352,9 +485,8 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-**批量更新**: `POST /api/memories/batch/update`
+- **批量更新**: `POST /api/memories/batch/update`
 
-**请求体**:
 ```json
 {
   "ids": [1, 2, 3],
@@ -363,9 +495,8 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-**批量删除**: `POST /api/memories/batch/delete`
+- **批量删除**: `POST /api/memories/batch/delete`
 
-**请求体**:
 ```json
 {
   "ids": [1, 2, 3],
@@ -373,9 +504,8 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-**批量标签更新**: `POST /api/memories/batch/tags`
+- **批量标签更新**: `POST /api/memories/batch/tags`
 
-**请求体**:
 ```json
 {
   "ids": [1, 2, 3],
@@ -385,21 +515,18 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-**批量归档**: `POST /api/memories/batch/archive`
+- **批量归档**: `POST /api/memories/batch/archive`
+- **批量恢复**: `POST /api/memories/batch/restore`
+- **按查询批量标签**: `POST /api/memories/batch/tag-by-query`
+- **按查询批量删除**: `POST /api/memories/batch/delete-by-query`
+- **按查询批量归档**: `POST /api/memories/batch/archive-by-query`
 
-**批量恢复**: `POST /api/memories/batch/restore`
+### 23. 副模型路由
 
-**按查询批量标签**: `POST /api/memories/batch/tag-by-query`
+**描述**: 支持 10 种副模型指令
 
-**按查询批量删除**: `POST /api/memories/batch/delete-by-query`
+- **执行副模型指令**: `POST /api/memories/secondary/execute`
 
-**按查询批量归档**: `POST /api/memories/batch/archive-by-query`
-
-### 20. 副模型路由
-
-**执行副模型指令**: `POST /api/memories/secondary/execute`
-
-**请求体**:
 ```json
 {
   "command": "SUMMARIZE_MEMORY",
@@ -407,11 +534,10 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-**获取可用副模型指令**: `GET /api/memories/secondary/commands`
+- **获取可用副模型指令**: `GET /api/memories/secondary/commands`
+- **副模型执行历史**: `GET /api/memories/secondary/history`
 
-**副模型执行历史**: `GET /api/memories/secondary/history`
-
-**支持的10种指令**: SUMMARIZE_MEMORY, ARCHIVE_MEMORY, EXTRACT_KEYWORDS, GENERATE_TAGS, MERGE_MEMORIES, FIND_DUPLICATES, ENRICH_MEMORY, SCORE_MEMORY, CATEGORIZE_MEMORY, CLEANUP_MEMORY
+**支持的 10 种指令**: SUMMARIZE_MEMORY, ARCHIVE_MEMORY, EXTRACT_KEYWORDS, GENERATE_TAGS, MERGE_MEMORIES, FIND_DUPLICATES, ENRICH_MEMORY, SCORE_MEMORY, CATEGORIZE_MEMORY, CLEANUP_MEMORY
 
 ---
 
@@ -527,11 +653,13 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 ---
 
-## ACP互联 API
+## ACP 互联 API
 
-### 1. 发现Agent
+### 1. 发现 Agent
 
 **端点**: `POST /api/acp/discover`
+
+**描述**: 局域网自动发现其他 ACP Agent
 
 **请求体**:
 ```json
@@ -554,15 +682,15 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
     }
   ],
   "scanned_count": 1,
-  "message": "发现 1 个Agents"
+  "message": "发现 1 个 Agents"
 }
 ```
 
-### 2. Agent列表
+### 2. Agent 列表
 
 **端点**: `GET /api/acp/agents`
 
-### 3. 连接Agent
+### 3. 连接 Agent
 
 **端点**: `POST /api/acp/connect`
 
@@ -642,7 +770,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 **端点**: `GET /api/acp/messages`
 
-### 13. ACP统计
+### 13. ACP 统计
 
 **端点**: `GET /api/acp/stats`
 
@@ -655,7 +783,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 **端点**: `GET /api/tools`
 
 **参数**:
-- `enabled_only` (boolean, 可选): 是否只返回启用的工具，默认为true
+- `enabled_only` (boolean, 可选): 是否只返回启用的工具，默认为 true
 
 **响应示例**:
 ```json
@@ -747,7 +875,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 **端点**: `POST /api/tools/{name}/test`
 
-### 6. OpenAI格式工具列表
+### 6. OpenAI 格式工具列表
 
 **端点**: `GET /api/tools/openai`
 
@@ -795,9 +923,9 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 ---
 
-## MCP工具管理 API
+## MCP 工具管理 API
 
-### 1. MCP服务器列表
+### 1. MCP 服务器列表
 
 **端点**: `GET /api/tools/mcp/servers`
 
@@ -830,7 +958,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 2. 添加MCP服务器
+### 2. 添加 MCP 服务器
 
 **端点**: `POST /api/tools/mcp/servers`
 
@@ -844,11 +972,11 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 3. 删除MCP服务器
+### 3. 删除 MCP 服务器
 
 **端点**: `DELETE /api/tools/mcp/servers/{name}`
 
-### 4. 启动MCP服务器
+### 4. 启动 MCP 服务器
 
 **端点**: `POST /api/tools/mcp/servers/start`
 
@@ -859,7 +987,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 5. 停止MCP服务器
+### 5. 停止 MCP 服务器
 
 **端点**: `POST /api/tools/mcp/servers/stop`
 
@@ -870,7 +998,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 6. MCP健康检查
+### 6. MCP 健康检查
 
 **端点**: `GET /api/tools/mcp/servers/{name}/health`
 
@@ -887,11 +1015,11 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 7. MCP工具列表
+### 7. MCP 工具列表
 
 **端点**: `GET /api/tools/mcp/servers/{name}/tools`
 
-### 8. 调用MCP工具
+### 8. 调用 MCP 工具
 
 **端点**: `POST /api/tools/mcp/call`
 
@@ -906,7 +1034,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 9. 同步MCP工具
+### 9. 同步 MCP 工具
 
 **端点**: `POST /api/tools/mcp/sync`
 
@@ -915,11 +1043,13 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 ---
 
-## Agent管理 API
+## Agent 管理 API
 
-### 1. Agent列表
+### 1. Agent 列表
 
 **端点**: `GET /api/agents`
+
+**描述**: 获取所有 Agent 配置列表。v1.2.0 起 AgentConfig 新增 3 个 RADIX-Lite 扩展字段（见下方字段说明）
 
 **响应示例**:
 ```json
@@ -927,15 +1057,18 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
   {
     "id": "default",
     "name": "默认助手",
-    "description": "通用AI助手",
-    "system_prompt": "你是一个有帮助的AI助手...",
+    "description": "通用 AI 助手",
+    "system_prompt": "你是一个有帮助的 AI 助手...",
     "model": "main",
     "temperature": 0.7,
     "max_tokens": 131072,
     "use_memory": true,
     "use_tools": true,
     "memory_scene": "chat",
-    "is_default": true
+    "is_default": true,
+    "tools_config": null,
+    "decision_rubric": null,
+    "distillation_enabled": false
   },
   {
     "id": "memory-agent",
@@ -945,12 +1078,23 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
     "temperature": 0.3,
     "max_tokens": 131072,
     "use_memory": false,
-    "use_tools": true
+    "use_tools": true,
+    "tools_config": null,
+    "decision_rubric": null,
+    "distillation_enabled": false
   }
 ]
 ```
 
-### 2. 创建Agent
+**v1.2.0 新增字段说明**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `tools_config` | object \| null | 工具配置，声明该 Agent 启用的 RADIX-Lite 8 个工具方法子集 |
+| `decision_rubric` | object \| null | 决策 rubric，包含 4 个阈值（quality_threshold / dedup_threshold / importance_threshold / archive_threshold） |
+| `distillation_enabled` | boolean | 是否启用蒸馏功能，默认 false。启用后该 Agent 可调用 RADIX-Lite 蒸馏服务 |
+
+### 2. 创建 Agent
 
 **端点**: `POST /api/agents`
 
@@ -966,27 +1110,37 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
   "use_memory": true,
   "use_tools": true,
   "memory_scene": "chat",
-  "vision_enabled": false
+  "vision_enabled": false,
+  "tools_config": {
+    "enabled_tools": ["distill_start", "distill_collect", "storage_decision"]
+  },
+  "decision_rubric": {
+    "quality_threshold": 0.6,
+    "dedup_threshold": 0.85,
+    "importance_threshold": 3,
+    "archive_threshold": 0.3
+  },
+  "distillation_enabled": true
 }
 ```
 
-### 3. 获取Agent
+### 3. 获取 Agent
 
 **端点**: `GET /api/agents/{agent_id}`
 
-### 4. 更新Agent
+### 4. 更新 Agent
 
 **端点**: `PUT /api/agents/{agent_id}`
 
-### 5. 删除Agent
+### 5. 删除 Agent
 
 **端点**: `DELETE /api/agents/{agent_id}`
 
-### 6. 克隆Agent
+### 6. 克隆 Agent
 
 **端点**: `POST /api/agents/{agent_id}/clone`
 
-### 7. Agent统计
+### 7. Agent 统计
 
 **端点**: `GET /api/agents/{agent_id}/stats`
 
@@ -999,14 +1153,14 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 8. Agent上下文
+### 8. Agent 上下文
 
 **端点**: `GET /api/agents/{agent_id}/context`
 
 **参数**:
-- `limit` (integer, 可选): 返回消息数量限制，默认20
+- `limit` (integer, 可选): 返回消息数量限制，默认 20
 
-### 9. 清除Agent上下文
+### 9. 清除 Agent 上下文
 
 **端点**: `DELETE /api/agents/{agent_id}/context`
 
@@ -1282,7 +1436,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 **端点**: `GET /api/config/vector`
 
-### 5. LLM配置
+### 5. LLM 配置
 
 **端点**: `POST /api/config/llm`
 
@@ -1290,7 +1444,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 **端点**: `GET /api/config/graph`
 
-### 7. CXFC配置
+### 7. CXFC 配置
 
 **端点**: `GET /api/config/cxfc`
 
@@ -1460,11 +1614,11 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 **端点**: `GET /api/edges/search`
 
 **参数**:
-- `source_id` (string, 可选): 源节点ID
-- `target_id` (string, 可选): 目标节点ID
+- `source_id` (string, 可选): 源节点 ID
+- `target_id` (string, 可选): 目标节点 ID
 - `type` (string, 可选): 边类型
 
-### 13. BFS遍历
+### 13. BFS 遍历
 
 **端点**: `POST /api/traverse/bfs`
 
@@ -1478,7 +1632,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 14. DFS遍历
+### 14. DFS 遍历
 
 **端点**: `POST /api/traverse/dfs`
 
@@ -1489,8 +1643,8 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 **端点**: `GET /api/paths/shortest`
 
 **参数**:
-- `source_id` (string, 必需): 源节点ID
-- `target_id` (string, 必需): 目标节点ID
+- `source_id` (string, 必需): 源节点 ID
+- `target_id` (string, 必需): 目标节点 ID
 - `max_depth` (integer, 可选): 最大深度
 
 ### 16. 语义搜索
@@ -1552,7 +1706,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 **端点**: `GET /api/algorithm/important-nodes`
 
 **参数**:
-- `top_k` (integer, 可选): 返回前K个重要节点
+- `top_k` (integer, 可选): 返回前 K 个重要节点
 
 ### 24. 社区发现
 
@@ -1593,15 +1747,15 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 28. JSON导出
+### 28. JSON 导出
 
 **端点**: `GET /api/export/json`
 
-### 29. GraphML导出
+### 29. GraphML 导出
 
 **端点**: `GET /api/export/graphml`
 
-### 30. DOT导出
+### 30. DOT 导出
 
 **端点**: `GET /api/export/dot`
 
@@ -1611,7 +1765,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 ---
 
-## CXFC插件协议 API
+## CXFC 插件协议 API
 
 ### 1. 注册插件
 
@@ -1678,7 +1832,7 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 **端点**: `GET /api/cxfc/skills`
 
 **参数**:
-- `plugin_id` (string, 可选): 插件ID
+- `plugin_id` (string, 可选): 插件 ID
 
 ### 6. 连接插件
 
@@ -1707,13 +1861,13 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 ## WebSocket API
 
-### 1. Agent专用WebSocket
+### 1. Agent 专用 WebSocket
 
 **端点**: `WS /ws/{agent_id}`
 
-**说明**: 为指定Agent建立的专用WebSocket连接，支持实时消息推送和状态更新。
+**描述**: 为指定 Agent 建立的专用 WebSocket 连接，支持实时消息推送和状态更新
 
-### 2. 通用WebSocket
+### 2. 通用 WebSocket
 
 **端点**: `WS /ws`
 
@@ -1725,11 +1879,456 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 }
 ```
 
-### 3. 聊天WebSocket
+### 3. 聊天 WebSocket
 
 **端点**: `WS /ws/chat`
 
-**说明**: 专门用于聊天场景的WebSocket连接，支持流式消息传输。
+**描述**: 专门用于聊天场景的 WebSocket 连接，支持流式消息传输
+
+> **双通信模式**: ChatPage 同时支持 WebSocket 和 SSE 两种流式通信方式，自动降级保障连接可靠性
+
+---
+
+## RADIX-Lite API（v1.2.0 新增）
+
+RADIX-Lite 是 CXHMS v1.2.0 引入的管理 Agent 扩展子系统，包含 4 个独立子系统：模板引擎、多模态管线、蒸馏服务、决策核心。蒸馏服务运行在独立端口 8011，其他 API 通过主 API 服务（8001）代理。
+
+### 一、蒸馏服务 API（端口 8011）
+
+**基础 URL**: `http://localhost:8011`
+
+**描述**: 提供 7 状态机多轮蒸馏会话管理（draft → collecting → distilling → refining → reviewing → finalizing → finalized）
+
+#### 1. 启动蒸馏会话
+
+**端点**: `POST /api/radix/distillation/start`
+
+**描述**: 创建新的蒸馏会话，初始状态为 `draft`
+
+**请求体**:
+```json
+{
+  "agent_id": "default",
+  "topic": "用户偏好分析",
+  "config": {
+    "max_turns": 5,
+    "quality_threshold": 0.6
+  }
+}
+```
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "session_id": "dist-20260717-001",
+  "state": "draft",
+  "created_at": "2026-07-17T10:00:00",
+  "message": "蒸馏会话已启动"
+}
+```
+
+#### 2. 推进蒸馏状态
+
+**端点**: `POST /api/radix/distillation/advance`
+
+**描述**: 推进蒸馏会话到下一状态，遵循 7 状态机单向流转
+
+**请求体**:
+```json
+{
+  "session_id": "dist-20260717-001",
+  "input": {
+    "collected_content": "收集到的原始内容...",
+    "metadata": {}
+  }
+}
+```
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "session_id": "dist-20260717-001",
+  "previous_state": "collecting",
+  "current_state": "distilling",
+  "turns_completed": 2,
+  "message": "状态已推进"
+}
+```
+
+#### 3. 完成蒸馏
+
+**端点**: `POST /api/radix/distillation/finalize`
+
+**描述**: 完成蒸馏会话，生成最终决策与蒸馏产物
+
+**请求体**:
+```json
+{
+  "session_id": "dist-20260717-001",
+  "final_review": {
+    "approved": true,
+    "quality_score": 0.82
+  }
+}
+```
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "session_id": "dist-20260717-001",
+  "state": "finalized",
+  "final_decision": {
+    "action": "write_long_term",
+    "quality_score": 0.82,
+    "rubric_snapshot": {...}
+  },
+  "distilled_content": "蒸馏后的精华内容...",
+  "message": "蒸馏已完成"
+}
+```
+
+#### 4. 获取蒸馏会话状态
+
+**端点**: `GET /api/radix/distillation/{session_id}`
+
+**描述**: 查询指定蒸馏会话的当前状态与历史 turns
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "session": {
+    "session_id": "dist-20260717-001",
+    "state": "distilling",
+    "agent_id": "default",
+    "topic": "用户偏好分析",
+    "turns": [
+      {"turn_id": 1, "state": "draft", "timestamp": "..."},
+      {"turn_id": 2, "state": "collecting", "timestamp": "..."}
+    ],
+    "created_at": "2026-07-17T10:00:00",
+    "updated_at": "2026-07-17T10:15:00"
+  }
+}
+```
+
+### 二、模板引擎 API
+
+**基础 URL**: `http://localhost:8001`
+
+**描述**: Jinja2 DSL 模板渲染与 CRUD 管理，支持 frontmatter 解析
+
+#### 1. 创建模板
+
+**端点**: `POST /api/radix/templates`
+
+**请求体**:
+```json
+{
+  "template_id": "user-profile-summary",
+  "name": "用户画像摘要模板",
+  "description": "用于生成用户画像摘要",
+  "frontmatter": {
+    "version": "1.0.0",
+    "author": "system",
+    "tags": ["summary", "profile"]
+  },
+  "body": "用户 {{ name }} 偏好 {{ preferences | join(', ') }}，活跃度 {{ activity_score }}"
+}
+```
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "template_id": "user-profile-summary",
+  "message": "模板已创建"
+}
+```
+
+#### 2. 获取模板
+
+**端点**: `GET /api/radix/templates/{template_id}`
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "template": {
+    "template_id": "user-profile-summary",
+    "name": "用户画像摘要模板",
+    "frontmatter": {...},
+    "body": "用户 {{ name }} 偏好 ...",
+    "created_at": "2026-07-17T10:00:00",
+    "updated_at": "2026-07-17T10:00:00"
+  }
+}
+```
+
+#### 3. 更新模板
+
+**端点**: `PUT /api/radix/templates/{template_id}`
+
+**请求体**: 同创建模板，字段可选
+
+#### 4. 删除模板
+
+**端点**: `DELETE /api/radix/templates/{template_id}`
+
+#### 5. 渲染模板
+
+**端点**: `POST /api/radix/templates/{template_id}/render`
+
+**请求体**:
+```json
+{
+  "variables": {
+    "name": "张三",
+    "preferences": ["编程", "阅读"],
+    "activity_score": 0.85
+  }
+}
+```
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "rendered_content": "用户 张三 偏好 编程, 阅读，活跃度 0.85"
+}
+```
+
+### 三、多模态管线 API
+
+**基础 URL**: `http://localhost:8001`
+
+**描述**: 3 worker（OCR / 视觉 / 文本）多模态预处理，支持模态融合与降级开关
+
+#### 1. 多模态预处理
+
+**端点**: `POST /api/radix/multimodal/preprocess`
+
+**请求体**:
+```json
+{
+  "inputs": [
+    {"type": "image", "data": "base64-encoded-image-data"},
+    {"type": "text", "data": "附带文本说明"}
+  ],
+  "config": {
+    "ocr_worker_enabled": true,
+    "vision_worker_enabled": true,
+    "text_worker_enabled": true,
+    "vision_degraded": false,
+    "merge_strategy": "concat"
+  }
+}
+```
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "artifacts": [
+    {
+      "modality": "image",
+      "type": "ocr",
+      "content": "图片中识别的文本...",
+      "confidence": 0.92,
+      "vision_degraded": false
+    },
+    {
+      "modality": "image",
+      "type": "vision",
+      "content": "视觉模型描述...",
+      "confidence": 0.88,
+      "vision_degraded": false
+    },
+    {
+      "modality": "text",
+      "type": "text",
+      "content": "附带文本说明",
+      "confidence": 1.0,
+      "vision_degraded": false
+    }
+  ],
+  "merged_content": "融合后的多模态内容..."
+}
+```
+
+### 四、决策核心 API
+
+**基础 URL**: `http://localhost:8001`
+
+**描述**: 6 决策点自主决策，rubric 驱动，含审计日志写入
+
+#### 1. 启动蒸馏决策
+
+**端点**: `POST /api/radix/decision/distill-start`
+
+**描述**: 决策是否启动一次新的蒸馏会话
+
+**请求体**:
+```json
+{
+  "agent_id": "default",
+  "topic": "用户偏好分析",
+  "trigger_reason": "scheduled",
+  "context": {
+    "recent_memories_count": 50
+  }
+}
+```
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "decision": "proceed",
+  "llm_reasoning": "近期记忆数量充足，适合启动蒸馏",
+  "session_id": "dist-20260717-001",
+  "rubric_snapshot": {...}
+}
+```
+
+#### 2. 收集蒸馏内容
+
+**端点**: `POST /api/radix/decision/distill-collect`
+
+**描述**: 决策收集哪些内容进入蒸馏流程
+
+**请求体**:
+```json
+{
+  "session_id": "dist-20260717-001",
+  "candidate_memories": [1, 2, 3, 4, 5],
+  "collection_strategy": "recent_and_important"
+}
+```
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "decision": "accept",
+  "selected_memories": [1, 2, 4],
+  "llm_reasoning": "选择相关性最高的 3 条记忆",
+  "rubric_snapshot": {...}
+}
+```
+
+#### 3. 推进蒸馏
+
+**端点**: `POST /api/radix/decision/distill-advance`
+
+**描述**: 决策蒸馏状态是否可以推进到下一阶段
+
+**请求体**:
+```json
+{
+  "session_id": "dist-20260717-001",
+  "current_state": "distilling",
+  "intermediate_result": {
+    "quality_score": 0.75
+  }
+}
+```
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "decision": "advance",
+  "next_state": "refining",
+  "llm_reasoning": "质量分达标，可推进至精炼阶段",
+  "rubric_snapshot": {...}
+}
+```
+
+#### 4. 完成蒸馏
+
+**端点**: `POST /api/radix/decision/distill-finalize`
+
+**描述**: 决策蒸馏会话是否可以最终完成
+
+**请求体**:
+```json
+{
+  "session_id": "dist-20260717-001",
+  "final_quality_score": 0.82
+}
+```
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "decision": "finalize",
+  "llm_reasoning": "最终质量分超过阈值，可完成蒸馏",
+  "rubric_snapshot": {...}
+}
+```
+
+#### 5. 存储决策
+
+**端点**: `POST /api/radix/decision/storage-decision`
+
+**描述**: 决策蒸馏产物的存储位置（long_term / short_term / archive 三选一）
+
+**请求体**:
+```json
+{
+  "session_id": "dist-20260717-001",
+  "distilled_content": "蒸馏后的精华内容...",
+  "quality_score": 0.82,
+  "agent_id": "default"
+}
+```
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "decision": "write_long_term",
+  "storage_location": "long_term",
+  "memory_id": 42,
+  "llm_reasoning": "质量分高，写入长期记忆",
+  "rubric_snapshot": {
+    "quality_threshold": 0.6,
+    "dedup_threshold": 0.85
+  }
+}
+```
+
+#### 6. 内容合并
+
+**端点**: `POST /api/radix/decision/content-merge`
+
+**描述**: 决策是否将新蒸馏内容与已有记忆合并
+
+**请求体**:
+```json
+{
+  "new_content": "新蒸馏内容...",
+  "existing_memory_ids": [10, 15],
+  "merge_strategy": "semantic"
+}
+```
+
+**响应示例**:
+```json
+{
+  "status": "success",
+  "decision": "merge",
+  "target_memory_id": 10,
+  "merged_content": "合并后的内容...",
+  "llm_reasoning": "与记忆 10 语义高度重合，执行合并",
+  "rubric_snapshot": {...}
+}
+```
 
 ---
 
@@ -1776,23 +2375,26 @@ CXHMS (CX-O History & Memory Service) 提供了一套完整的RESTful API，用�
 
 ## 注意事项
 
-1. **认证**: 当前版本未实现认证，生产环境请配置API密钥
-2. **CORS**: 默认允许所有来源，生产环境请限制CORS来源
+1. **认证**: 当前版本未实现认证，生产环境请配置 API 密钥
+2. **CORS**: 默认允许所有来源，生产环境请限制 CORS 来源
 3. **速率限制**: 当前未实现速率限制，建议生产环境配置
-4. **数据持久化**: 使用SQLite数据库
-5. **向量搜索**: 支持Chroma/Milvus Lite/Qdrant/Weaviate/Weaviate Embedded
-6. **图数据库**: 基于SQLite + NetworkX，支持Neo4j迁移
-7. **CXFC插件协议**: 心跳机制维持在线状态，技能声明与路由
-8. **控制服务**: 独立端口8765，管理后端启停
-9. **副模型路由**: 支持10种指令（SUMMARIZE_MEMORY, ARCHIVE_MEMORY, EXTRACT_KEYWORDS, GENERATE_TAGS, MERGE_MEMORIES, FIND_DUPLICATES, ENRICH_MEMORY, SCORE_MEMORY, CATEGORIZE_MEMORY, CLEANUP_MEMORY）
-10. **默认端口**: API默认端口为8001（依据 default.yaml 配置）
+4. **数据持久化**: 使用 SQLite 数据库
+5. **向量搜索**: 支持 Milvus Lite / Chroma / Qdrant / Weaviate / Weaviate Embedded
+6. **图数据库**: 基于SQLite + NetworkX，支持 Neo4j 迁移
+7. **CXFC 插件协议**: 心跳机制维持在线状态，技能声明与路由
+8. **控制服务**: 独立端口 8765，管理后端启停
+9. **副模型路由**: 支持 10 种指令（SUMMARIZE_MEMORY, ARCHIVE_MEMORY, EXTRACT_KEYWORDS, GENERATE_TAGS, MERGE_MEMORIES, FIND_DUPLICATES, ENRICH_MEMORY, SCORE_MEMORY, CATEGORIZE_MEMORY, CLEANUP_MEMORY）
+10. **默认端口**: API 默认端口为 8001（依据 `config/default.yaml` 配置）
 11. **双通信模式**: ChatPage 同时支持 WebSocket 和 SSE 两种流式通信方式
+12. **RADIX-Lite 蒸馏服务**: 独立端口 8011，7 状态机多轮蒸馏
+13. **决策化写入**: v1.2.0 新增，rejected_content 保留 30 天
+14. **Agent 扩展字段**: v1.2.0 新增 tools_config / decision_rubric / distillation_enabled
 
 ---
 
 ## 示例代码
 
-### Python示例
+### Python 示例
 
 ```python
 import httpx
@@ -1814,7 +2416,57 @@ result = await create_memory()
 print(result)
 ```
 
-### JavaScript示例
+### 决策化写入示例（v1.2.0）
+
+```python
+import httpx
+
+async def write_with_decision():
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "http://localhost:8001/api/memories/write-with-decision",
+            json={
+                "content": "待决策的记忆内容",
+                "type": "long_term",
+                "importance": 3,
+                "agent_id": "default",
+                "rubric_snapshot": {
+                    "quality_threshold": 0.6,
+                    "dedup_threshold": 0.85
+                }
+            }
+        )
+        return response.json()
+
+result = await write_with_decision()
+print(result["decision"])  # "accept" 或 "reject"
+```
+
+### RADIX-Lite 蒸馏启动示例（v1.2.0）
+
+```python
+import httpx
+
+async def start_distillation():
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "http://localhost:8011/api/radix/distillation/start",
+            json={
+                "agent_id": "default",
+                "topic": "用户偏好分析",
+                "config": {
+                    "max_turns": 5,
+                    "quality_threshold": 0.6
+                }
+            }
+        )
+        return response.json()
+
+result = await start_distillation()
+print(result["session_id"])  # "dist-20260717-001"
+```
+
+### JavaScript 示例
 
 ```javascript
 async function createMemory() {
@@ -1842,7 +2494,7 @@ createMemory().then(result => console.log(result));
 
 控制服务运行在独立端口 **8765**，用于管理主后端服务的启停和状态监控。
 
-**基础URL**: `http://localhost:8765`
+**基础 URL**: `http://localhost:8765`
 
 ### 1. 健康检查
 
@@ -1904,3 +2556,31 @@ createMemory().then(result => console.log(result));
   "message": "主后端已重启"
 }
 ```
+
+---
+
+## 契约版本信息
+
+当前三层契约版本：**v1.2.0**（2026-07-16 闭合）
+
+| 契约类型 | 数量 | 位置 |
+|----------|------|------|
+| 数据契约 (JSON Schema) | 13 份 | `public/schema/` |
+| 接口契约 (.pyi 存根) | 13 份 | `public/interface_stub/` |
+| 配置契约 | 5 份 | `public/config_template/` |
+| 预生成 Mock | 12 份 | `public/pre_generated_mock/` |
+
+**版本演进**:
+- v1.0.0（2026-07-02）：初始 5 schema + 5 .pyi + 3 config
+- v1.0.1（2026-07-04）：接口契约补全 + graph schema 新增
+- v1.0.2（2026-07-04）：jsonschema 严格化
+- v1.1.0（2026-07-14）：AnythingLLM 兼容层
+- v1.2.0（2026-07-16）：RADIX-Lite 4 新模块契约（6 schema + 6 .pyi + 1 config + 6 Mock）
+
+详见 [public/schema/CHANGELOG.md](../public/schema/CHANGELOG.md)。
+
+---
+
+*文档版本: v3.0.0*
+
+*最后更新: 2026-07-17*

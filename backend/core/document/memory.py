@@ -158,7 +158,7 @@ class DocumentMemoryManager:
                     folder TEXT DEFAULT 'custom-documents',
                     file_path TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     is_deleted BOOLEAN DEFAULT FALSE
                 )
                 """

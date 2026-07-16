@@ -1,7 +1,7 @@
 import json
 import os
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -14,6 +14,29 @@ logger = get_contextual_logger(__name__)
 
 # Agent 配置文件路径
 AGENTS_CONFIG_PATH = "data/agents.json"
+
+
+# RADIX-Lite Task 6: 默认 tools_config / decision_rubric（与 radix_config.json 对齐）
+_DEFAULT_TOOLS_CONFIG = {
+    "add_agent": True,
+    "update_agent": True,
+    "delete_agent": True,
+    "start_distillation": True,
+    "advance_distillation": True,
+    "finalize_distillation": True,
+    "render_template": True,
+    "decide_storage": True,
+}
+
+_DEFAULT_DECISION_RUBRIC = {
+    "importance_threshold_permanent": 0.7,
+    "quality_reject_threshold": 0.3,
+    "max_redistill_turns": 2,
+    "ask_user_confidence_threshold": 0.4,
+    "cross_validate_sources": [],
+    "session_timeout_seconds": 1800,
+    "rejected_content_retention_days": 30,
+}
 
 
 class AgentConfig(BaseModel):
@@ -34,6 +57,10 @@ class AgentConfig(BaseModel):
     is_default: bool = False
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    # RADIX-Lite Task 6 扩展字段（rules-3 §三 auto_fill：缺失时自动补齐默认值）
+    tools_config: Dict[str, bool] = {}
+    decision_rubric: Dict[str, Any] = {}
+    distillation_enabled: bool = False
 
 
 class AgentCreateRequest(BaseModel):
@@ -99,6 +126,10 @@ def _load_agents() -> List[dict]:
             "is_default": True,
             "created_at": now,
             "updated_at": now,
+            # RADIX-Lite Task 6 扩展字段（与 agent_config_v2.schema.json 对齐）
+            "tools_config": dict(_DEFAULT_TOOLS_CONFIG),
+            "decision_rubric": dict(_DEFAULT_DECISION_RUBRIC),
+            "distillation_enabled": False,
         }
 
         memory_agent = {
@@ -117,6 +148,10 @@ def _load_agents() -> List[dict]:
             "is_default": False,
             "created_at": now,
             "updated_at": now,
+            # RADIX-Lite Task 6 扩展字段（memory-agent 启用蒸馏）
+            "tools_config": dict(_DEFAULT_TOOLS_CONFIG),
+            "decision_rubric": dict(_DEFAULT_DECISION_RUBRIC),
+            "distillation_enabled": True,
         }
 
         _save_agents([default_agent, memory_agent])
@@ -126,8 +161,26 @@ def _load_agents() -> List[dict]:
     try:
         with open(AGENTS_CONFIG_PATH, "r", encoding="utf-8") as f:
             agents = json.load(f)
-            agent_config_cache.set("all_agents", agents)
-            return agents
+
+        # RADIX-Lite Task 6: auto_fill 旧记录缺失的 3 字段（rules-3 §三 auto_fill）
+        # 旧 agents.json 无 tools_config / decision_rubric / distillation_enabled，
+        # 此处补齐默认值，向后兼容；不立即回写磁盘，下次 _save_agents 时持久化。
+        for agent in agents:
+            # agent_id 与 id 保持一致（agent_config_v2.schema.json required 字段）
+            if "agent_id" not in agent and "id" in agent:
+                agent["agent_id"] = agent["id"]
+            if "tools_config" not in agent:
+                agent["tools_config"] = dict(_DEFAULT_TOOLS_CONFIG)
+            if "decision_rubric" not in agent:
+                agent["decision_rubric"] = dict(_DEFAULT_DECISION_RUBRIC)
+            if "distillation_enabled" not in agent:
+                # memory-agent 默认启用蒸馏，其他 agent 默认关闭
+                agent["distillation_enabled"] = (
+                    agent.get("id") == "memory-agent"
+                )
+
+        agent_config_cache.set("all_agents", agents)
+        return agents
     except Exception as e:
         logger.error(f"加载Agent配置失败: {e}", exc_info=True)
         return []
@@ -329,6 +382,46 @@ def _cleanup_agent_graph_db(agent_id: str) -> None:
         logger.warning(f"删除图数据库文件失败 (agent_id={agent_id}): {e}")
 
 
+def _cleanup_agent_weaviate_collection(agent_id: str) -> None:
+    """清理指定助手的 Weaviate per-agent collection。
+
+    通过 memory_manager._vector_store 获取 WeaviateVectorStore 实例，
+    调用 delete_agent_collection(agent_id) 删除 per-agent collection。
+    若向量存储未启用或不是 WeaviateVectorStore，则跳过（幂等）。
+    """
+    try:
+        from backend.dependencies import _resolve_state
+
+        state = _resolve_state()
+        memory_manager = state.memory_manager
+        if memory_manager is None:
+            logger.debug(f"memory_manager 未就绪，跳过 Weaviate collection 清理 (agent_id={agent_id})")
+            return
+
+        vector_store = getattr(memory_manager, "_vector_store", None)
+        if vector_store is None:
+            logger.debug(f"向量存储未启用，跳过 Weaviate collection 清理 (agent_id={agent_id})")
+            return
+
+        # 仅 WeaviateVectorStore 支持 per-agent collection
+        delete_fn = getattr(vector_store, "delete_agent_collection", None)
+        if delete_fn is None:
+            logger.debug(
+                f"向量存储 {type(vector_store).__name__} 不支持 per-agent collection，跳过清理 (agent_id={agent_id})"
+            )
+            return
+
+        delete_fn(agent_id)
+    except Exception as e:
+        logger.warning(f"清理 Weaviate per-agent collection 失败 (agent_id={agent_id}): {e}")
+
+
+def _cleanup_agent_resources(agent_id: str) -> None:
+    """清理指定助手的全部 per-agent 资源（图数据库 + Weaviate collection）。"""
+    _cleanup_agent_graph_db(agent_id)
+    _cleanup_agent_weaviate_collection(agent_id)
+
+
 @router.delete("/agents/{agent_id}")
 async def delete_agent(agent_id: str):
     """删除 Agent"""
@@ -345,8 +438,8 @@ async def delete_agent(agent_id: str):
         agents = [a for a in agents if a["id"] != agent_id]
         _save_agents(agents)
 
-        # 清理该助手的图数据库实例及文件
-        _cleanup_agent_graph_db(agent_id)
+        # 清理该助手的全部 per-agent 资源（图数据库 + Weaviate collection）
+        _cleanup_agent_resources(agent_id)
 
         return {"status": "success", "message": f"Agent '{agent_id}' 已删除"}
     except HTTPException:

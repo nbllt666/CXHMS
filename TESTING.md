@@ -1,9 +1,10 @@
 # CXHMS 测试文档
 
+> **文档版本**: v3.1.0 | **最后更新**: 2026-07-17
+
 ## 测试架构概览
 
-本项目包含完整的测试套件，覆盖前端和后端的所有主要功能。测试结构按 AC范式v6 规范组织：
-后端测试位于 `tests/`，契约测试位于 `public/test_cases/`，前端测试位于 `frontend/src/`，Playwright E2E 位于 `frontend/e2e/`。
+本项目包含完整的测试套件，覆盖前端和后端的所有主要功能。测试结构按 AC 范式 v6 规范组织：后端测试位于 `tests/`，契约测试位于 `public/test_cases/` 与 `tests/contracts/`，RADIX-Lite 单元测试位于 `tests/contract/`，前端测试位于 `frontend/src/`，Playwright E2E 位于 `frontend/e2e/`。
 
 ## 前端测试
 
@@ -74,7 +75,7 @@ tests/
 │   ├── fake_vector_store.py     # InMemoryVectorStore（真实余弦相似度 + 线程安全）
 │   ├── fake_llm.py              # FakeLLMClient + FakeModelRouter（脚本化回复 / 流式 / 工具调用）
 │   └── fake_graph.py            # InMemoryGraphStore + InMemoryGraphDatabase
-├── units/                       # 后端单元测试（87 项，覆盖 B1-B8 回归 + C1-C5 性能优化）
+├── units/                       # 后端单元测试（覆盖 B1-B8 回归 + C1-C5 性能优化）
 │   ├── test_fakes_smoke.py
 │   ├── test_fixtures_smoke.py
 │   ├── test_memory_manager.py   # B2/B3/B4 回归
@@ -84,10 +85,10 @@ tests/
 │   ├── test_hybrid_search.py    # B5 agent 隔离
 │   ├── test_router.py           # B8 上界 + D5 max_tool_rounds
 │   └── test_websocket_manager.py # B7 字典并发
-├── simulation/scenarios/        # 行为测试（47 项，覆盖 C4 流式取消 / B4 并发隔离 / C3 长对话 / B5 HybridSearch / C5 3D 排序 + C6 FTS5 中文分词）
+├── simulation/scenarios/        # 行为测试（覆盖 C4 流式取消 / B4 并发隔离 / C3 长对话 / B5 HybridSearch / C5 3D 排序 + C6 FTS5 中文分词）
 │   ├── test_basic_chat.py
 │   ├── test_multi_turn_context.py
-│   ├── test_memory_write_search.py  # C6 FTS5 trigram 中文分词（3 个原 xfail 已转 passed）
+│   ├── test_memory_write_search.py  # C6 FTS5 trigram 中文分词
 │   ├── test_tool_calling.py
 │   ├── test_memory_agent_chat.py
 │   ├── test_concurrent_chat.py
@@ -98,14 +99,21 @@ tests/
 │   ├── test_long_conversation_100.py      # C3 长对话
 │   ├── test_hybrid_search_agent_isolation.py # B5 HybridSearch 隔离
 │   └── test_3d_search_ranking.py          # C5 3D 搜索排序
-├── contracts/                   # 契约测试（三层契约校验，416 项）
-│   ├── test_data_schema.py      # 数据契约校验（jsonschema）
-│   ├── test_interface_stub.py   # 接口契约签名匹配（.pyi 存根）
-│   └── test_config_template.py  # 配置契约默认值填充
-└── e2e/                         # 端到端测试（12 项，标记 slow，依赖真实 vLLM）
-    ├── test_chat_flow.py        # 非流式 / 流式 / 多轮上下文 / 历史回溯
-    ├── test_memory_lifecycle.py # 写入搜索 / 标签 / 时间范围 / decay_score / 删除404
-    └── test_agent_isolation.py # 记忆隔离 / 上下文隔离 / memory-agent 流式
+├── contract/                    # RADIX-Lite 单元测试（262 passed，v1.2.0 新增）
+│   ├── radix_contract_test.py           # RADIX-Lite 契约校验（105 用例）
+│   ├── test_distillation_service_unit.py # 蒸馏服务单元测试（50 用例）
+│   ├── test_decision_core_unit.py        # 决策核心单元测试（55 用例）
+│   ├── test_multimodal_pipeline_unit.py  # 多模态管线单元测试（28 用例）
+│   └── test_template_engine_smoke.py     # 模板引擎冒烟测试（24 用例）
+├── contracts/                   # 接口契约签名匹配测试（437 passed，含 RADIX-Lite 6 类 locator 扩展 +156）
+│   ├── test_interface_stub.py            # .pyi 存根 vs 真实实现签名对比
+│   ├── test_data_schema.py               # 数据契约校验
+│   └── test_config_template.py           # 配置契约默认值填充
+└── e2e/                         # 端到端测试（37 passed，标记 slow，依赖真实 vLLM）
+    ├── test_chat_flow.py                 # 非流式 / 流式 / 多轮上下文 / 历史回溯
+    ├── test_memory_lifecycle.py          # 写入搜索 / 标签 / 时间范围 / decay_score / 删除404
+    ├── test_agent_isolation.py           # 记忆隔离 / 上下文隔离 / memory-agent 流式
+    └── test_radix_task6_integration.py   # RADIX-Lite Task6 集成测试（v1.2.0 新增）
 ```
 
 ### conftest.py 全局 fixtures
@@ -129,6 +137,7 @@ python -m pytest
 python -m pytest tests/units/ -v
 python -m pytest tests/simulation/scenarios/ -v
 python -m pytest tests/contracts/ -v
+python -m pytest tests/contract/ -v       # RADIX-Lite 单元测试
 
 # 运行契约测试（public/test_cases/）
 python -m pytest public/test_cases/ -v
@@ -150,21 +159,60 @@ python -m pytest --cov=backend --cov-report=html
 
 ### 概述
 
-契约测试位于 `public/test_cases/`，校验三层契约（数据 / 接口 / 配置）的符合性。GN-004 交付前审查依赖此套件验证 D6.5 闭合信号。
+契约测试位于 `public/test_cases/` 与 `tests/contracts/`，校验三层契约（数据 / 接口 / 配置）的符合性。GN-004 交付前审查依赖此套件验证 D6.5 闭合信号。
 
 ### 测试文件
 
 | 文件 | 描述 |
 |------|------|
-| `public/test_cases/test_data_schema.py` | 数据契约校验（jsonschema，14 项） |
-| `public/test_cases/test_interface_stub.py` | 接口契约签名匹配（.pyi 存根，11 项） |
-| `public/test_cases/test_config_template.py` | 配置契约默认值填充（9 项） |
+| `public/test_cases/test_data_schema.py` | 数据契约校验（jsonschema） |
+| `public/test_cases/test_interface_stub.py` | 接口契约签名匹配（.pyi 存根） |
+| `public/test_cases/test_config_template.py` | 配置契约默认值填充 |
 | `public/test_cases/rubric.md` | 合规 rubric（通过 / 失败判据清单） |
+| `tests/contracts/test_interface_stub.py` | 接口契约签名匹配扩展（含 RADIX-Lite 6 类 locator 扩展 +156 用例） |
+| `tests/contracts/test_data_schema.py` | 数据契约校验扩展 |
+| `tests/contracts/test_config_template.py` | 配置契约默认值填充扩展 |
 
 ### 运行契约测试
 
 ```bash
+# 运行所有契约测试
+python -m pytest public/test_cases/ tests/contracts/ -v
+
+# 仅运行 public/test_cases/
 python -m pytest public/test_cases/ -v
+
+# 仅运行 RADIX-Lite 接口契约扩展
+python -m pytest tests/contracts/test_interface_stub.py -v
+```
+
+## RADIX-Lite 单元测试（v1.2.0 新增）
+
+### 概述
+
+RADIX-Lite 单元测试位于 `tests/contract/`，覆盖 RADIX-Lite spec `add-management-agent-radix` 产出的 4 个新模块（模块7-10）的核心逻辑。合计 **262 passed**。
+
+### 测试文件
+
+| 文件 | 用例数 | 描述 |
+|------|--------|------|
+| `tests/contract/radix_contract_test.py` | 105 | RADIX-Lite 契约校验（6 schema + 6 .pyi + 1 config + 6 Mock 完整性） |
+| `tests/contract/test_distillation_service_unit.py` | 50 | 蒸馏服务 7 状态机单元测试（draft→collecting→distilling→refining→reviewing→finalizing→finalized） |
+| `tests/contract/test_decision_core_unit.py` | 55 | 决策核心 6 决策点单元测试（distill_start / distill_collect / distill_advance / distill_finalize / storage_decision / content_merge） |
+| `tests/contract/test_multimodal_pipeline_unit.py` | 28 | 多模态管线 3 worker 单元测试（OCR / 视觉 / 文本 + 模态融合） |
+| `tests/contract/test_template_engine_smoke.py` | 24 | 模板引擎冒烟测试（Jinja2 DSL 渲染 + frontmatter 解析 + CRUD） |
+
+### 运行 RADIX-Lite 单元测试
+
+```bash
+# 运行所有 RADIX-Lite 单元测试
+python -m pytest tests/contract/ -v
+
+# 运行特定模块
+python -m pytest tests/contract/test_distillation_service_unit.py -v
+python -m pytest tests/contract/test_decision_core_unit.py -v
+python -m pytest tests/contract/test_multimodal_pipeline_unit.py -v
+python -m pytest tests/contract/test_template_engine_smoke.py -v
 ```
 
 ## Playwright 前端 E2E 测试
@@ -339,6 +387,19 @@ def test_my_interface_matches_stub():
     # 签名匹配校验...
 ```
 
+### RADIX-Lite 单元测试示例
+
+```python
+def test_distillation_state_transition():
+    """校验蒸馏服务 7 状态机转换。"""
+    from modules.模块9_蒸馏服务.distillation_service import DistillationService
+    service = DistillationService()
+    session = service.start_session(...)
+    assert session.state == "draft"
+    service.advance(session.id)
+    assert session.state == "collecting"
+```
+
 ## 持续集成建议
 
 在 CI/CD 管道中运行测试：
@@ -375,7 +436,10 @@ jobs:
         run: python -m pytest -m "not slow"
 
       - name: Run contract tests
-        run: python -m pytest public/test_cases/
+        run: python -m pytest public/test_cases/ tests/contracts/
+
+      - name: Run RADIX-Lite unit tests
+        run: python -m pytest tests/contract/
 
       - name: Run frontend tests
         run: cd frontend && npm test -- --run
@@ -383,26 +447,99 @@ jobs:
 
 ## 测试状态
 
-- ✅ 后端单元测试：8 个文件（87 项，覆盖 B1-B8 回归 + C1-C5 性能优化）
-- ✅ 后端行为测试：13 个场景文件（47 项，覆盖 C4/B4/C3/B5/C5 + C6 FTS5 中文分词）
-- ✅ 后端契约测试：3 个文件（416 项，三层契约校验）
-- ✅ 后端 E2E 测试：3 个文件（12 项，标记 slow，依赖真实 vLLM）
-- ✅ 前端单元测试：19 个文件（299 项）
-- ✅ Playwright E2E：2 个文件（5 项 + 1 skip）
-- ✅ 端到端冒烟脚本：scripts/smoke_e2e.py（10 步骤全绿）
+### 测试统计（截至 2026-07-17）
+
+| 套件 | 文件数 | 用例数 | 位置 |
+|------|--------|--------|------|
+| 后端单元测试 | 8 | 753 passed | `tests/units/` + `tests/simulation/` |
+| RADIX-Lite 单元测试 | 5 | 262 passed | `tests/contract/` |
+| 接口契约测试 | 6+ | 437 passed | `tests/contracts/` + `public/test_cases/` |
+| E2E 测试 | 4 | 37 passed | `tests/e2e/`（含 `test_radix_task6_integration.py`） |
+| 前端单元测试 | 19 | 299 项 | `frontend/src/` |
+| Playwright E2E | 2 | 5 项 + 1 skip | `frontend/e2e/` |
+| 端到端冒烟脚本 | 1 | 10 步骤全绿 | `scripts/smoke_e2e.py` |
+| **合计** | — | **1489 passed** | — |
 
 ### 默认测试套件
 
 ```bash
 # 后端默认（不含 slow）
 python -m pytest -m "not slow"
-# 预期：587 passed, 1 skipped, 0 failed
+# 预期：753 passed, 0 failed
+
+# RADIX-Lite 单元测试
+python -m pytest tests/contract/
+# 预期：262 passed, 0 failed
+
+# 接口契约测试
+python -m pytest public/test_cases/ tests/contracts/
+# 预期：437 passed, 0 failed
+
+# E2E 测试（依赖真实 vLLM）
+python -m pytest tests/e2e/ -m slow
+# 预期：37 passed, 0 failed
 
 # 前端默认
 cd frontend && npm test -- --run
 # 预期：19 files, 299 passed, 0 failed
-
-# 契约测试
-python -m pytest public/test_cases/
-# 预期：34 passed
 ```
+
+### RADIX-Lite 测试明细（v1.2.0 新增）
+
+| 文件 | 用例数 | 模块 |
+|------|--------|------|
+| `tests/contract/radix_contract_test.py` | 105 | 全模块契约校验 |
+| `tests/contract/test_distillation_service_unit.py` | 50 | 模块9_蒸馏服务 |
+| `tests/contract/test_decision_core_unit.py` | 55 | 模块10_管理Agent扩展 |
+| `tests/contract/test_multimodal_pipeline_unit.py` | 28 | 模块8_多模态管线 |
+| `tests/contract/test_template_engine_smoke.py` | 24 | 模块7_模板引擎 |
+| **RADIX-Lite 合计** | **262 passed** | — |
+
+### 接口契约测试扩展（v1.2.0 新增）
+
+`tests/contracts/test_interface_stub.py` 在原有基础上扩展 **+156 用例**，覆盖 RADIX-Lite 6 类 locator：
+- `distillation_service` locator
+- `template_engine` locator
+- `multimodal_pipeline` locator
+- `decision_core` locator
+- `memory_manager_v2` locator
+- `agent_tools_v2` locator
+
+### Weaviate per-agent collection 改造回归测试（v3.1.0 新增）
+
+Weaviate per-agent collection 改造（2026-07-17 闭合）的回归测试结果，验证改造未引入回归：
+
+| 测试套件 | 用例数 | 结果 | 命令 |
+|---------|--------|------|------|
+| 记忆/混合搜索/Fakes | 18 | 18 passed | `pytest tests/units/test_memory_manager.py tests/units/test_hybrid_search.py tests/fakes/ -v` |
+| 后端单元测试全量 | 111 | 111 passed | `pytest tests/units/ -q` |
+| 模拟/契约测试 | 671 | 670 passed, 1 skipped | `pytest tests/simulation/ tests/contracts/ -q` |
+
+**关键回归点**（全部 PASSED）：
+- `test_b4_agent_isolation_search_memories` — agent 隔离搜索仍正常
+- `test_b5_hybrid_search_agent_isolation` — 混合搜索 agent 隔离仍正常
+- `test_b5_vector_search_passes_agent_id` — 向量搜索 agent_id 透传仍正常
+- `test_memory_agent_chat` 4 项 — 记忆 agent 聊天流程无回归
+
+**真实 Weaviate 端到端验证**（2026-07-16 20:25）：6 步骤全 PASS
+- Step 0: 服务可用性 — PASS
+- Step 1: 创建两个测试 agent — PASS
+- Step 2: 分别写入记忆 — PASS
+- Step 3: 检查 per-agent collection 懒创建 — PASS
+- Step 4: 验证记忆隔离性 — PASS
+- Step 5: 删除 agent 验证清理 — PASS（Weaviate collection + graph db 文件均删除）
+- Step 6: 清理测试数据无残留 — PASS
+
+详见变更文档 [`.trae/documents/20260717_模块0_图数据库agent自建图.md`](../.trae/documents/20260717_模块0_图数据库agent自建图.md) 第五章。
+
+## 测试闭合信号
+
+RADIX-Lite spec `add-management-agent-radix` 的闭合判据（已全部满足）：
+
+- [x] 6 份数据契约存在且通过 jsonschema 自校验
+- [x] 6 份接口存根存在且仅含签名（零实现）
+- [x] 1 份配置契约存在且含默认值（5 段）
+- [x] 6 份预生成 Mock 存在且签名匹配 .pyi
+- [x] 测试套件可自主执行：262 RADIX-Lite + 437 interface_stub + 37 E2E = 736 PASS
+- [x] GN-004 交付前审查通过（6 维度全 PASS）
+- [x] [V] 双重闸门闭合（GN-004 通过 + 人类批准交付）

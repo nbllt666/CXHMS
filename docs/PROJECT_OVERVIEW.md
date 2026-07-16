@@ -1,127 +1,185 @@
 # CXHMS 项目总览
 
-> **文档版本**: v2.3.0 | **最后更新**: 2026-07-02
->
-> 本文为 CXHMS 项目总览文档，汇总项目定位、技术栈与核心特性。架构细节见 [ARCHITECTURE.md](./ARCHITECTURE.md)，模块与 API 细节见 [MODULES.md](./MODULES.md)，部署与接口见 [DEPLOYMENT.md](./DEPLOYMENT.md) / [API.md](./API.md)。
+> **文档版本**: v3.0.0 | **最后更新**: 2026-07-17
 
-## 项目概述
+## 项目简介
 
-CXHMS (晨曦人格化记忆系统, CX-O History & Memory Service) 是一个基于 FastAPI 的智能记忆管理平台，提供完整的记忆存储、语义搜索、对话系统、ACP 协议通信和工具调用功能。系统采用前后端分离架构，后端使用 Python + FastAPI，前端使用 React + TypeScript，定位为面向人格化 Agent 的仿生记忆中间层服务。
+CXHMS (晨曦人格化记忆系统, CX-O History & Memory Service) 是一个基于 FastAPI 的智能记忆管理平台，提供完整的记忆存储、语义搜索、对话系统、ACP 协议通信、工具调用、图数据库、CXFC 插件协议，以及 RADIX-Lite 管理 Agent 扩展（模板引擎 / 多模态管线 / 蒸馏服务 / 决策核心）功能。系统采用前后端分离架构，后端使用 Python + FastAPI，前端使用 React + TypeScript，定位为面向人格化 Agent 的仿生记忆中间层服务。
 
 ## 技术栈
 
-**后端技术**
-- 框架: Python 3.10+ / FastAPI + Uvicorn
-- 数据验证: Pydantic v2
-- 数据库: SQLite + SQLAlchemy
-- HTTP 客户端: httpx 异步支持
-- 测试框架: pytest + pytest-asyncio
+### 后端技术栈
 
-**前端技术**
-- 框架: React 18 + TypeScript
-- 构建工具: Vite 6
-- 状态管理: Zustand + React Query
-- 国际化: i18next + react-i18next
-- 样式: Tailwind CSS
-- 测试: Vitest + jsdom
+- **语言**: Python 3.10+
+- **Web 框架**: FastAPI + Uvicorn
+- **数据验证**: Pydantic v2
+- **ORM**: SQLAlchemy
+- **数据库**: SQLite（WAL 模式 + 连接池）
+- **HTTP 客户端**: httpx
+- **系统监控**: psutil
+- **模板引擎**: Jinja2（RADIX-Lite 模块7）
+- **LLM 集成**: vLLM（默认）/ Ollama / OpenAI / Anthropic / DeepSeek / Local 兼容接口
+- **向量存储**: Weaviate（默认）/ Chroma / Milvus Lite / Qdrant
+- **协议**: ACP (Agent Communication Protocol) / CXFC 插件协议 / MCP (Model Context Protocol)
 
-**AI 与向量**
-- LLM 集成: Ollama、OpenAI、Anthropic、DeepSeek、vLLM 兼容接口
-- 向量数据库: Weaviate (默认)、Chroma、Milvus Lite、Qdrant
-- 工具协议: MCP (Model Context Protocol)、CXFC (插件协议)
-- 图数据库: SQLite 知识图谱
+### 前端技术栈
 
-**当前默认配置** (源自 `config/default.yaml`，作为唯一真相源)
-- 主模型: vLLM / `gemma4-e4b` @ http://localhost:8002
-- 嵌入模型: vLLM / `/models/Qwen3-Embedding-0.6B` @ http://localhost:8101
-- 摘要/记忆副模型: Ollama `qwen3-vl:8b` (默认禁用，回退到主模型)
-- 后端 API: 0.0.0.0:8001 (Swagger/ReDoc 同端口)
-- 前端开发服务器: 3000
-- 控制服务: 8765
-- 向量后端: Weaviate @ 8090 (HTTP) / 50051 (gRPC)，`hybrid_search_enabled: false`
-- ACP 发现: UDP 9999 / 广播 9998
+- **UI 框架**: React 18.3.1
+- **类型系统**: TypeScript 5.7.2
+- **构建工具**: Vite 6.0.6
+- **样式**: Tailwind CSS 3.4.17
+- **状态管理**: Zustand 5.0.2
+- **数据获取**: React Query 5.62.11
+- **国际化**: i18next 25.8.4 + react-i18next 16.5.4
+- **动画**: Framer Motion 11.15.0
+- **图表**: Recharts 2.15.0
+- **图标**: Lucide React 0.469.0
+- **HTTP 客户端**: Axios 1.7.9
+- **Markdown 渲染**: React Markdown 9.0.1 + remark-gfm 4.0.0
+- **日期处理**: date-fns 4.1.0
+- **测试框架**: Vitest 2.1.8
+
+### AC 范式 v6 基础设施
+
+- **规则体系**: `.trae/rules/rules-0..6.md`（7 个核心规则文件）
+- **技能矩阵**: `.trae/skills/`（s0101-s0602 全生命周期 Skill）
+- **GN-004 独立审查**: 交付前 6 维度审查
+- **三层契约**: `public/`（13 schema + 13 .pyi + 5 config + 12 mock，v1.2.0）
+- **变更追踪**: `.trae/documents/`（rules-6 闸门）
 
 ## 核心功能列表
 
-| 功能模块 | 功能项 | 状态 | 说明 |
-|---------|-------|------|------|
-| **记忆管理** | 记忆 CRUD | 已实现 | 支持创建、读取、更新、删除 |
-| | 语义搜索 | 已实现 | 基于向量的相似度搜索 |
-| | 混合搜索 | 已实现 | 向量 + 关键词融合搜索 |
-| | 记忆衰减 | 已实现 | 双阶段指数衰减 + 艾宾浩斯遗忘曲线 |
-| | 归档管理 | 已实现 | 智能去重、层级压缩 |
-| | 情感分析 | 已实现 | 记忆情感标记 |
-| **对话系统** | 聊天对话 | 已实现 | 支持流式/非流式 |
-| | Agent 配置 | 已实现 | 灵活的系统提示词 |
-| | 上下文管理 | 已实现 | 会话历史、Mono 上下文 |
-| | 记忆增强 | 已实现 | RAG 检索增强生成 |
-| **ACP 协议** | Agent 发现 | 已实现 | 局域网自动发现 |
-| | 点对点通信 | 已实现 | 直接消息传递 |
-| | 群组通信 | 已实现 | 多 Agent 协同 |
-| | 记忆共享 | 已实现 | 跨 Agent 记忆访问 |
-| **工具系统** | 内置工具 | 已实现 | calculator, datetime, random, json_format |
-| | 主模型工具 | 已实现 | 记忆写入/搜索、ACP、提醒、Mono等13个 |
-| | 记忆管理工具 | 已实现 | 16个助手工具 |
-| | 摘要工具 | 已实现 | summarize_content, save_summary_memory |
-| | MCP 集成 | 已实现 | Model Context Protocol |
-| | 图工具 | 已实现 | 图数据库操作工具（条件注册） |
-| **LLM 集成** | Ollama | 已实现 | 本地 LLM 支持 |
-| | OpenAI | 已实现 | OpenAI 兼容 API |
-| | Anthropic | 已实现 | Claude 兼容 |
-| | DeepSeek | 已实现 | DeepSeek API |
-| | vLLM | 已实现 | vLLM 推理服务（当前默认主模型提供商） |
-| | 向量生成 | 已实现 | 文本嵌入（当前默认 vLLM Qwen3-Embedding-0.6B） |
-| **图数据库** | 知识图谱 | 已实现 | 节点/边 CRUD、可视化 |
-| | 语义搜索 | 已实现 | 图节点语义搜索 |
-| | 路径分析 | 已实现 | 最短路径、PageRank、社区检测 |
-| **CXFC 插件协议** | 插件发现 | 已实现 | 自动发现 CXFC 兼容插件 |
-| | 技能注册 | 已实现 | 插件技能注册与调用 |
-| **提醒系统** | 定时提醒 | 已实现 | 闹钟、定时回调 |
-| **备份恢复** | 数据备份 | 已实现 | 系统数据快照 |
-| | 数据恢复 | 已实现 | 从备份恢复 |
-| **WebSocket** | 实时通信 | 已实现 | 推送提醒、状态更新 |
-| | 离线保存 | 已实现 | Agent 离线时保存上下文 |
-| **配置系统** | 三层配置 | 已实现 | YAML + 环境变量 + 自动修复 |
-| | 配置验证 | 已实现 | ConfigValidation |
-| | LLM 提供商 | 已实现 | OLLAMA/VLLM/OPENAI/ANTHROPIC/DEEPSEEK/LOCAL |
-| **国际化** | 多语言支持 | 已实现 | 简体中文、英文 |
-| **前端界面** | 聊天界面 | 已实现 | React 实现，双通信模式(WebSocket+SSE降级) |
-| | 记忆管理 | 已实现 | CRUD 界面，图数据库管理(GraphManager) |
-| | 归档管理 | 已实现 | 可视化界面 |
-| | Agent 配置 | 已实现 | 配置编辑器 |
-| | 工具管理 | 已实现 | 工具列表、测试 |
-| | 记忆代理 | 已实现 | 记忆管理对话引擎 |
-| | 连接检测 | 已实现 | ConnectionCheck 动态配置后端地址 |
-| | 多模态支持 | 已实现 | 图片上传（Agent启用vision_enabled时） |
-| | 提醒通知 | 已实现 | WebSocket alarm 消息实时推送 |
-| | 离线超时 | 已实现 | 自动保存上下文到长期记忆 |
+### 1. 智能记忆系统
+
+- **多向量存储后端**: Milvus Lite / Chroma / Qdrant / Weaviate / Weaviate Embedded
+- **衰减模型**: 双阶段指数衰减（默认）+ 艾宾浩斯遗忘曲线（实验性）
+- **三维评分**: importance × 0.35 + time × 0.25 + relevance × 0.4
+- **混合搜索**: 向量相似度 + 关键词匹配，RRF 算法融合
+- **情感分析**: emotion_score 字段，影响重激活加分
+- **去重检测**: dedup_threshold = 0.85
+- **副模型路由**: 10 种副模型指令，secondary_router 管理
+- **write_with_decision**（v1.2.0 新增）: 决策化写入 + rejected_content 表（保留 30 天）
+
+### 2. RADIX-Lite 管理 Agent 扩展（v1.2.0 新增）
+
+- **模块7 模板引擎**: Jinja2 DSL 模板渲染 + frontmatter 解析 + CRUD（911 行，24 测试）
+- **模块8 多模态管线**: 3 worker（OCR / 视觉 / 文本）+ 模态融合 + 降级开关（1242 行，28 测试）
+- **模块9 蒸馏服务**: 7 状态机多轮蒸馏 + 4 API 端点（720 行，50 测试）
+- **模块10 管理Agent扩展**: 6 决策点自主决策 + 8 工具方法 + rubric 驱动（1140 行，55 测试）
+
+### 3. 图数据库系统
+
+- 知识图谱管理、节点/边 CRUD
+- 语义搜索、路径分析、社区检测、PageRank
+- GraphML/DOT 导出、Neo4j 迁移
+- 条件启用（`graph.enabled: true`）
+
+### 4. ACP 协议
+
+- 局域网自动发现（UDP 9999/9998）
+- 点对点通信、群组协同
+- 跨 Agent 记忆共享
+
+### 5. CXFC 插件协议
+
+- 插件发现、技能注册、心跳管理
+- 连接管理、事件推送
+- 条件启用（`cxfc.enabled: true`）
+
+### 6. 工具系统
+
+- **内置工具**: calculator / datetime / random / json_format
+- **主模型工具**: write_long_term_memory / search_all_memories / call_assistant / set_alarm / mono / write_permanent_memory / ACP 工具
+- **记忆管理工具**: 16 个（update_memory_node / search_memories / delete_memory / merge_memories 等）
+- **MCP 协议**: Model Context Protocol 支持
+
+### 7. 对话系统
+
+- 流式响应（SSE + WebSocket 双通信模式）
+- RAG 检索增强
+- 多 Agent 支持
+- 多模态视觉（图片上传与识别）
+- WebSocket 实时通信
+
+### 8. 辅助服务
+
+- **提醒管理**: 定时提醒、闹钟管理
+- **备份恢复**: 选择性备份、导入导出
+- **插件管理**: 动态加载、生命周期管理
+- **WebSocket**: 连接管理、离线消息保存
+- **会话管理**: 自动清理策略
 
 ## 技术亮点
 
-1. **多层次记忆系统** — 短期/长期/永久记忆分类；重要性动态评分；场景感知路由。
-2. **智能衰减机制** — 双阶段指数衰减（默认）+ 艾宾浩斯遗忘曲线（实验性），参数可配置，自动重新激活。
-3. **灵活的 ACP 协议** — 局域网自动发现、群组协同、跨 Agent 记忆共享。
-4. **强大的工具生态** — MCP 协议支持；内置工具库；主模型工具 (13个) + 记忆管理工具 (16个) + 摘要工具；动态工具注册。
-5. **知识图谱引擎** — 图遍历算法 (BFS/DFS)、语义搜索与混合查询、PageRank 与社区检测。
-6. **CXFC 插件协议** — 插件自动发现、技能注册与调用、心跳健康检测。
-7. **实时通信** — WebSocket 双向通信、离线消息自动保存、提醒系统实时推送。
-8. **国际化支持** — i18next 多语言框架，简体中文/英文双语。
-9. **三层配置体系** — YAML 配置文件 + 环境变量覆盖（CXHMS_ 前缀）+ 自动修复（ConfigRepair）+ 配置验证（ConfigValidation）。
-10. **完善的前端体验** — React 18 + TypeScript；Zustand 状态管理 (chatStore + themeStore)；双客户端架构 (主后端 8001 + 控制服务 8765)；内置缓存 + 重试 + SSE 流式；响应式设计。
+### 1. AC 范式 v6 工程化
+
+- 文档驱动迭代、MVP + Mock 驱动
+- 三层契约（数据 / 接口 / 配置）作为唯一真相源
+- GN-004 独立审查、[V] 双重闸门
+- 变更追踪闸门（rules-6）
+
+### 2. 智能衰减系统
+
+- 双阶段指数衰减：T(t) = α·e^(-λ₁·Δt) + (1-α)·e^(-λ₂·Δt)
+- 艾宾浩斯遗忘曲线：T(t) = 1 / (1 + (Δt/T₅₀)^k)
+- 记忆重激活：reactivation_count + 情感加分
+
+### 3. RADIX-Lite 多轮蒸馏
+
+- 7 状态机：draft → collecting → distilling → refining → reviewing → finalizing → finalized
+- 6 决策点：distill_start / distill_collect / distill_advance / distill_finalize / storage_decision / content_merge
+- rubric 驱动决策，审计日志可追溯
+
+### 4. 模拟化测试
+
+- 零外部依赖（FakeLLMClient + FakeEmbeddingModel + InMemoryVectorStore）
+- 确定性 + 语义性（n-gram 词袋使向量检索真实有效）
+- 1489 passed（753 后端单测 + 262 RADIX-Lite + 437 契约 + 37 E2E）
 
 ## 项目结构优势
 
-- **模块化设计**: 各功能模块独立，便于扩展。
-- **清晰的分层**: API → Core → Storage。
-- **完善的测试**: 后端 18 文件 + 前端 6 文件 + LLM E2E 8 文件。
-- **类型安全**: TypeScript + Pydantic 双重保障。
-- **配置灵活**: 三层配置体系（YAML + 环境变量 + 自动修复）。
+### 1. 模块化设计
+
+11 个业务模块按「模块N_中文名」组织：
+- 模块0_全局调度面板 ~ 模块6_辅助服务（原有）
+- 模块7_模板引擎 ~ 模块10_管理Agent扩展（RADIX-Lite v1.2.0 新增）
+
+### 2. 契约优先
+
+- `public/` 目录为只读契约载体
+- 13 schema + 13 .pyi + 5 config + 12 pre_generated_mock
+- 契约变更走 s0601 流程
+
+### 3. 双文档体系
+
+- **用户文档**: README.md（用户向入口锚点）
+- **代理文档**: AGENTS.md（AI 侧最高优先级规则载体）
+- **真相源**: 三层契约定义跨角色公共真相
+
+### 4. 配置驱动
+
+- `config/default.yaml` 为唯一配置真相源
+- 环境变量覆盖（CXHMS_ 前缀）
+- 自动修复 + 验证
+
+## 当前状态
+
+- **版本**: v3.0.0（2026-07-17）
+- **契约版本**: v1.2.0（2026-07-16）
+- **测试统计**: 1489 passed
+- **RADIX-Lite spec**: `add-management-agent-radix` 已闭合（2026-07-16）
+- **模块数**: 11 个
+- **AC 范式**: v6 全生命周期闭合
 
 ## 相关文档
 
-- [架构文档 ARCHITECTURE.md](./ARCHITECTURE.md) — 架构设计、初始化流程、依赖注入、业务流程图、配置系统
-- [模块详解 MODULES.md](./MODULES.md) — API 路由、核心组件、前端实现、测试体系
-- [部署指南 DEPLOYMENT.md](./DEPLOYMENT.md) — 环境要求、安装、Docker、生产配置
-- [API 文档 API.md](./API.md) — RESTful API 端点说明
-- [技术文档 TECHNICAL.md](./TECHNICAL.md) — 核心模块技术细节
-- [项目报告索引 PROJECT_REPORT.md](../PROJECT_REPORT.md) — 历史 报告索引
+- [架构文档](./ARCHITECTURE.md)
+- [模块详解](./MODULES.md)
+- [API 文档](./API.md)
+- [部署指南](./DEPLOYMENT.md)
+- [技术文档](./TECHNICAL.md)
+- [测试文档](../TESTING.md)
+- [项目报告索引](../PROJECT_REPORT.md)
+- [用户入口](../README.md)
+- [AI 协同规则](../AGENTS.md)
+- [契约变更日志](../public/schema/CHANGELOG.md)

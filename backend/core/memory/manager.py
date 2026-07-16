@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from pydantic import BaseModel
+
 from backend.core.exceptions import DatabaseError, MemoryOperationError, VectorStoreError
 from backend.core.logging_config import get_contextual_logger
 
@@ -57,6 +59,21 @@ def _get_embedding_executor() -> concurrent.futures.ThreadPoolExecutor:
                     max_workers=4, thread_name_prefix="embedding"
                 )
     return _embedding_executor
+
+
+# RADIX-Lite Task 6: write_with_decision 返回结果（严格匹配 memory_manager_v2.pyi）
+class WriteWithDecisionResult(BaseModel):
+    """write_with_decision 返回结果。
+
+    对应契约: public/interface_stub/memory_manager_v2.pyi :: WriteWithDecisionResult
+    对应数据契约: public/schema/storage_decision.schema.json
+    """
+
+    stored: bool
+    location: str  # enum: memories / permanent_memories / rejected
+    memory_id: Optional[int] = None
+    metadata: Dict[str, Any] = {}
+    reason: str = ""
 
 
 class MemoryManager:
@@ -407,10 +424,18 @@ class MemoryManager:
         try:
 
             async def _update():
-                await self._vector_store.delete_by_memory_id(memory_id)
+                # 从 metadata 提取 agent_id，定位 per-agent collection
+                agent_id = metadata.get("agent_id", "default") if metadata else "default"
+                await self._vector_store.delete_by_memory_id(
+                    memory_id, agent_id=agent_id
+                )
                 embedding = await self._embedding_model.get_embedding(content)
                 return await self._vector_store.add_memory_vector(
-                    memory_id=memory_id, content=content, embedding=embedding, metadata=metadata
+                    memory_id=memory_id,
+                    content=content,
+                    embedding=embedding,
+                    metadata=metadata,
+                    agent_id=agent_id,
                 )
 
             result = self._run_async_sync(_update())
@@ -421,11 +446,12 @@ class MemoryManager:
             logger.warning(f"向量更新失败: memory_id={memory_id}, error={e}")
             return False
 
-    def _delete_vector_for_memory(self, memory_id: int) -> bool:
+    def _delete_vector_for_memory(self, memory_id: int, agent_id: str = "default") -> bool:
         """删除记忆的向量
 
         Args:
             memory_id: 记忆ID
+            agent_id: Agent ID，用于定位 per-agent collection
 
         Returns:
             是否删除成功
@@ -437,14 +463,18 @@ class MemoryManager:
         try:
 
             async def _delete():
-                return await self._vector_store.delete_by_memory_id(memory_id)
+                return await self._vector_store.delete_by_memory_id(
+                    memory_id, agent_id=agent_id
+                )
 
             result = self._run_async_sync(_delete())
             if result:
-                logger.info(f"向量删除成功: memory_id={memory_id}")
+                logger.info(
+                    f"向量删除成功: memory_id={memory_id}, agent_id={agent_id}"
+                )
             return result
         except Exception as e:
-            logger.warning(f"向量删除失败: memory_id={memory_id}, error={e}")
+            logger.warning(f"向量删除失败: memory_id={memory_id}, agent_id={agent_id}, error={e}")
             return False
 
     def _start_cleanup_task(self):
@@ -647,6 +677,30 @@ class MemoryManager:
                 verified BOOLEAN DEFAULT TRUE
             )
         """
+        )
+
+        # RADIX-Lite Task 6: rejected_content 表（D6_REJECT 决策拒绝的内容，保留 30 天）
+        # 对应契约: public/interface_stub/memory_manager_v2.pyi :: get_rejected_content
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS rejected_content (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content TEXT NOT NULL,
+                quality_score FLOAT DEFAULT 0.0,
+                reason TEXT,
+                session_id VARCHAR(36),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                metadata TEXT
+            )
+        """
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rejected_content_created_at "
+            "ON rejected_content(created_at)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rejected_content_session_id "
+            "ON rejected_content(session_id)"
         )
 
         # 创建 agent_memory_tables 表（用于记录Agent的记忆表映射）
@@ -1289,7 +1343,7 @@ class MemoryManager:
 
             if success:
                 try:
-                    self._delete_vector_for_memory(memory_id)
+                    self._delete_vector_for_memory(memory_id, agent_id=agent_id)
                 except Exception as vec_e:
                     logger.warning(
                         f"向量删除失败，不影响主操作: memory_id={memory_id}, error={vec_e}"
@@ -1864,6 +1918,241 @@ class MemoryManager:
 
         # 截断至 limit 条
         return merged[:limit]
+
+    # ------------------------------------------------------------------ #
+    # RADIX-Lite Task 6: MemoryManager V2 扩展方法
+    # 严格匹配 public/interface_stub/memory_manager_v2.pyi 签名
+    # ------------------------------------------------------------------ #
+
+    def write_with_decision(
+        self,
+        content: str,
+        decision: Dict[str, Any],
+        metadata: Dict[str, Any],
+    ) -> WriteWithDecisionResult:
+        """根据 DecisionCore 决策写入记忆。
+
+        根据 decision.location 决定写入位置：
+        - memories → 写入 memories 表（临时记忆）
+        - permanent_memories → 写入 permanent_memories 表（永久记忆）
+        - rejected → 写入 rejected_content 表（保留 30 天）
+
+        Args:
+            content: 记忆内容
+            decision: DecisionCore 决策结果（含 location / quality_score / reason）
+            metadata: 记忆元数据（time / importance / source / tags）
+
+        Returns:
+            WriteWithDecisionResult: stored + location + memory_id + metadata + reason
+
+        Raises:
+            ValueError: decision.location 不在枚举中（422）
+            RuntimeError: 数据库写入失败（500）
+        """
+        location = decision.get("location", "memories")
+        reason = decision.get("reason", "")
+        quality_score = float(decision.get("quality_score", 0.0))
+
+        # 合并 decision 与 metadata，作为写入元数据
+        write_metadata: Dict[str, Any] = dict(metadata or {})
+        write_metadata["quality_score"] = quality_score
+        write_metadata["decision_reason"] = reason
+
+        if location == "memories":
+            try:
+                importance = int(metadata.get("importance", 3))
+                tags = metadata.get("tags", [])
+                agent_id = metadata.get("agent_id", "default")
+                memory_id = self.write_memory(
+                    content=content,
+                    memory_type="long_term",
+                    importance=importance,
+                    tags=tags,
+                    metadata=write_metadata,
+                    permanent=False,
+                    agent_id=agent_id,
+                )
+                return WriteWithDecisionResult(
+                    stored=True,
+                    location="memories",
+                    memory_id=memory_id,
+                    metadata=write_metadata,
+                    reason=reason or "stored in memories",
+                )
+            except Exception as e:
+                logger.error(f"write_with_decision 写入 memories 失败: {e}", exc_info=True)
+                raise RuntimeError(f"数据库写入失败（500）: {e}") from e
+
+        if location == "permanent_memories":
+            try:
+                tags = metadata.get("tags", [])
+                source = metadata.get("source", "user")
+                memory_id = self.write_permanent_memory(
+                    content=content,
+                    tags=tags,
+                    metadata=write_metadata,
+                    source=source,
+                )
+                return WriteWithDecisionResult(
+                    stored=True,
+                    location="permanent_memories",
+                    memory_id=memory_id,
+                    metadata=write_metadata,
+                    reason=reason or "stored in permanent_memories",
+                )
+            except Exception as e:
+                logger.error(
+                    f"write_with_decision 写入 permanent_memories 失败: {e}",
+                    exc_info=True,
+                )
+                raise RuntimeError(f"数据库写入失败（500）: {e}") from e
+
+        if location == "rejected":
+            try:
+                session_id = metadata.get("session_id")
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                try:
+                    cursor.execute(
+                        """
+                        INSERT INTO rejected_content (
+                            content, quality_score, reason, session_id, created_at, metadata
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            content,
+                            quality_score,
+                            reason,
+                            session_id,
+                            datetime.now().isoformat(),
+                            json_dumps(write_metadata, ensure_ascii=False),
+                        ),
+                    )
+                    conn.commit()
+                    rejected_id = cursor.lastrowid
+                    logger.info(
+                        f"rejected_content 已写入: id={rejected_id}, "
+                        f"quality_score={quality_score}, reason={reason}"
+                    )
+                    # stored=True: 已成功写入 rejected_content 表。
+                    # 字段语义：stored 表示"是否成功写入数据库"，location 表示"写入到哪里"。
+                    # 写入失败由 RuntimeError(500) 异常承担，stored 无需重复表达。
+                    return WriteWithDecisionResult(
+                        stored=True,
+                        location="rejected",
+                        memory_id=None,
+                        metadata=write_metadata,
+                        reason=reason or "rejected by DecisionCore",
+                    )
+                except Exception as e:
+                    conn.rollback()
+                    raise RuntimeError(f"数据库写入失败（500）: {e}") from e
+            except RuntimeError:
+                raise
+            except Exception as e:
+                logger.error(
+                    f"write_with_decision 写入 rejected_content 失败: {e}",
+                    exc_info=True,
+                )
+                raise RuntimeError(f"数据库写入失败（500）: {e}") from e
+
+        # location 不在枚举中
+        raise ValueError(
+            f"decision.location 不在枚举中（422）: {location}，"
+            f"合法值: memories / permanent_memories / rejected"
+        )
+
+    def get_rejected_content(
+        self,
+        session_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """获取被拒绝的内容列表。
+
+        用于 GN-004 抽样审查和人类 override_decision。
+
+        Args:
+            session_id: 会话 ID 过滤（None=全部）
+            limit: 返回上限
+
+        Returns:
+            被拒绝内容列表（含 content / quality_score / reason / created_at）
+
+        Raises:
+            RuntimeError: 数据库查询失败（500）
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            if session_id is not None:
+                cursor.execute(
+                    "SELECT id, content, quality_score, reason, session_id, "
+                    "created_at, metadata FROM rejected_content "
+                    "WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
+                    (session_id, limit),
+                )
+            else:
+                cursor.execute(
+                    "SELECT id, content, quality_score, reason, session_id, "
+                    "created_at, metadata FROM rejected_content "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                )
+            rows = cursor.fetchall()
+            results: List[Dict[str, Any]] = []
+            for row in rows:
+                try:
+                    row_metadata = json_loads(row["metadata"]) if row["metadata"] else {}
+                except Exception:
+                    row_metadata = {}
+                results.append(
+                    {
+                        "id": row["id"],
+                        "content": row["content"],
+                        "quality_score": row["quality_score"],
+                        "reason": row["reason"],
+                        "session_id": row["session_id"],
+                        "created_at": row["created_at"],
+                        "metadata": row_metadata,
+                    }
+                )
+            return results
+        except Exception as e:
+            logger.error(f"get_rejected_content 查询失败: {e}", exc_info=True)
+            raise RuntimeError(f"数据库查询失败（500）: {e}") from e
+
+    def cleanup_expired_rejected_content(self, retention_days: int = 30) -> int:
+        """清理过期的被拒绝内容。
+
+        Args:
+            retention_days: 保留天数（默认 30）
+
+        Returns:
+            清理的记录数
+
+        Raises:
+            RuntimeError: 数据库删除失败（500）
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            # SQLite julianday 计算日期差
+            cursor.execute(
+                "DELETE FROM rejected_content "
+                "WHERE julianday('now') - julianday(created_at) > ?",
+                (retention_days,),
+            )
+            deleted_count = cursor.rowcount
+            conn.commit()
+            logger.info(
+                f"cleanup_expired_rejected_content: 清理 {deleted_count} 条 "
+                f"(retention_days={retention_days})"
+            )
+            return deleted_count
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"cleanup_expired_rejected_content 失败: {e}", exc_info=True)
+            raise RuntimeError(f"数据库删除失败（500）: {e}") from e
 
     def search_memories_3d(
         self,

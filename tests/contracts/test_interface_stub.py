@@ -71,6 +71,38 @@ STUB_BACKEND_LOCATOR: Dict[str, Dict[str, str]] = {
         "backend_class": None,
         "kind": "module",
     },
+    # RADIX-Lite 新增（Task 0-6，2026-07-16 补全 locator）
+    "AgentToolsV2": {
+        "backend_module": "modules.模块10_管理Agent扩展.agent_tools",
+        "backend_class": "AgentToolsV2",
+        "kind": "class",
+    },
+    "DecisionCore": {
+        "backend_module": "modules.模块10_管理Agent扩展.decision_core",
+        "backend_class": "DecisionCore",
+        "kind": "class",
+    },
+    "DistillationService": {
+        "backend_module": "modules.模块9_蒸馏服务.distillation_service",
+        "backend_class": "DistillationService",
+        "kind": "class",
+    },
+    "MemoryManagerV2": {
+        # V2 是 MemoryManager 的扩展（同一类新增 write_with_decision 等方法）
+        "backend_module": "backend.core.memory.manager",
+        "backend_class": "MemoryManager",
+        "kind": "class",
+    },
+    "MultimodalPipeline": {
+        "backend_module": "modules.模块8_多模态管线.multimodal_pipeline",
+        "backend_class": "MultimodalPipeline",
+        "kind": "class",
+    },
+    "TemplateEngine": {
+        "backend_module": "modules.模块7_模板引擎.template_engine",
+        "backend_class": "TemplateEngine",
+        "kind": "class",
+    },
 }
 
 
