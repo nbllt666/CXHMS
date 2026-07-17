@@ -275,17 +275,43 @@ def get_llm_client_for_agent(agent_config: dict):
             if client:
                 return client
         else:
-            # 具体模型名，创建新客户端
+            # 具体模型名，根据 main_client 类型创建同类型客户端
             main_client = model_router.get_client("main")
             if main_client:
-                from backend.core.llm.client import OllamaClient
+                from backend.core.llm.client import OllamaClient, VLLMClient
 
-                return OllamaClient(
-                    host=main_client.host,
-                    model=model,
-                    temperature=agent_config.get("temperature", 0.7),
-                    max_tokens=(agent_config.get("max_tokens") if agent_config.get("max_tokens") is not None else 4096),
+                temperature = agent_config.get("temperature", 0.7)
+                max_tokens = (
+                    agent_config.get("max_tokens")
+                    if agent_config.get("max_tokens") is not None
+                    else 4096
                 )
+
+                if isinstance(main_client, VLLMClient):
+                    return VLLMClient(
+                        host=main_client.host,
+                        model=model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        dimension=main_client.dimension,
+                        embedding_host=main_client.embedding_host,
+                        embedding_model=main_client.embedding_model,
+                        api_key=main_client.api_key,
+                        supports_tools=main_client.supports_tools,
+                        max_concurrent=main_client._semaphore._value,
+                    )
+                elif isinstance(main_client, OllamaClient):
+                    return OllamaClient(
+                        host=main_client.host,
+                        model=model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        dimension=main_client.dimension,
+                        api_key=getattr(main_client, "api_key", None),
+                    )
+                else:
+                    # 未知类型，回退到 main_client 本身
+                    return main_client
     except Exception as e:
         import logging
 
@@ -400,6 +426,7 @@ async def chat(request: ChatRequest):
                 query=request.message,
                 session_id=session_id,
                 scene_type=agent_config.get("memory_scene", "chat"),
+                agent_id=request.agent_id,
             )
             if routing_result.memories:
                 memory_context = "\n".join(
@@ -603,6 +630,7 @@ async def stream_chat(request: ChatRequest):
                         query=request.message,
                         session_id=session_id,
                         scene_type=agent_config.get("memory_scene", "chat"),
+                        agent_id=request.agent_id,
                     )
                     if routing_result.memories:
                         return "\n".join(
@@ -950,10 +978,18 @@ async def summary_agent_stream_chat(request: SummaryAgentChatRequest):
             "temperature": 0.3,
             "max_tokens": 4096,
         }
-        set_current_agent_id("summary-agent")
-
         # 2. 获取管理器
         context_mgr = get_context_manager()
+
+        # 设置当前 agent_id：优先使用 target_session_id 对应的 agent_id（日记写入目标 agent 的表）
+        summary_agent_id = "summary-agent"
+        if request.target_session_id:
+            target_session = context_mgr.get_session(request.target_session_id)
+            if target_session:
+                summary_agent_id = target_session.get("metadata", {}).get(
+                    "agent_id", "summary-agent"
+                )
+        set_current_agent_id(summary_agent_id)
 
         # 3. 获取摘要模型客户端
         model_router = get_model_router()

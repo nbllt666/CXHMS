@@ -4,6 +4,7 @@
 
 from typing import Any, Dict, List, Optional
 
+from .graph_tools import get_current_agent_id
 from .registry import tool_registry
 
 _MEMORY_MANAGER = None
@@ -247,6 +248,9 @@ async def save_summary_memory(
         # write_memory 期望 importance 为整数（1-5），将 1-10 映射到 1-5
         importance_int = max(1, min(5, round(importance / 2)))
 
+        # 获取当前 agent_id（由 chat 路由或自动摘要任务通过 contextvar 设置）
+        agent_id = get_current_agent_id()
+
         # 保存记忆（write_memory 是同步方法）
         memory_id = _MEMORY_MANAGER.write_memory(
             content=content,
@@ -258,6 +262,7 @@ async def save_summary_memory(
                 "original_timestamp": timestamp,
                 "importance_level": importance,
             },
+            agent_id=agent_id,
         )
 
         return {
@@ -310,6 +315,9 @@ async def save_diary_entry(
         except ValueError:
             return {"error": "日期格式错误，应为 YYYY-MM-DD，如 2026-06-20"}
 
+        # 获取当前 agent_id（由 chat 路由或自动摘要任务通过 contextvar 设置）
+        agent_id = get_current_agent_id()
+
         # 保存日记记忆（write_memory 是同步方法）
         memory_id = _MEMORY_MANAGER.write_memory(
             content=body,
@@ -324,6 +332,7 @@ async def save_diary_entry(
                 "summarized_message_range": summarized_message_range,
                 "source": "diary_summary",
             },
+            agent_id=agent_id,
         )
 
         return {

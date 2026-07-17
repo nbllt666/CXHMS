@@ -471,7 +471,7 @@ async def search_all_memories(
                         "id": m.get("id"),
                         "content": m.get("content", "")[:200],
                         "importance": m.get("importance"),
-                        "created_at": m.get("created_at"),
+                        "created_at": str(m.get("created_at", "")) if m.get("created_at") else None,
                     }
                     for m in memories
                 ],
@@ -499,7 +499,7 @@ async def search_all_memories(
                     "id": mid,
                     "content": content[:200],
                     "importance": importance,
-                    "created_at": created_at,
+                    "created_at": str(created_at) if created_at else None,
                     "score": r.get("score"),
                     "source": r.get("source"),
                     "fallback": r.get("fallback", False),
@@ -713,11 +713,11 @@ async def acp_connect(agent_id: str, host: str = None, port: int = None) -> Dict
 
         from backend.core.acp.manager import ACPConnectionInfo
 
-        # 检查 Agent 是否已注册
+        # 检查 Agent 是否已注册（get_agent 返回 ACPAgentInfo 对象，不是 dict）
         agent = await acp.get_agent(agent_id)
         if agent:
-            host = host or agent.get("host", "")
-            port = port or agent.get("port", 0)
+            host = host or agent.host or ""
+            port = port or agent.port or 0
 
         if not host:
             return {"error": f"Agent '{agent_id}' 未注册，请提供 host 和 port"}
@@ -726,7 +726,7 @@ async def acp_connect(agent_id: str, host: str = None, port: int = None) -> Dict
             id=str(uuid.uuid4()),
             local_agent_id=acp._local_agent_id,
             remote_agent_id=agent_id,
-            remote_agent_name=agent.get("name", agent_id) if agent else agent_id,
+            remote_agent_name=agent.name if agent else agent_id,
             host=host,
             port=port,
             status="connected",
@@ -779,12 +779,26 @@ async def acp_send_message(
         import uuid
 
         from backend.core.acp.manager import ACPMessageInfo
+        from backend.core.tools.graph_tools import get_current_agent_id
+
+        # 确定发送方身份：优先使用工具调用上下文中的 agent_id（本地 agent 互通场景），
+        # 回退到主系统身份（主系统回复外部 ACP agent 的场景）
+        current_agent_id = get_current_agent_id()
+        if current_agent_id and current_agent_id != acp._local_agent_id:
+            # 本地 agent 互通场景：使用实际调用方 agent 的身份
+            from_agent_id = current_agent_id
+            agent_info = acp.agents.get(current_agent_id)
+            from_agent_name = agent_info.name if agent_info else current_agent_id
+        else:
+            # 主系统回复外部 agent 场景：使用主系统身份
+            from_agent_id = acp._local_agent_id
+            from_agent_name = acp._local_agent_name
 
         msg = ACPMessageInfo(
             id=str(uuid.uuid4()),
             msg_type=message_type,
-            from_agent_id=acp._local_agent_id,
-            from_agent_name=acp._local_agent_name,
+            from_agent_id=from_agent_id,
+            from_agent_name=from_agent_name,
             to_agent_id=agent_id,
             content={"text": message},
             timestamp=datetime.now().isoformat(),

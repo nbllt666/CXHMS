@@ -17,7 +17,7 @@ type ViewMode = 'card' | 'list';
 export function MemoriesPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'memories' | 'graph' | 'diary'>('memories');
+  const [activeTab, setActiveTab] = useState<'memories' | 'graph' | 'diary' | 'acp'>('memories');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'long_term' | 'short_term' | 'permanent'>(
     'all'
@@ -67,9 +67,9 @@ export function MemoriesPage() {
     if (showEditModal) setShowEditModal(false);
   });
 
-  const { data: agentTables } = useQuery({
-    queryKey: ['agentMemoryTables'],
-    queryFn: () => api.getAgentMemoryTables(),
+  const { data: agentsList } = useQuery({
+    queryKey: ['agents-for-memory'],
+    queryFn: () => api.getAgents(),
     staleTime: 60000,
   });
 
@@ -92,6 +92,35 @@ export function MemoriesPage() {
     enabled: activeTab === 'diary',
     staleTime: 30000,
   });
+
+  // ACP 消息历史（按当前选择的 agent 查询其收到的 ACP 消息）
+  const { data: acpMessagesData, isLoading: isAcpLoading } = useQuery({
+    queryKey: ['acpMessages', currentAgentId],
+    queryFn: () => api.getAcpMessages(currentAgentId, 200),
+    enabled: activeTab === 'acp',
+    staleTime: 30000,
+  });
+
+  // ACP 消息输入与发送
+  const [acpInput, setAcpInput] = useState('');
+  const sendAcpMessageMutation = useMutation({
+    mutationFn: ({ toAgentId, message }: { toAgentId: string; message: string }) =>
+      api.sendAcpMessage(toAgentId, message),
+    onSuccess: () => {
+      setAcpInput('');
+      // 刷新消息历史；延迟 5s 再刷一次以拉取自动回复
+      queryClient.invalidateQueries({ queryKey: ['acpMessages', currentAgentId] });
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['acpMessages', currentAgentId] });
+      }, 5000);
+    },
+  });
+
+  const handleSendAcpMessage = () => {
+    const text = acpInput.trim();
+    if (!text) return;
+    sendAcpMessageMutation.mutate({ toAgentId: currentAgentId, message: text });
+  };
 
   const handleCreateMemory = async () => {
     try {
@@ -289,6 +318,16 @@ export function MemoriesPage() {
             >
               {t('memory.tabGraph')}
             </button>
+            <button
+              onClick={() => setActiveTab('acp')}
+              className={`px-4 py-1.5 text-sm rounded-[var(--radius-sm)] transition-colors ${
+                activeTab === 'acp'
+                  ? 'bg-[var(--color-accent)] text-white'
+                  : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
+              }`}
+            >
+              {t('memory.tabAcp')}
+            </button>
           </div>
           {activeTab === 'memories' && (
             <Button onClick={() => setShowAddModal(true)}>
@@ -309,10 +348,153 @@ export function MemoriesPage() {
       {activeTab === 'graph' ? (
         <GraphManager />
       ) : activeTab === 'diary' ? (
-        <DiaryView
-          diaryData={diaryData}
-          isLoading={isDiaryLoading}
-        />
+        <>
+          <div className="flex items-center justify-end mb-4">
+            <label className="text-sm text-[var(--color-text-secondary)] mr-2">
+              {t('memory.agent')}:
+            </label>
+            <select
+              value={currentAgentId}
+              onChange={(e) => {
+                setCurrentAgentId(e.target.value);
+              }}
+              className="px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)] text-sm"
+            >
+              <option value="default">{t('memory.defaultAgent')}</option>
+              {agentsList?.agents
+                ?.filter((a: { id: string }) => a.id !== 'default')
+                .map((agent: { id: string; name: string }) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name || agent.id}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <DiaryView
+            diaryData={diaryData}
+            isLoading={isDiaryLoading}
+          />
+        </>
+      ) : activeTab === 'acp' ? (
+        <>
+          <div className="flex items-center justify-end mb-4">
+            <label className="text-sm text-[var(--color-text-secondary)] mr-2">
+              {t('memory.agent')}:
+            </label>
+            <select
+              value={currentAgentId}
+              onChange={(e) => {
+                setCurrentAgentId(e.target.value);
+              }}
+              className="px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)] text-sm"
+            >
+              <option value="default">{t('memory.defaultAgent')}</option>
+              {agentsList?.agents
+                ?.filter((a: { id: string }) => a.id !== 'default')
+                .map((agent: { id: string; name: string }) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name || agent.id}
+                  </option>
+                ))}
+            </select>
+          </div>
+          {isAcpLoading ? (
+            <div className="text-center py-12 text-[var(--color-text-secondary)]">
+              {t('common.loading')}
+            </div>
+          ) : acpMessagesData?.messages?.length ? (
+            <div className="space-y-3">
+              {acpMessagesData.messages
+                .slice()
+                .reverse()
+                .map((msg) => {
+                  const isFromCurrent = msg.from_agent_id === currentAgentId;
+                  const contentText =
+                    typeof msg.content === 'string'
+                      ? msg.content
+                      : (msg.content?.text as string) ||
+                        (msg.content?.message as string) ||
+                        JSON.stringify(msg.content);
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`flex ${isFromCurrent ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div
+                        className={`max-w-[75%] rounded-[var(--radius-md)] px-4 py-3 ${
+                          isFromCurrent
+                            ? 'bg-[var(--color-accent)] text-white'
+                            : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)]'
+                        }`}
+                      >
+                        <div className="text-xs opacity-70 mb-1">
+                          {isFromCurrent
+                            ? `${t('memory.acpSentTo')} ${msg.to_agent_id || ''}`
+                            : `${t('memory.acpReceivedFrom')} ${msg.from_agent_name || msg.from_agent_id}`}
+                          <span className="ml-2">{formatDate(msg.timestamp)}</span>
+                          {msg.is_sent && (
+                            <span className="ml-2 px-1.5 py-0.5 text-[10px] bg-black/10 rounded">
+                              {t('memory.acpSent')}
+                            </span>
+                          )}
+                        </div>
+                        <div className="whitespace-pre-wrap break-words">{contentText}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          ) : (
+            <div className="text-center py-12 text-[var(--color-text-secondary)]">
+              {t('memory.acpEmpty')}
+            </div>
+          )}
+
+          {/* ACP 消息发送区：无论有无消息历史都显示，便于主动发起对话 */}
+          <div className="mt-6 pt-4 border-t border-[var(--color-border)]">
+            <div className="flex items-center gap-2">
+              <input
+                value={acpInput}
+                onChange={(e) => setAcpInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendAcpMessage();
+                  }
+                }}
+                placeholder={
+                  currentAgentId === 'default'
+                    ? t('memory.acpInputPlaceholderDisabled')
+                    : t('memory.acpInputPlaceholder', { agent: currentAgentId })
+                }
+                disabled={sendAcpMessageMutation.isPending || currentAgentId === 'default'}
+                className="flex-1 px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)] text-sm focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
+              />
+              <Button
+                onClick={handleSendAcpMessage}
+                disabled={
+                  sendAcpMessageMutation.isPending ||
+                  !acpInput.trim() ||
+                  currentAgentId === 'default'
+                }
+              >
+                {sendAcpMessageMutation.isPending
+                  ? t('common.sending')
+                  : t('memory.acpSend')}
+              </Button>
+            </div>
+            {sendAcpMessageMutation.isError && (
+              <div className="mt-2 text-xs text-[var(--color-error)]">
+                {t('memory.acpSendError')}
+              </div>
+            )}
+            {currentAgentId === 'default' && (
+              <div className="mt-2 text-xs text-[var(--color-text-secondary)]">
+                {t('memory.acpSelectAgentFirst')}
+              </div>
+            )}
+          </div>
+        </>
       ) : (
       <>
       <div className="flex items-center gap-4 mb-6">
@@ -345,11 +527,11 @@ export function MemoriesPage() {
           className="px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)] text-sm"
         >
           <option value="default">{t('memory.defaultAgent')}</option>
-          {agentTables?.agents
-            ?.filter((a: { agent_id: string }) => a.agent_id !== 'default')
-            .map((agent: { agent_id: string }) => (
-              <option key={agent.agent_id} value={agent.agent_id}>
-                {agent.agent_id}
+          {agentsList?.agents
+            ?.filter((a: { id: string }) => a.id !== 'default')
+            .map((agent: { id: string; name: string }) => (
+              <option key={agent.id} value={agent.id}>
+                {agent.name || agent.id}
               </option>
             ))}
         </select>

@@ -79,7 +79,8 @@
     "time": "Time",
     "createdAt": "Created At",
     "updatedAt": "Updated At",
-    "actions": "Actions"
+    "actions": "Actions",
+    "sending": "Sending..."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -197,6 +198,11 @@
     "tabMemories": "Memories",
     "tabDiary": "Records",
     "tabGraph": "Graph",
+    "tabAcp": "ACP",
+    "acpSentTo": "Sent to",
+    "acpReceivedFrom": "Received from",
+    "acpSent": "Sent",
+    "acpEmpty": "No ACP messages",
     "newMemory": "New Memory",
     "searchContentPlaceholder": "Search memory content or tags...",
     "filterAllTypes": "All Types",
@@ -207,6 +213,7 @@
     "typeLongTerm": "Long-term",
     "typeShortTerm": "Short-term",
     "defaultAgent": "Default Agent",
+    "agent": "Agent",
     "exitBatch": "Exit Batch",
     "batchMode": "Batch",
     "deselectAll": "Deselect All",
@@ -234,7 +241,12 @@
     "noDiary": "No records yet",
     "noDiaryHint": "Records are generated automatically after conversation summaries",
     "messageRange": "Message Range:",
-    "fullTime": "Full Time:"
+    "fullTime": "Full Time:",
+    "acpInputPlaceholder": "Send message to {{agent}}...",
+    "acpInputPlaceholderDisabled": "Please select an agent first",
+    "acpSend": "Send",
+    "acpSendError": "Send failed, please retry",
+    "acpSelectAgentFirst": "Please select a specific agent (not default) above before sending"
   },
   "archive": {
     "title": "Archive Management",
@@ -339,12 +351,30 @@
     "providersOptgroup": "Configured Providers",
     "ollamaModelsOptgroup": "Ollama Available Models",
     "templates": {
-      "general": { "name": "General Assistant", "desc": "Suitable for daily conversations and general Q&A" },
-      "coder": { "name": "Coding Assistant", "desc": "Focused on coding, debugging, and technical issues" },
-      "writer": { "name": "Writing Assistant", "desc": "Helps write articles, copy, and creative content" },
-      "analyst": { "name": "Data Analyst", "desc": "Data analysis and visualization expert" },
-      "translator": { "name": "Translation Assistant", "desc": "Multilingual translation and localization expert" },
-      "vision": { "name": "Vision Assistant", "desc": "Supports image understanding and multimodal interaction" }
+      "general": {
+        "name": "General Assistant",
+        "desc": "Suitable for daily conversations and general Q&A"
+      },
+      "coder": {
+        "name": "Coding Assistant",
+        "desc": "Focused on coding, debugging, and technical issues"
+      },
+      "writer": {
+        "name": "Writing Assistant",
+        "desc": "Helps write articles, copy, and creative content"
+      },
+      "analyst": {
+        "name": "Data Analyst",
+        "desc": "Data analysis and visualization expert"
+      },
+      "translator": {
+        "name": "Translation Assistant",
+        "desc": "Multilingual translation and localization expert"
+      },
+      "vision": {
+        "name": "Vision Assistant",
+        "desc": "Supports image understanding and multimodal interaction"
+      }
     }
   },
   "acp": {

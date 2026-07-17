@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Optional
 
 from backend.core.logging_config import get_contextual_logger
+from backend.core.tools.graph_tools import set_current_agent_id
 
 logger = get_contextual_logger(__name__)
 
@@ -49,6 +50,13 @@ async def trigger_session_summary(
         是否成功触发了摘要
     """
     try:
+        # 从 session metadata 获取 agent_id，设置 contextvar 供摘要工具使用
+        session = context_manager.get_session(session_id)
+        agent_id = "default"
+        if session:
+            agent_id = session.get("metadata", {}).get("agent_id", "default")
+        set_current_agent_id(agent_id)
+
         rng = context_manager.get_summarizable_range(session_id)
         start = rng.get("start", 0)
         end = rng.get("end", 0)

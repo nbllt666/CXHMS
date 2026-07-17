@@ -28,6 +28,7 @@ export { commonApi } from './client';
 export { memoryApi } from './memory';
 export { chatApi } from './chat';
 export { agentApi, type Agent } from './agent';
+export type { AcpMessage } from './agent';
 export { graphApi } from './graph';
 export { vectorApi } from './vector';
 export { cxfcApi } from './cxfc';

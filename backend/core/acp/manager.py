@@ -13,6 +13,38 @@ from backend.core.logging_config import get_contextual_logger
 logger = get_contextual_logger(__name__)
 
 
+# ACP 自动回复专用提示词——替换通用 MAIN_HIDDEN_SYSTEM_PROMPT，避免压制角色设定
+# 强制要求使用 acp_send_message 工具回复，形成真正的 agent-to-agent 互动链路
+ACP_REPLY_HINT_PROMPT = """<acp_context>
+你收到了来自其他 Agent 的 ACP（Agent Communication Protocol）消息。请严格保持你的角色设定和语气风格。
+
+<reply_rule>
+**通常应使用 acp_send_message 工具回复对方 Agent，禁止直接在文本中写出回复内容。**
+
+工具调用方式：
+- 工具名：acp_send_message
+- 参数：
+  - agent_id：对方 Agent 的 ID（即消息发送方 from_agent_id）
+  - message：你的回复内容（以你的角色身份和语气风格撰写）
+
+示例：若收到来自 agent-xxx 的消息，应调用 acp_send_message(agent_id="agent-xxx", message="你的回复")
+
+调用工具后，可以附加简短的内心独白或动作描写（如角色卡风格），但主要对话内容必须通过工具发送。
+
+**允许不回复的情况**：如果对话已自然结束（如对方说了告别语、对话已无实质内容可回应、继续回复只会形成无意义的循环），你可以选择不调用工具，仅输出一句简短的内心独白即可，不需要强制回复。判断标准：这条消息是否真正需要你的回应？如果不需要，沉默也是一种回答。
+</reply_rule>
+
+<behavior>
+1. 以你的角色身份回应对方 Agent，保持角色的语言习惯、性格特征
+2. 不要以"通用 AI 助手"或"智能助手"自居——你是你，不是万能助手
+3. 若需要查询其他 Agent，可调用 acp_list_agents 工具
+4. 其他工具（如记忆、搜索）按需调用，但不要主动执行无关操作
+5. 回复应自然、有对话感，避免机械的"我随时准备协助您"式套话
+6. 避免无意义的循环回复——如果对话已经结束，不要为了回复而回复
+</behavior>
+</acp_context>"""
+
+
 @dataclass
 class ACPAgentInfo:
     id: str = ""
@@ -194,6 +226,7 @@ class ACPManager:
     async def start(self) -> None:
         """启动ACP管理器"""
         self._load_data()
+        self._register_local_cxhms_agents()
 
         from backend.core.acp.discover import ACPLanDiscovery
         from config.settings import settings
@@ -225,6 +258,74 @@ class ACPManager:
 
         await self._save_data()
         logger.info("ACP管理器已停止")
+
+    def _register_local_cxhms_agents(self):
+        """将 CXHMS 本地 agent 注册到 ACP 网络，实现同实例 agent 互通。
+
+        从 data/agents.json 加载 CXHMS agent，注册到 self.agents 字典。
+        本地 agent 标记为 host="127.0.0.1", port=0，不通过 HTTP 投递消息，
+        消息只存储在本地 self.messages 字典中。
+        """
+        import json
+        import os
+
+        # 1. 注册主系统 agent（_local_agent_id）到 ACP 网络
+        #    主系统 agent 在 ACP 网络中的身份是 _local_agent_id（如 cxhms-agent-001），
+        #    与前端默认助手 agent_id（"default"）不同。注册后 send_message 能找到 target，
+        #    _deliver_to_local_agent 会将其映射到 "agent-default" session。
+        if self._local_agent_id and self._local_agent_id not in self.agents:
+            self.agents[self._local_agent_id] = ACPAgentInfo(
+                id=self._local_agent_id,
+                name=self._local_agent_name or self._local_agent_id,
+                host="127.0.0.1",
+                port=0,
+                status="online",
+                version="1.0.0",
+                capabilities=["chat"],
+                last_seen=datetime.now().isoformat(),
+                metadata={"source": "cxhms_main"},
+            )
+            logger.info(
+                f"已注册主系统 Agent 到 ACP 网络: {self._local_agent_id} ({self._local_agent_name})"
+            )
+
+        # 2. 从 data/agents.json 加载用户创建的角色卡 agent
+        agents_file = os.path.join("data", "agents.json")
+        if not os.path.exists(agents_file):
+            return
+
+        try:
+            with open(agents_file, "r", encoding="utf-8") as f:
+                cxhms_agents = json.load(f)
+
+            count = 0
+            for agent_data in cxhms_agents:
+                agent_id = agent_data.get("id", "")
+                if not agent_id:
+                    continue
+                # 跳过已存在的外部 agent（不覆盖外部发现的 agent）
+                if agent_id in self.agents:
+                    existing = self.agents[agent_id]
+                    if existing.metadata.get("source") != "cxhms_local":
+                        continue
+
+                self.agents[agent_id] = ACPAgentInfo(
+                    id=agent_id,
+                    name=agent_data.get("name", agent_id),
+                    host="127.0.0.1",
+                    port=0,
+                    status="online",
+                    version="1.0.0",
+                    capabilities=["chat"],
+                    last_seen=datetime.now().isoformat(),
+                    metadata={"source": "cxhms_local"},
+                )
+                count += 1
+
+            if count:
+                logger.info(f"已注册 {count} 个 CXHMS 本地 Agent 到 ACP 网络")
+        except Exception as e:
+            logger.warning(f"注册 CXHMS 本地 Agent 失败: {e}")
 
     def _load_data(self):
         agents_file = self.data_dir / "agents.yaml"
@@ -279,9 +380,13 @@ class ACPManager:
         groups_file = self.data_dir / "groups.yaml"
 
         with open(agents_file, "w", encoding="utf-8") as f:
-            yaml.dump(
-                {"agents": [a.to_dict() for a in self.agents.values()]}, f, allow_unicode=True
-            )
+            # 排除 CXHMS 本地 agent（由 _register_local_cxhms_agents 动态注册，不持久化）
+            external_agents = [
+                a.to_dict()
+                for a in self.agents.values()
+                if a.metadata.get("source") != "cxhms_local"
+            ]
+            yaml.dump({"agents": external_agents}, f, allow_unicode=True)
 
         with open(connections_file, "w", encoding="utf-8") as f:
             yaml.dump(
@@ -449,8 +554,52 @@ class ACPManager:
                     logger.warning(
                         f"向外部 Agent {message.to_agent_id} 投递消息失败: {e}"
                     )
+            elif (
+                target
+                and target.port == 0
+                and target.metadata.get("source") in ("cxhms_local", "cxhms_main")
+            ):
+                # 本地 CXHMS agent：注入到目标 agent session 并触发自动回复
+                try:
+                    await self._deliver_to_local_agent(target, message)
+                except Exception as e:
+                    logger.warning(
+                        f"向本地 Agent {message.to_agent_id} 投递消息失败: {e}"
+                    )
 
         return message
+
+    async def _deliver_to_local_agent(
+        self, target: ACPAgentInfo, message: ACPMessageInfo
+    ) -> None:
+        """向本地 CXHMS agent 投递消息
+
+        将 ACP 消息注入到目标 agent 的聊天 session（作为 user 消息），
+        然后通过目标 agent 的配置和工具触发 LLM 自动回复。
+
+        与 _deliver_to_external_agent 对称：外部 agent 走 HTTP，本地 agent 走内存。
+        """
+        # 主系统 agent 映射到前端 default session
+        # 主系统在 ACP 网络中的身份是 _local_agent_id（如 cxhms-agent-001），
+        # 但前端默认助手聊天用的是 agent_id="default"（session_id="agent-default"）。
+        # 当 target 是主系统 agent 时，映射到 "default" 让消息注入和回复走默认助手配置。
+        if target.id == self._local_agent_id:
+            target_agent_id = "default"
+        else:
+            target_agent_id = target.id
+
+        # 1. 将消息注入到目标 agent 的 session
+        await self._inject_into_chat_context(message, target_agent_id=target_agent_id)
+
+        # 2. 触发目标 agent 的自动回复（后台执行，不阻塞 send_message 返回）
+        asyncio.create_task(
+            self._trigger_auto_reply(message, target_agent_id=target_agent_id)
+        )
+
+        logger.info(
+            f"消息已投递到本地 Agent: to={target_agent_id}, "
+            f"from={message.from_agent_id}"
+        )
 
     async def _deliver_to_external_agent(self, target: ACPAgentInfo, message: ACPMessageInfo) -> None:
         """通过 HTTP 向外部 Agent 投递消息"""
@@ -505,7 +654,9 @@ class ACPManager:
         )
         return message
 
-    async def _trigger_auto_reply(self, message: ACPMessageInfo) -> None:
+    async def _trigger_auto_reply(
+        self, message: ACPMessageInfo, target_agent_id: str = None
+    ) -> None:
         """通过正常聊天管线处理 ACP 消息，agent 可使用工具回复
 
         在 _inject_into_chat_context 之后调用。ACP 消息已作为 user 消息注入
@@ -514,8 +665,14 @@ class ACPManager:
 
         前端可通过 session 历史看到完整过程（user 消息、assistant 回复、tool calls）。
         所有失败静默记录 warning，不影响主流程。
+
+        Args:
+            message: ACP 消息
+            target_agent_id: 目标 agent ID。若提供（本地 agent 互通场景），
+                使用该 agent 的配置和工具，session_id = agent-{target_agent_id}；
+                否则保持原有行为，使用 default agent 配置。
         """
-        if not self._local_agent_id:
+        if not self._local_agent_id and not target_agent_id:
             return
 
         try:
@@ -524,36 +681,47 @@ class ACPManager:
 
             context_mgr = get_context_manager()
             model_router = get_model_router()
-            llm = model_router.get_client("main")
 
-            if not llm:
-                logger.warning("ACP 自动回复失败: 主模型客户端不可用")
-                return
-
-            # 获取 default agent 配置和工具（延迟导入避免循环依赖）
+            # 获取目标 agent 配置和工具（延迟导入避免循环依赖）
             from backend.api.routers.chat import (
                 _get_tools_for_agent,
                 get_agent_config,
-                MAIN_HIDDEN_SYSTEM_PROMPT,
+                get_llm_client_for_agent,
             )
 
-            agent_config = get_agent_config("default") or {
+            # 决定使用哪个 agent 的配置
+            effective_agent_id = target_agent_id or "default"
+            agent_config = get_agent_config(effective_agent_id) or {
                 "system_prompt": "你是一个有帮助的AI助手。请用中文回答用户的问题，保持友好和专业。",
                 "temperature": 0.7,
                 "max_tokens": 4096,
                 "enable_thinking": False,
             }
 
-            tools = _get_tools_for_agent("default")
+            # 根据 agent 配置获取 LLM 客户端
+            llm = get_llm_client_for_agent(agent_config)
+            if not llm:
+                # 兜底：使用主模型客户端
+                llm = model_router.get_client("main")
 
-            session_id = "agent-default"
+            if not llm:
+                logger.warning(
+                    f"ACP 自动回复失败: agent={effective_agent_id} 的 LLM 客户端不可用"
+                )
+                return
 
-            # 构建消息列表：系统提示 + 隐藏提示 + 历史（含 ACP user 消息）
+            tools = _get_tools_for_agent(effective_agent_id)
+
+            # session_id：本地 agent 互通时用目标 agent 的 session；否则用 default session
+            session_id = f"agent-{effective_agent_id}"
+
+            # 构建消息列表：角色系统提示 + ACP 专用提示 + 历史（含 ACP user 消息）
+            # 注意：不追加 MAIN_HIDDEN_SYSTEM_PROMPT（会压制角色设定），改用 ACP_REPLY_HINT_PROMPT
             messages: List[Dict[str, Any]] = []
             system_prompt = agent_config.get("system_prompt", "")
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "system", "content": MAIN_HIDDEN_SYSTEM_PROMPT})
+            messages.append({"role": "system", "content": ACP_REPLY_HINT_PROMPT})
 
             # 从 agent-default session 读取历史（使用 to_thread 避免同步阻塞）
             history = await asyncio.to_thread(
@@ -569,11 +737,41 @@ class ACPManager:
                 logger.warning("ACP 自动回复: 消息列表为空，跳过")
                 return
 
+            # 在消息列表末尾追加工具回复指令（LLM 最后看到的指令，最容易被遵循）
+            # gemma4 使用文本格式 tool_call，需要明确指示生成工具调用标签
+            # 注意：不再强制"必须"调用——允许 agent 在对话自然结束时选择不回复，避免循环
+            messages.append({
+                "role": "system",
+                "content": (
+                    f"<force_tool_reply>\n"
+                    f"上面的消息来自其他 Agent（from_agent_id={message.from_agent_id}）。\n"
+                    f"你应该调用 acp_send_message 工具回复对方，参数：\n"
+                    f'- agent_id: "{message.from_agent_id}"\n'
+                    f"- message: <你的回复内容，以你的角色身份和语气风格撰写>\n\n"
+                    f"但如果对话已自然结束（对方说了告别语、继续回复只会形成无意义循环），"
+                    f"你可以选择不调用工具，仅输出一句简短的内心独白即可。\n\n"
+                    f"禁止直接在文本中写出回复内容——如需回复，必须通过 acp_send_message 工具发送。"
+                    f"</force_tool_reply>"
+                ),
+            })
+
             logger.info(
                 f"ACP 自动回复启动: from={message.from_agent_id}, "
                 f"messages={len(messages)}, tools={len(tools)}, "
                 f"tool_names={[t['function']['name'] for t in tools[:5]]}..."
             )
+
+            # 设置当前工具调用上下文的 agent_id，让 acp_send_message 等工具
+            # 能识别实际调用方 agent 身份（本地 agent 互通场景下使用目标 agent 身份）
+            # 主系统默认助手（effective_agent_id == "default"）的 ACP 身份是 _local_agent_id，
+            # 而非 "default"——这样 acp_send_message 工具中 current_agent_id == _local_agent_id，
+            # 走 else 分支使用主系统身份作为 from_agent_id（保持原行为）
+            from backend.core.tools.graph_tools import set_current_agent_id
+
+            if effective_agent_id == "default":
+                set_current_agent_id(self._local_agent_id)
+            else:
+                set_current_agent_id(effective_agent_id)
 
             # 通过 generate_chat_stream 走正常聊天管线（含工具调用循环）
             state = ChatStreamState()
@@ -593,7 +791,7 @@ class ACPManager:
             reply_text = state.accumulated_response or "(无回复内容)"
             thinking = state.full_thinking or ""
 
-            # 保存助手响应到 agent-default session
+            # 保存助手响应到目标 session
             reply_metadata = {
                 "source": "acp_auto_reply",
                 "acp_message_id": message.id,
@@ -608,22 +806,24 @@ class ACPManager:
                 metadata=reply_metadata,
             )
 
-            # 同时保存到 ACP 协议级 session
-            acp_session_id = f"agent-{self._local_agent_id}"
-            if context_mgr.get_session(acp_session_id) is None:
-                context_mgr.create_session(
-                    workspace_id="agent-chats",
-                    title=f"{self._local_agent_name} 的对话",
+            # 外部消息场景：同时保存到本地系统 agent 的 ACP 协议级 session
+            # 本地 agent 互通场景（target_agent_id 提供）：跳过此步骤
+            if not target_agent_id and self._local_agent_id:
+                acp_session_id = f"agent-{self._local_agent_id}"
+                if context_mgr.get_session(acp_session_id) is None:
+                    context_mgr.create_session(
+                        workspace_id="agent-chats",
+                        title=f"{self._local_agent_name} 的对话",
+                        session_id=acp_session_id,
+                        metadata={"agent_id": self._local_agent_id},
+                    )
+                await context_mgr.add_message_async(
                     session_id=acp_session_id,
-                    metadata={"agent_id": self._local_agent_id},
+                    role="assistant",
+                    content=reply_text,
+                    content_type="acp_reply",
+                    metadata=reply_metadata,
                 )
-            await context_mgr.add_message_async(
-                session_id=acp_session_id,
-                role="assistant",
-                content=reply_text,
-                content_type="acp_reply",
-                metadata=reply_metadata,
-            )
 
             tool_summary = ""
             if state.tool_calls:
@@ -638,19 +838,23 @@ class ACPManager:
         except Exception as e:
             logger.warning(f"ACP 自动回复失败: {e}")
 
-    async def _inject_into_chat_context(self, message: ACPMessageInfo) -> None:
+    async def _inject_into_chat_context(
+        self, message: ACPMessageInfo, target_agent_id: str = None
+    ) -> None:
         """将 ACP 消息作为 user 消息注入到本地 Agent 聊天上下文
 
         ACP 消息类似于用户消息——agent 收到后触发回复。因此注入为 user 角色，
         让 agent 通过正常聊天管线（含工具调用）处理。
 
-        同时注入到两个 session：
-        1. agent-{local_agent_id}：ACP 协议级 session，与 chat.py 路由的会话模式对齐
-        2. agent-default：前端默认助手使用的 session，确保用户能在前端看到 ACP 消息
+        Args:
+            message: ACP 消息
+            target_agent_id: 目标 agent ID。若提供（本地 agent 互通场景），
+                只注入到 agent-{target_agent_id} session；否则按原逻辑注入到
+                agent-{local_agent_id} 和 agent-default 两个 session。
 
         若 session 不存在则先创建，确保前端能通过既有聊天接口拉到这条消息。
         """
-        if not self._local_agent_id:
+        if not self._local_agent_id and not target_agent_id:
             return
 
         from backend.dependencies import get_context_manager
@@ -671,7 +875,7 @@ class ACPManager:
         )
 
         msg_metadata = {
-            "source": "acp_external",
+            "source": "acp_external" if not target_agent_id else "acp_local",
             "from_agent_id": message.from_agent_id,
             "from_agent_name": message.from_agent_name,
             "msg_type": message.msg_type,
@@ -679,7 +883,31 @@ class ACPManager:
             "timestamp": message.timestamp or _dt.now().isoformat(),
         }
 
-        # 注入到 ACP 协议级 session
+        if target_agent_id:
+            # 本地 agent 互通场景：只注入到目标 agent 的 session
+            session_id = f"agent-{target_agent_id}"
+            target_agent_name = target_agent_id
+            # 查找 agent 名称
+            target_info = self.agents.get(target_agent_id)
+            if target_info:
+                target_agent_name = target_info.name or target_agent_id
+            if context_mgr.get_session(session_id) is None:
+                context_mgr.create_session(
+                    workspace_id="agent-chats",
+                    title=f"{target_agent_name} 的对话",
+                    session_id=session_id,
+                    metadata={"agent_id": target_agent_id},
+                )
+            await context_mgr.add_message_async(
+                session_id=session_id,
+                role="user",
+                content=user_content,
+                content_type="acp_message",
+                metadata=msg_metadata,
+            )
+            return
+
+        # 外部消息场景：注入到 ACP 协议级 session
         session_id = f"agent-{self._local_agent_id}"
         if context_mgr.get_session(session_id) is None:
             context_mgr.create_session(

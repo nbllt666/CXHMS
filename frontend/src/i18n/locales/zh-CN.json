@@ -79,7 +79,8 @@
     "time": "时间",
     "createdAt": "创建时间",
     "updatedAt": "更新时间",
-    "actions": "操作"
+    "actions": "操作",
+    "sending": "发送中..."
   },
   "dashboard": {
     "title": "仪表盘",
@@ -197,6 +198,11 @@
     "tabMemories": "记忆",
     "tabDiary": "记录",
     "tabGraph": "图数据库",
+    "tabAcp": "ACP",
+    "acpSentTo": "发送至",
+    "acpReceivedFrom": "接收自",
+    "acpSent": "已发送",
+    "acpEmpty": "暂无 ACP 消息",
     "newMemory": "新建记忆",
     "searchContentPlaceholder": "搜索记忆内容或标签...",
     "filterAllTypes": "全部类型",
@@ -207,6 +213,7 @@
     "typeLongTerm": "长期",
     "typeShortTerm": "短期",
     "defaultAgent": "默认Agent",
+    "agent": "Agent",
     "exitBatch": "退出批量",
     "batchMode": "批量操作",
     "deselectAll": "取消全选",
@@ -234,7 +241,12 @@
     "noDiary": "暂无记录",
     "noDiaryHint": "对话摘要后会自动生成记录条目",
     "messageRange": "消息范围:",
-    "fullTime": "完整时间:"
+    "fullTime": "完整时间:",
+    "acpInputPlaceholder": "向 {{agent}} 发送消息...",
+    "acpInputPlaceholderDisabled": "请先选择一个 Agent",
+    "acpSend": "发送",
+    "acpSendError": "发送失败，请重试",
+    "acpSelectAgentFirst": "请先在上方选择一个具体的 Agent（非默认 Agent）才能发送消息"
   },
   "archive": {
     "title": "归档管理",
@@ -339,12 +351,30 @@
     "providersOptgroup": "配置的提供商",
     "ollamaModelsOptgroup": "Ollama 可用模型",
     "templates": {
-      "general": { "name": "通用助手", "desc": "适合日常对话和一般问题解答" },
-      "coder": { "name": "编程助手", "desc": "专注于代码编写、调试和技术问题" },
-      "writer": { "name": "写作助手", "desc": "帮助撰写文章、文案和创意内容" },
-      "analyst": { "name": "数据分析师", "desc": "数据分析和可视化专家" },
-      "translator": { "name": "翻译助手", "desc": "多语言翻译和本地化专家" },
-      "vision": { "name": "视觉助手", "desc": "支持图像理解和多模态交互" }
+      "general": {
+        "name": "通用助手",
+        "desc": "适合日常对话和一般问题解答"
+      },
+      "coder": {
+        "name": "编程助手",
+        "desc": "专注于代码编写、调试和技术问题"
+      },
+      "writer": {
+        "name": "写作助手",
+        "desc": "帮助撰写文章、文案和创意内容"
+      },
+      "analyst": {
+        "name": "数据分析师",
+        "desc": "数据分析和可视化专家"
+      },
+      "translator": {
+        "name": "翻译助手",
+        "desc": "多语言翻译和本地化专家"
+      },
+      "vision": {
+        "name": "视觉助手",
+        "desc": "支持图像理解和多模态交互"
+      }
     }
   },
   "acp": {

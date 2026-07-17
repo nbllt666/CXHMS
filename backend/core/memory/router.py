@@ -105,6 +105,7 @@ class MemoryRouter:
         scene_type: str = "chat",
         context: Dict = None,
         options: Dict = None,
+        agent_id: str = "default",
     ) -> RoutingResult:
         options = options or {}
 
@@ -115,12 +116,14 @@ class MemoryRouter:
         all_memories = []
 
         try:
-            recent_memories = await asyncio.to_thread(self._get_recent_memories, session_id)
+            recent_memories = await asyncio.to_thread(
+                self._get_recent_memories, session_id, agent_id
+            )
             if recent_memories:
                 all_memories.extend(recent_memories)
                 applied_rules.append("最近交互记忆优先")
 
-            search_results = await self._search_memories(query, options)
+            search_results = await self._search_memories(query, options, agent_id)
             logger.info(f"记忆路由: query='{query}', hybrid_search={self.hybrid_search is not None}, search_results={len(search_results)}")
 
             scored_memories = self._score_memories(
@@ -178,7 +181,7 @@ class MemoryRouter:
             "relevance": scene_config["relevance_weight"],
         }
 
-    def _get_recent_memories(self, session_id: str) -> List[Dict]:
+    def _get_recent_memories(self, session_id: str, agent_id: str = "default") -> List[Dict]:
         if not session_id:
             return []
 
@@ -196,6 +199,7 @@ class MemoryRouter:
                     tags=[session_id] if session_id else None,
                     limit=page_size,
                     offset=page * page_size,
+                    agent_id=agent_id,
                 )
 
                 if not results:
@@ -214,7 +218,7 @@ class MemoryRouter:
             logger.error(f"获取最近记忆失败: {e}")
         return []
 
-    async def _search_memories(self, query: str, options: Dict) -> List[Dict]:
+    async def _search_memories(self, query: str, options: Dict, agent_id: str = "default") -> List[Dict]:
         try:
             limit = options.get("limit", 50)
 
@@ -229,6 +233,7 @@ class MemoryRouter:
                     vector_weight=0.6,
                     keyword_weight=0.4,
                     min_score=0.2,
+                    agent_id=agent_id,
                 )
                 results = await self.hybrid_search.search(search_options)
 
@@ -251,6 +256,7 @@ class MemoryRouter:
                 memory_type=options.get("memory_type"),
                 tags=options.get("tags"),
                 limit=limit,
+                agent_id=agent_id,
             )
 
         except Exception as e:

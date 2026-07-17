@@ -416,10 +416,80 @@ def _cleanup_agent_weaviate_collection(agent_id: str) -> None:
         logger.warning(f"清理 Weaviate per-agent collection 失败 (agent_id={agent_id}): {e}")
 
 
+def _cleanup_agent_memory_tables(agent_id: str) -> None:
+    """清理指定助手的 per-agent 记忆表及映射记录。
+
+    - DROP TABLE memories_{safe_agent_id}（如果存在）
+    - DELETE FROM agent_memory_tables WHERE agent_id = ?
+    - DELETE FROM rejected_content WHERE session_id LIKE 'agent-{agent_id}%'
+    """
+    import re
+
+    try:
+        from backend.dependencies import _resolve_state
+
+        state = _resolve_state()
+        memory_manager = state.memory_manager
+        if memory_manager is None:
+            logger.debug(f"memory_manager 未就绪，跳过记忆表清理 (agent_id={agent_id})")
+            return
+
+        # 复用 MemoryManager 的表名生成逻辑，确保命名一致
+        table_name = memory_manager._get_table_name(agent_id)
+        if table_name == "memories":
+            # default agent 不清理主表
+            logger.debug(f"默认 agent 不清理主表 (agent_id={agent_id})")
+            return
+
+        conn = memory_manager._get_connection()
+        try:
+            cursor = conn.cursor()
+
+            # 1. 检查表是否存在，存在则 DROP
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,),
+            )
+            if cursor.fetchone():
+                cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+                logger.info(f"已删除 agent 记忆表: {table_name} (agent_id={agent_id})")
+            else:
+                logger.debug(f"agent 记忆表不存在，跳过 DROP (agent_id={agent_id}, table={table_name})")
+
+            # 2. 删除 agent_memory_tables 中的映射记录
+            cursor.execute(
+                "DELETE FROM agent_memory_tables WHERE agent_id = ?",
+                (agent_id,),
+            )
+            deleted_rows = cursor.rowcount
+            if deleted_rows > 0:
+                logger.info(
+                    f"已删除 agent_memory_tables 映射记录: {deleted_rows} 条 (agent_id={agent_id})"
+                )
+
+            # 3. 删除 rejected_content 中该 agent 的记录（通过 session_id 前缀匹配）
+            cursor.execute(
+                "DELETE FROM rejected_content WHERE session_id LIKE ?",
+                (f"{agent_id}%",),
+            )
+            rejected_deleted = cursor.rowcount
+            if rejected_deleted > 0:
+                logger.info(
+                    f"已删除 rejected_content 记录: {rejected_deleted} 条 (agent_id={agent_id})"
+                )
+
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning(f"清理 agent 记忆表失败 (agent_id={agent_id}): {e}")
+
+
 def _cleanup_agent_resources(agent_id: str) -> None:
-    """清理指定助手的全部 per-agent 资源（图数据库 + Weaviate collection）。"""
+    """清理指定助手的全部 per-agent 资源（图数据库 + Weaviate collection + 记忆表）。"""
     _cleanup_agent_graph_db(agent_id)
     _cleanup_agent_weaviate_collection(agent_id)
+    _cleanup_agent_memory_tables(agent_id)
 
 
 @router.delete("/agents/{agent_id}")

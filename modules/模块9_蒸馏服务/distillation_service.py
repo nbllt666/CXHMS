@@ -1417,7 +1417,7 @@ class DistillationService:
                 "name": candidate_name,
                 "description": profile["description"],
                 "system_prompt": profile["system_prompt"],
-                "model": "gemma4-e4b",
+                "model": "main",
                 "temperature": 0.7,
                 "use_memory": True,
                 "use_tools": True,

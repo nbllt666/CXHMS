@@ -7,6 +7,21 @@ import { apiClient } from './client';
 // Type definitions（F8: 统一到 types/agent.ts，此处仅 re-export 保持向后兼容）
 export type { Agent } from '../types/agent';
 
+// ACP 消息类型（仅前端展示用，与后端 ACPMessageInfo.to_dict() 对齐）
+export interface AcpMessage {
+  id: string;
+  type: string;
+  from_agent_id: string;
+  from_agent_name: string;
+  to_agent_id: string | null;
+  to_group_id: string | null;
+  content: Record<string, unknown> | string;
+  timestamp: string;
+  is_read: boolean;
+  is_sent: boolean;
+  metadata: Record<string, unknown>;
+}
+
 export const agentApi = {
   // ========== Chat Agent APIs ==========
   async getAgents() {
@@ -139,6 +154,31 @@ export const agentApi = {
 
   async getAcpAgents() {
     const response = await apiClient.get('/api/acp/agents');
+    return response.data;
+  },
+
+  /** 查询指定 agent 的 ACP 消息历史（含本地 agent 互通消息） */
+  async getAcpMessages(
+    agentId: string,
+    limit = 50
+  ): Promise<{ status: string; messages: AcpMessage[]; total: number }> {
+    const response = await apiClient.get('/api/acp/messages', {
+      params: { agent_id: agentId, limit },
+    });
+    return response.data;
+  },
+
+  /** 通过 ACP 协议向指定 agent 发送消息（触发对方自动回复） */
+  async sendAcpMessage(
+    toAgentId: string,
+    message: string,
+    msgType = 'chat'
+  ): Promise<{ status: string; message_id: string; message: string }> {
+    const response = await apiClient.post('/api/acp/send', {
+      to_agent_id: toAgentId,
+      msg_type: msgType,
+      content: { text: message },
+    });
     return response.data;
   },
 
