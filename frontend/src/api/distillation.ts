@@ -147,6 +147,10 @@ export interface FinalizeAgentResponse {
     agent_id?: string;
     agent_name?: string;
     error?: string;
+    character_card?: {
+      name: string;
+      description?: string;
+    };
   };
 }
 

@@ -157,7 +157,7 @@ describe('useWebSocket', () => {
     });
 
     it('starts ping interval after open (30s)', () => {
-      const { result } = renderHook(() => useWebSocket({ agentId: 'a1' }));
+      renderHook(() => useWebSocket({ agentId: 'a1' }));
       act(() => MockWebSocket.instances[0].fireOpen());
       const ws = MockWebSocket.instances[0];
       expect(ws.sent).toHaveLength(0);

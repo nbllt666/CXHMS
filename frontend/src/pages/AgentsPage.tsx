@@ -218,12 +218,12 @@ export function AgentsPage() {
     setEditingAgent(agent);
     setFormData({
       name: agent.name,
-      description: agent.description,
-      system_prompt: agent.system_prompt,
+      description: agent.description || '',
+      system_prompt: agent.system_prompt || '',
       model: agent.model || '',
-      temperature: agent.temperature,
-      max_tokens: agent.max_tokens,
-      memory_scene: agent.memory_scene,
+      temperature: agent.temperature ?? 0.7,
+      max_tokens: agent.max_tokens ?? 0,
+      memory_scene: agent.memory_scene || 'chat',
       decay_model: agent.decay_model || 'exponential',
     });
   };
@@ -462,7 +462,7 @@ export function AgentsPage() {
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-[var(--color-border)] text-xs text-[var(--color-text-tertiary)]">
-                  {t('agent.updatedAt', { time: formatRelativeTime(agent.updated_at) })}
+                  {t('agent.updatedAt', { time: formatRelativeTime(agent.updated_at || agent.created_at || '') })}
                 </div>
               </CardBody>
             </Card>

@@ -271,7 +271,7 @@ describe('ChatPage', () => {
       wsState.isConnected = false;
       mockGetChatHistory.mockResolvedValueOnce({ messages: [] });
       mockSendMessageStream.mockImplementationOnce(
-        async (msg: string, onChunk: (c: StreamChunk) => void) => {
+        async (_msg: string, onChunk: (c: StreamChunk) => void) => {
           await simulateSseStream(onChunk, [{ type: 'done' }]);
         }
       );
@@ -301,7 +301,7 @@ describe('ChatPage', () => {
       wsState.isConnected = false;
       mockGetChatHistory.mockResolvedValueOnce({ messages: [] });
       mockSendMessageStream.mockImplementationOnce(
-        async (msg: string, onChunk: (c: StreamChunk) => void) => {
+        async (_msg: string, onChunk: (c: StreamChunk) => void) => {
           onChunk({ type: 'content', content: 'hi' });
           onChunk({ type: 'done' });
         }
@@ -328,7 +328,7 @@ describe('ChatPage', () => {
       wsState.isConnected = false;
       mockGetChatHistory.mockResolvedValueOnce({ messages: [] });
       mockSendMessageStream.mockImplementationOnce(
-        async (msg: string, onChunk: (c: StreamChunk) => void) => {
+        async (_msg: string, onChunk: (c: StreamChunk) => void) => {
           onChunk({ type: 'error', error: 'stream broke' });
         }
       );

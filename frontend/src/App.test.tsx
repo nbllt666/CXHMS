@@ -5,8 +5,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, Routes, Route, Link } from 'react-router-dom';
-import { Suspense, lazy, useState } from 'react';
+import { MemoryRouter, Link } from 'react-router-dom';
+import React, { Suspense, lazy } from 'react';
 
 // Mock AppLayout 只渲染 Outlet，避免引入 Sidebar/Header 真实依赖
 vi.mock('./components/AppLayout', () => ({
@@ -212,7 +212,7 @@ describe('App.tsx - 路由懒加载与 RouteErrorBoundary', () => {
       // 这里改用直接渲染 RouteErrorBoundary + 抛错子组件，模拟"单页抛错"场景
       const { RouteErrorBoundary } = await import('./components/RouteErrorBoundary');
 
-      function ThrowingPage() {
+      function ThrowingPage(): React.ReactElement {
         throw new Error('页面 X 渲染失败');
       }
       function NormalPage() {

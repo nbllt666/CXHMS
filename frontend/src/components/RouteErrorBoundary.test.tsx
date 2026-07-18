@@ -4,10 +4,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import React from 'react';
 import { RouteErrorBoundary } from './RouteErrorBoundary';
 
 // 子组件渲染时抛错（用于触发 ErrorBoundary）
-function BoomComponent({ message = 'boom' }: { message?: string }) {
+function BoomComponent({ message = 'boom' }: { message?: string }): React.ReactElement {
   throw new Error(message);
 }
 
@@ -106,7 +107,7 @@ describe('RouteErrorBoundary', () => {
   it('re-throws fallback if child still errors after "重试" clicked', () => {
     const spy = silenceConsole();
     // 重试后子组件仍然抛错 → fallback 重新显示（验证重试机制不会吞错）
-    function AlwaysBoomComponent() {
+    function AlwaysBoomComponent(): React.ReactElement {
       throw new Error('persistent fail');
     }
     render(

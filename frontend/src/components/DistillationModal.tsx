@@ -94,7 +94,7 @@ export function DistillationModal({ isOpen, onClose }: DistillationModalProps) {
   const [sessions, setSessions] = useState<SessionDistillState[]>([]);
   const [activeSessionIdx, setActiveSessionIdx] = useState(0);
   const [userResponse, setUserResponse] = useState('');
-  const [groupRefreshKey, setGroupRefreshKey] = useState(0);
+  const [, setGroupRefreshKey] = useState(0);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // sessions 的最新值引用，避免 setTimeout 闭包陷阱
   const sessionsRef = useRef(sessions);

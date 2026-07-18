@@ -3,7 +3,6 @@ import {
   sendMessageStream,
   sendMemoryAgentMessageStream,
   sendSummaryAgentMessageStream,
-  type StreamChunk,
 } from './chatStream';
 
 // ========== Chat / Session APIs ==========
