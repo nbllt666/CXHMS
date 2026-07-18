@@ -190,6 +190,8 @@
     "batchArchive": "Batch Archive",
     "confirmDelete": "Are you sure you want to delete this memory?",
     "confirmBatchDelete": "Are you sure you want to delete {{count}} selected memories?",
+    "batchDeleteAllFailed": "Delete failed: {{count}} memories could not be deleted. Please try again later.",
+    "batchDeletePartial": "Partial success: {{success}} deleted, {{failed}} failed",
     "memoryCreated": "Memory created",
     "memoryUpdated": "Memory updated",
     "memoryDeleted": "Memory deleted",

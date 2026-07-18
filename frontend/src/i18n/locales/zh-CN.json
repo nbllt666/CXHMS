@@ -190,6 +190,8 @@
     "batchArchive": "批量归档",
     "confirmDelete": "确定要删除这条记忆吗？",
     "confirmBatchDelete": "确定要删除选中的 {{count}} 条记忆吗？",
+    "batchDeleteAllFailed": "删除失败：{{count}} 条记忆未能删除，请稍后重试",
+    "batchDeletePartial": "部分删除成功：{{success}} 条成功，{{failed}} 条失败",
     "memoryCreated": "记忆已创建",
     "memoryUpdated": "记忆已更新",
     "memoryDeleted": "记忆已删除",

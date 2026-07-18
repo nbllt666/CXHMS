@@ -608,7 +608,13 @@ async def batch_delete_memories(
             request.ids, soft_delete, raise_on_error, request.agent_id
         )
 
-        return {"status": "success", "result": result}
+        # 根据删除结果返回不同 status，让前端能区分完全成功/部分失败/全部失败
+        if result.get("failed", 0) > 0 and result.get("success", 0) == 0:
+            return {"status": "error", "result": result, "message": "所有记忆删除失败"}
+        elif result.get("failed", 0) > 0:
+            return {"status": "partial", "result": result, "message": f"部分记忆删除失败（{result['failed']}条）"}
+        else:
+            return {"status": "success", "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -212,9 +212,15 @@ export function MemoriesPage() {
 
   const batchDeleteMutation = useMutation({
     mutationFn: (ids: number[]) => api.batchDeleteMemories(ids, currentAgentId),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['memories'] });
       clearSelection();
+      // 显示部分/全部失败的提示
+      if (data?.status === 'error') {
+        alert(t('memory.batchDeleteAllFailed', { count: data?.result?.failed ?? 0 }));
+      } else if (data?.status === 'partial') {
+        alert(t('memory.batchDeletePartial', { failed: data?.result?.failed ?? 0, success: data?.result?.success ?? 0 }));
+      }
     },
   });
 
