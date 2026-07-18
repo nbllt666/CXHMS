@@ -5,6 +5,7 @@ import { api } from '../api';
 import { formatDate, truncate, getImportanceColor } from '../lib/utils';
 import { PageHeader } from '../components/layout';
 import { Button, Card, CardBody, Input, Badge, Modal, Textarea, Drawer } from '../components/ui';
+import { useToast } from '../components/ui/Toast';
 import { useHotkey } from '../hooks';
 import { GraphManager } from '../components/GraphManager';
 
@@ -17,6 +18,7 @@ type ViewMode = 'card' | 'list';
 export function MemoriesPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState<'memories' | 'graph' | 'diary' | 'acp'>('memories');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'long_term' | 'short_term' | 'permanent'>(
@@ -215,11 +217,12 @@ export function MemoriesPage() {
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['memories'] });
       clearSelection();
-      // 显示部分/全部失败的提示
       if (data?.status === 'error') {
-        alert(t('memory.batchDeleteAllFailed', { count: data?.result?.failed ?? 0 }));
+        addToast('error', t('memory.batchDeleteAllFailed', { count: data?.result?.failed ?? 0 }));
       } else if (data?.status === 'partial') {
-        alert(t('memory.batchDeletePartial', { failed: data?.result?.failed ?? 0, success: data?.result?.success ?? 0 }));
+        addToast('warning', t('memory.batchDeletePartial', { failed: data?.result?.failed ?? 0, success: data?.result?.success ?? 0 }));
+      } else {
+        addToast('success', t('memory.memoryDeleted'));
       }
     },
   });
