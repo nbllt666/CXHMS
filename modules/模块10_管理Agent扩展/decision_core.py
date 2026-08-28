@@ -37,6 +37,9 @@ _LOG_DIR = os.path.join(_DATA_DIR, "distillation_logs")
 _CONFIG_FILE = os.path.join(
     _PROJECT_ROOT, "public", "config_template", "radix_config.json"
 )
+# 实例配置（用户可编辑，优先生效）；模板 radix_config.json 是 JSON Schema，
+# 须按 properties.<seg>.properties.<f>.default 提取默认值（M5 修正）
+_CONFIG_INSTANCE_FILE = os.path.join(_PROJECT_ROOT, "config", "radix_config.json")
 
 
 def _iso_now() -> str:
@@ -169,8 +172,72 @@ def _default_vllm_config() -> Dict[str, Any]:
     }
 
 
+def _read_json_file(path: str) -> Optional[Dict[str, Any]]:
+    """读取 JSON 文件为 dict（best-effort，不存在/解析失败返回 None）。
+
+    Args:
+        path: JSON 文件绝对路径
+
+    Returns:
+        dict 或 None
+    """
+    try:
+        if not os.path.isfile(path):
+            return None
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else None
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> None:
+    """深合并 override 到 base（override 优先，就地修改 base）。"""
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
+
+
+def _extract_seg_defaults_from_template(template: Dict[str, Any]) -> Dict[str, Any]:
+    """从 JSON Schema 模板按 properties.<seg>.properties.<f>.default 提取各段默认值。
+
+    参照模块8 multimodal_pipeline._extract_defaults_from_template 的正确做法。
+
+    Args:
+        template: radix_config.json 模板（draft-07 Schema）
+
+    Returns:
+        Dict[str, Any]: {段名: {字段: default}}；仅包含含 default 的段
+    """
+    result: Dict[str, Any] = {}
+    props = template.get("properties", {})
+    if not isinstance(props, dict):
+        return result
+    for seg_name, seg_schema in props.items():
+        if not isinstance(seg_schema, dict):
+            continue
+        seg_props = seg_schema.get("properties", {})
+        if not isinstance(seg_props, dict):
+            continue
+        seg_defaults = {
+            field: spec["default"]
+            for field, spec in seg_props.items()
+            if isinstance(spec, dict) and "default" in spec
+        }
+        if seg_defaults:
+            result[seg_name] = seg_defaults
+    return result
+
+
 def _load_radix_config() -> Dict[str, Any]:
     """加载 radix_config.json，失败时使用全默认值（best-effort，不阻断）。
+
+    优先级（深合并，实例优先）：
+        1. config/radix_config.json 实例配置（用户可编辑）
+        2. public/config_template/radix_config.json 模板 defaults（Schema 提取）
+        3. 代码内默认值（_default_decision_core_config / _default_vllm_config）
 
     Returns:
         配置字典，含 decision_core 段与 vllm 段。
@@ -180,18 +247,23 @@ def _load_radix_config() -> Dict[str, Any]:
         "vllm": _default_vllm_config(),
     }
     try:
-        if not os.path.isfile(_CONFIG_FILE):
-            return defaults
-        with open(_CONFIG_FILE, "r", encoding="utf-8") as fh:
-            cfg = json.load(fh)
-        # auto_fill：缺失字段补默认值（rules-3 §三）
-        dc = cfg.get("decision_core", {})
-        for k, v in defaults["decision_core"].items():
-            dc.setdefault(k, v)
-        vllm = cfg.get("vllm", {})
-        for k, v in defaults["vllm"].items():
-            vllm.setdefault(k, v)
-        return {"decision_core": dc, "vllm": vllm}
+        # 1) 代码内默认值兜底
+        merged: Dict[str, Any] = {
+            "decision_core": dict(defaults["decision_core"]),
+            "vllm": dict(defaults["vllm"]),
+        }
+
+        # 2) 模板 defaults（按 JSON Schema 提取，M5 修正）
+        template = _read_json_file(_CONFIG_FILE)
+        if template is not None:
+            _deep_merge(merged, _extract_seg_defaults_from_template(template))
+
+        # 3) 实例配置深合并（实例优先）
+        instance = _read_json_file(_CONFIG_INSTANCE_FILE)
+        if instance is not None:
+            _deep_merge(merged, instance)
+
+        return merged
     except (json.JSONDecodeError, OSError):
         return defaults
 
@@ -284,15 +356,18 @@ class DecisionCore:
         # 先尝试 LLM 决策；不可用时回退 system_prompt 规则
         llm_reasoning: Optional[str] = None
         llm_confidence: Optional[float] = None
-        importance = _FALLBACK_IMPORTANCE
+        importance = _FALLBACK_IMPORTANCE  # 仅 LLM 不可用/解析失败时的回退值
 
         try:
             prompt = self._build_d1_prompt(decision_input, rubric)
-            decision_str, confidence = self._llm_decide(prompt, decision_input)
+            decision_str, confidence, llm_importance = self._llm_decide(
+                prompt, decision_input
+            )
             llm_reasoning = f"[LLM] D1 位置决策：{decision_str}（confidence={confidence}）"
             llm_confidence = confidence
-            # LLM 推断 importance（回退值兜底）
-            importance = _FALLBACK_IMPORTANCE
+            # M3: 消费 LLM 返回的 importance（未返回时保留回退值兜底）
+            if llm_importance is not None:
+                importance = llm_importance
         except ConnectionError:
             # system_prompt 规则回退（rules-0 §三 fallback）
             llm_reasoning = None
@@ -327,7 +402,9 @@ class DecisionCore:
             memory_id = self._alloc_memory_id()
             final_action = "store"
 
-        metadata = self._default_metadata(session_id, decision_input)
+        metadata = self._default_metadata(
+            session_id, decision_input, importance=importance
+        )
         decision = self._build_storage_decision(
             session_id=session_id,
             decision_point="D1_LOCATION",
@@ -382,11 +459,17 @@ class DecisionCore:
             raise KeyError("session_id 不能为空（404）")
 
         # 尝试 LLM 决策元数据；不可用时回退规则
+        importance = _FALLBACK_IMPORTANCE  # 仅 LLM 不可用/解析失败时的回退值
         try:
             prompt = self._build_d2_prompt(decision_input)
-            decision_str, confidence = self._llm_decide(prompt, decision_input)
+            decision_str, confidence, llm_importance = self._llm_decide(
+                prompt, decision_input
+            )
             source = decision_input.artifact_summary or f"[LLM] {decision_str}"
             tags = ["radix", "d2_metadata", f"llm_{decision_str}"]
+            # M3: 消费 LLM 返回的 importance（未返回时保留回退值兜底）
+            if llm_importance is not None:
+                importance = llm_importance
         except ConnectionError:
             # system_prompt 规则回退
             source = decision_input.artifact_summary or "text"
@@ -394,7 +477,7 @@ class DecisionCore:
 
         return {
             "time": _iso_now(),
-            "importance": _FALLBACK_IMPORTANCE,
+            "importance": importance,
             "source": source,
             "tags": tags,
         }
@@ -624,7 +707,7 @@ class DecisionCore:
         self,
         prompt: str,
         decision_input: DecisionInput,
-    ) -> Tuple[str, float]:
+    ) -> Tuple[str, float, Optional[float]]:
         """内部方法：LLM 决策。
 
         通过 vLLM HTTP 接口（OpenAI 兼容）调用 LLM 进行决策。
@@ -635,7 +718,8 @@ class DecisionCore:
             decision_input: 决策输入
 
         Returns:
-            (decision_str, confidence_float) 元组
+            (decision_str, confidence_float, importance) 元组；
+            importance 为 LLM 返回的重要性（0-1，已 clamp），未返回时为 None
 
         Raises:
             ConnectionError: LLM 端点不可用，触发 system_prompt 规则回退（503）
@@ -647,7 +731,9 @@ class DecisionCore:
 
         vllm_cfg = self._config.get("vllm", _default_vllm_config())
         base_url = vllm_cfg.get("base_url", "http://127.0.0.1:8002")
-        timeout = vllm_cfg.get("timeout_seconds", 300)
+        # M3: 代码级兜底超时降为 30s（避免长阻塞）；
+        # 模板/实例配置存在 timeout_seconds 时以配置为准（模板默认 300）
+        timeout = vllm_cfg.get("timeout_seconds", 30)
         max_tokens = vllm_cfg.get("max_tokens", 2048)
         temperature = vllm_cfg.get("temperature", 0.3)
 
@@ -677,9 +763,9 @@ class DecisionCore:
                 )
             data = resp.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            # 解析 LLM 输出：期望 "decision:store confidence:0.85" 格式
-            decision_str, confidence = self._parse_llm_output(content)
-            return decision_str, confidence
+            # 解析 LLM 输出：期望 "decision:store confidence:0.85 importance:0.8" 格式
+            decision_str, confidence, importance = self._parse_llm_output(content)
+            return decision_str, confidence, importance
         except (requests.RequestException, OSError) as exc:
             raise ConnectionError(
                 f"LLM 端点连接失败（503），触发 system_prompt 规则回退: {exc}"
@@ -750,8 +836,12 @@ class DecisionCore:
 
             # auto_init：目录不存在时创建
             os.makedirs(self._log_dir, exist_ok=True)
-            with open(log_path, "w", encoding="utf-8") as fh:
+            # M10: 原子写入（先写临时文件再重命名，避免并发覆盖半写丢失条目，
+            # 与 distillation_service._write_decision_log 写法对齐）
+            tmp_path = log_path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as fh:
                 json.dump(logs, fh, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, log_path)
         except Exception:
             # best-effort：写入失败不阻断主流程（distillation_log.schema.json exceptions.IOError_500）
             pass
@@ -785,11 +875,12 @@ class DecisionCore:
         self,
         session_id: str,
         decision_input: DecisionInput,
+        importance: float = _FALLBACK_IMPORTANCE,
     ) -> Dict[str, Any]:
-        """构造默认元数据。"""
+        """构造默认元数据（importance 由调用方传入 LLM 决策值，缺省用回退值）。"""
         return {
             "time": _iso_now(),
-            "importance": _FALLBACK_IMPORTANCE,
+            "importance": importance,
             "source": decision_input.artifact_summary or "text",
             "tags": ["radix", "d1_location"],
             "session_id": session_id,
@@ -836,7 +927,7 @@ class DecisionCore:
             f"质量评分: {decision_input.quality_score}\n"
             f"重要性阈值: {rubric.importance_threshold_permanent}\n"
             f"拒绝阈值: {rubric.quality_reject_threshold}\n"
-            "请输出格式: decision:<store|reject> confidence:<0-1>"
+            "请输出格式: decision:<store|reject> confidence:<0-1> importance:<0-1>"
         )
 
     def _build_d2_prompt(self, decision_input: DecisionInput) -> str:
@@ -845,17 +936,19 @@ class DecisionCore:
             "请决策记忆元数据（时间/重要性/来源/标签）。\n"
             f"会话状态: {decision_input.session_state}\n"
             f"内容摘要: {decision_input.artifact_summary or 'N/A'}\n"
-            "请输出格式: decision:<metadata_type> confidence:<0-1>"
+            "请输出格式: decision:<metadata_type> confidence:<0-1> importance:<0-1>"
         )
 
-    def _parse_llm_output(self, content: str) -> Tuple[str, float]:
-        """解析 LLM 输出，提取 decision 与 confidence。
+    def _parse_llm_output(self, content: str) -> Tuple[str, float, Optional[float]]:
+        """解析 LLM 输出，提取 decision、confidence 与 importance。
 
-        期望格式: "decision:store confidence:0.85"
-        解析失败时回退 (store, 0.5)。
+        期望格式: "decision:store confidence:0.85 importance:0.8"
+        importance 缺失时返回 None（调用方回退 _FALLBACK_IMPORTANCE）。
+        解析失败时回退 (store, 0.5, None)。
         """
         decision_str = "store"
         confidence = 0.5
+        importance: Optional[float] = None
         try:
             lower = content.lower()
             if "decision:" in lower:
@@ -865,9 +958,14 @@ class DecisionCore:
                 part = lower.split("confidence:", 1)[1].split()[0]
                 confidence = float(part.strip(",.;"))
                 confidence = max(0.0, min(1.0, confidence))
+            if "importance:" in lower:
+                part = lower.split("importance:", 1)[1].split()[0]
+                importance = float(part.strip(",.;"))
+                # clamp 到 [0,1]（storage_decision.schema.json metadata importance 为 0-1）
+                importance = max(0.0, min(1.0, importance))
         except (ValueError, IndexError):
             pass
-        return decision_str, confidence
+        return decision_str, confidence, importance
 
     # ------------------------------------------------------------------ #
     # 测试辅助（非契约方法，仅供单元测试使用）

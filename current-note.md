@@ -1,8 +1,8 @@
 # 当前交接状态（current-note.md）
 
-> 最后更新：2026-07-17 03:35:00
-> 状态：**spec 实施已交付 + gemma4 工具调用全链路修复 + 多轮工具调用端到端验证通过 + 语义搜索失效修复（端到端验证通过）+ 工具调用失败根因修复（system prompt 引导）+ 隐藏系统提示词设计原则修正 + 摘要后聊天记录不更新修复（端到端验证通过）+ write_long_term_memory 工具卡住修复（端到端验证通过）+ 配置热更新与组件重初始化（spec: add-config-hotreload-and-reinit 全部 Task 完成 + 46 测试 PASS + E2E 全部通过）+ 上下文摘要保留数量配置项 + 前端消息渲染重构（思考过程上方/工具调用内部/系统消息横幅，端到端验证通过）+ RADIX-Lite spec 全生命周期闭合（S0-S7 全部完成 + Task 0-8 全部闭合 + [V] 双重闸门闭合 + S6 合流交付 + S7 运维变更 + 契约版本 v1.2.0）+ 文档全量重写 v3.0.0（10 份文档 + GN-004 复审通过）+ Weaviate per-agent collection 改造闭合（真实 Weaviate 端到端验证 6 步骤全 PASS）+ 文档增量更新 v3.1.0（5 份文档反映 per-agent collection 改造）**
-> （spec: optimize-systematically-and-rewrite-tests 全部 task 闭合 + I3 [V] 双重闸门通过 + 用户已批准交付 2026-07-05 18:30 + 5 批次待办清理 2026-07-05 21:30 + G6 观察项 4 拆分 2026-07-05 22:00 + GN-004 全代码审查警示项处置 2026-07-05 22:30 + GN-004 4 项观察项全部处置 2026-07-05 23:00 + 迁移检查清单验证留痕 2026-07-05 21:40 + gemma4 工具参数解析修复 2026-07-06 19:48 + vLLM 流式 tool_calls 解析补丁 2026-07-06 20:00 + 前端工具调用参数显示修复 2026-07-06 20:10 + 多轮工具调用测试脚本修复与全链路验证 2026-07-06 20:40 + 语义搜索失效修复 2026-07-06 21:45 + 工具调用失败根因修复 2026-07-06 22:55 + 隐藏系统提示词设计原则修正 2026-07-07 06:35 + 摘要后聊天记录不更新修复 2026-07-07 21:35 + 摘要修复端到端验证通过 2026-07-07 14:47 + 语义搜索修复端到端验证通过 2026-07-07 14:57 + write_long_term_memory 工具卡住修复端到端验证通过 2026-07-07 16:07 + 配置热更新 spec add-config-hotreload-and-reinit Task 1-9 完成 46 测试 PASS 2026-07-08 10:30 + E2E 全部通过 2026-07-08 20:12 + 上下文摘要保留数量配置项与前端消息渲染重构完成 2026-07-08 21:17）
+> 最后更新：2026-08-28 13:30:00
+> 状态：**全项目体检与修复批次闭合（2026-08-28：s0602 技术债扫描 + TRAE-code-review 全项目审查 43 项问题双 agent 验证 CONFIRMED + 6 并行修复批次全部完成 + 技术债治理 + 全量回归 1040 passed 0 failed + 前端 303 passed）**
+> （此前状态：spec 实施已交付 + gemma4 工具调用全链路修复 + 多轮工具调用端到端验证通过 + 语义搜索失效修复 + 工具调用失败根因修复 + 隐藏系统提示词设计原则修正 + 摘要后聊天记录不更新修复 + write_long_term_memory 工具卡住修复 + 配置热更新与组件重初始化 + 上下文摘要保留数量配置项 + 前端消息渲染重构 + RADIX-Lite spec 全生命周期闭合 + 文档全量重写 v3.0.0 + Weaviate per-agent collection 改造闭合 + 文档增量更新 v3.1.0）
 
 ## 〇.S1/s0103 融合定稿（2026-07-15）：管理 Agent 扩展 - RADIX-Lite 去音视频扩展性优先版
 
@@ -1519,3 +1519,83 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
 **全量闭合**。文档增量更新 v3.1.0 任务全部完成，GN-004 审查通过，无后续接续动作。
 
 **后续维护建议**（GN-004 观察项 4）：核查 docs/ 下 6 份文档（PROJECT_OVERVIEW/ARCHITECTURE/MODULES/API/DEPLOYMENT/TECHNICAL）是否需要同步增量更新到 v3.1.0，以反映 Weaviate per-agent collection 改造。若 docs/ 文档仍为 v3.0.0 且涉及 Weaviate collection 描述，可能存在版本漂移。
+
+---
+
+## 十六、全项目体检与修复批次（2026-08-28）
+
+### 工程过程
+
+1. 用户指令：`/goal` 使用 s0602 技术债扫描 + TRAE-code-review + TRAE-debugger 检查项目潜在问题、设计不合理、bug 等，并修复（许可所有编辑、许可不限量 subagent）。
+2. **s0602 技术债扫描**（search subagent，只读）：分级产出 H1 生成物未入 .gitignore（5 处）/ H2 pytest 收集污染（tests/ 根 13 个散落 test_*.py，其中 5 个有实害：收集即执行真实 vLLM HTTP、fixture 报错、模块级 os.chdir、import 清代理变量）/ 中优先级 12 个零引用遗留文件 / 低优先级有引用凭证保留清单。
+3. **TRAE-code-review 全项目审查**（3 个并行 subagent）：后端 15 项 + 前端 12 项 + RADIX 模块 12 项候选问题。
+4. **双 agent 独立交叉验证**（TRAE-code-review Step 5.5）：39 项候选 + 5 项验证中新发现，全部 CONFIRMED，0 误报（含 2 个 critical：B1 get_memory 跨 agent 表回退泄漏、B2 agents.json 读取失败返回空列表致配置覆盖丢失）。
+5. **rules-6 先写后改**：5 份批次变更文档落盘（批1 memory / 批2 agents+chat+llm+mcp / 批3 前端 / 批4 RADIX 模块 / 批5 配置层+技术债）。
+6. **6 组并行修复**（general_purpose_task subagent，文件归属无冲突）：
+   - 批1：B1/B11/B12（manager.py）+ B5（secondary_router）+ B8（router）+ B3（websocket manager）
+   - 批2：B2/B9/B10/NEW-1（agents.py）+ B15（context/manager.py）+ B6/B7（chat.py）+ B4（llm/client.py）+ B13（mcp.py）
+   - 批3：F1-F12 + NEW-4/NEW-5（前端 7 文件）
+   - 批4：M1-M12（模块7-10 六文件）
+   - 批5：M8/M-EX2/M-EX3（reinit/dependencies/diff/settings/app/main）
+   - 技术债治理（主线程）：.gitignore +6 条 / pytest.ini norecursedirs / 19 文件迁 tests/manual/ / 删除 12 个零引用文件
+7. 全量回归验证 + 锚点更新 + GN-004 审查。
+
+### 交接状态
+
+- **状态**：已闭合（43 项问题全部修复 + 技术债 H1/H2/中优先级全部治理 + 5 份变更文档 status="已完成" + 全量回归通过）
+- **未闭合项**：
+  1. NEW-2 [info] mcp.py L127 默认端点硬编码 localhost:8001——本地部署语义合理，仅登记不处置
+  2. 批5 低优先级观察项：fix-env.bat 引用过时启动脚本路径（20260702 文档显式保留，不处置）
+  3. docs/ 6 份文档蒸馏服务端口描述漂移（8011 独立部署 vs 已合并 8001）——文档级，建议后续批次统一
+  4. pre-existing skip：save_memory 工具未注册（tests/simulation/scenarios/test_tool_integration.py:164，与本次无关）
+
+### 最终结果
+
+**修复统计**（43 项：2 critical + 30 major + 11 minor，全部闭合）：
+
+| 批次 | 覆盖 | 关键修复 | 验证 |
+|------|------|---------|------|
+| 批1 memory | B1/B3/B5/B8/B11/B12 | 跨 agent 泄漏关闭 / decay KeyError 修复 / 路由"最近记忆"规则恢复 / 并发去重互删防护 / 向量自愈同步 hybrid_search / WS 广播快照 | 29 passed |
+| 批2 路由与客户端 | B2/B4/B6/B7/B9/B10/B13/B15/NEW-1 | agents.json fail-fast+原子写 / LLM 计数泄漏 / memory-agent 多轮上下文恢复 / 流式多模态 / 克隆身份 / context 会话键 / MCP 进程泄漏 / 路径穿越白名单 | 6+12+11 passed + 冒烟 |
+| 批3 前端 | F1-F12/NEW-4/NEW-5 | 历史竞态序号保护 / WS 完整清理 / SSE 停止生效 / 摘要流可取消 / 401 防循环 / 悬空 agent 回退 / 会话键统一 / genId 兜底 | tsc 0 错误 + 303 passed |
+| 批4 RADIX | M1-M12 | async 桥接 / 真实 DecisionCore 接入 / radix 配置真实生效 / 重启后会话可查 / OCR 不再冻结事件循环 / 置信度显式传参 / 级联清理实装 / 原子审计日志 / per-session 锁 / 角色卡解析健壮 | 149+105 passed |
+| 批5 配置层 | M8/M-EX2/M-EX3 | reinit 重入保护 / 旧实例延迟 30s 关闭 / diff 补 security / logging 真实读取 | 24+7+12 passed |
+| 技术债 | H1/H2/中优先级 | .gitignore / pytest 隔离 tests/manual / 删除 12 个零引用文件 | 收集无污染 |
+
+**全量回归**：`pytest tests/ public/test_cases/ -m "not slow"` → **1040 passed, 1 skipped（pre-existing）, 0 failed**；前端 `npm test -- --run` → **303 passed**。
+
+**变更文档**（5 份，全部 status="已完成"）：
+- `.trae/documents/20260828_模块1_修复后端核心问题批1.md`
+- `.trae/documents/20260828_模块0_修复agents与chat路由问题.md`
+- `.trae/documents/20260828_模块2_修复前端问题批3.md`
+- `.trae/documents/20260828_模块9_修复RADIX模块问题批4.md`
+- `.trae/documents/20260828_模块0_修复配置层与技术债治理批5.md`
+
+**经验沉淀**：
+1. 同一文件多处并行 Edit 会相互覆盖（import 丢失 NameError）——同文件修改必须串行
+2. pytest 收集隔离用 norecursedirs 是最小侵入方案
+3. 测试断言旧行为（如立即关闭、Mock DecisionCore）按"适配测试+记录说明"处理
+4. M3 importance 取值范围按契约修正为 [0,1]（任务书原写 [1,5] 会与 storage_decision.schema 冲突）
+
+### 接续入口
+
+1. **可选后续**：docs/ 6 份文档端口描述统一（8011→8001 合并事实）；NEW-2 登记项按需处置。
+2. **调试器（TRAE-debugger）说明**：本轮 43 项问题均可静态确认（双 agent 代码级验证），未出现"仅凭静态分析无法诊断"的运行时 bug，故未启动 debug-server 插桩流程；后续如遇运行时复现型 bug，按 TRAE-debugger 11 步流程执行（debug-<sessionId>.md + 插桩先行）。
+3. 全量闭合，无阻塞接续动作。
+
+### Subagent 台账（本轮追加）
+
+| 阶段标签 | [P]组 | subagent_type | 预期产物 | actual agent id | 第二落点 | 失败回退点 | 状态 |
+|---------|-------|---------------|---------|----------------|---------|-----------|------|
+| 技术债扫描 | S1 | search | 债务分级清单 | 缺失（Task 工具调度，id 不可获取） | 本章节 | — | 已完成 |
+| 后端审查 | S1 | general_purpose_task | 15 项问题清单 | 缺失（同上） | 5 份变更文档 | — | 已完成 |
+| 前端审查 | S1 | general_purpose_task | 12 项问题清单 | 缺失（同上） | 批3 文档 | — | 已完成 |
+| 模块审查 | S1 | general_purpose_task | 12 项问题清单 | 缺失（同上） | 批4 文档 | — | 已完成 |
+| 验证A（后端+模块） | S2 | general_purpose_task | 26/26 CONFIRMED | 缺失（同上） | 本章节 | — | 已完成 |
+| 验证B（前端） | S2 | general_purpose_task | 12/12 CONFIRMED | 缺失（同上） | 本章节 | — | 已完成 |
+| 修复批1 | S3 | general_purpose_task | 6 项修复+29 测试 | 缺失（同上） | 批1 文档 | 审查前状态 | 已完成 |
+| 修复批2 | S3 | general_purpose_task | 9 项修复+18 测试 | 缺失（同上） | 批2 文档 | 审查前状态 | 已完成 |
+| 修复批3 | S4 | general_purpose_task | 14 项修复+303 测试 | 缺失（同上） | 批3 文档 | 审查前状态 | 已完成 |
+| 修复批4 | S4 | general_purpose_task | 12 项修复+254 测试 | 缺失（同上） | 批4 文档 | 审查前状态 | 已完成 |
+| 修复批5 | S4 | general_purpose_task | 4 项修复+43 测试 | 缺失（同上） | 批5 文档 | 审查前状态 | 已完成 |
+| 技术债治理 | S4 | 主线程（非subagent） | .gitignore+迁移+删除 | 主线程 | 批5 文档 | 扫描清单 | 已完成 |

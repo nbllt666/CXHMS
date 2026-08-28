@@ -51,10 +51,11 @@ export const useChatStore = create<ChatState>()(
           set({ agents: filteredAgents, isHydrated: true });
 
           const { currentAgentId } = get();
-          if (!currentAgentId && filteredAgents.length > 0) {
+          // F6: currentAgentId 悬空（已被删除）时回退到默认 agent，避免指向不存在的会话。
+          if (!currentAgentId || !filteredAgents.some((a: Agent) => a.id === currentAgentId)) {
             const defaultAgent =
               filteredAgents.find((a: Agent) => a.is_default) || filteredAgents[0];
-            set({ currentAgentId: defaultAgent.id });
+            set({ currentAgentId: defaultAgent?.id ?? null });
           }
         } catch (error) {
           console.error('Failed to fetch agents:', error);

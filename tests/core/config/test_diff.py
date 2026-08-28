@@ -142,11 +142,11 @@ def test_old_none_returns_full_diff():
     diff = compute_diff(None, new)
 
     assert not diff.is_empty()
-    # 12 个顶层段全部标记
+    # 13 个顶层段全部标记（M-EX3：security 段已纳入 diff 范围）
     expected_sections = {
         "llm", "models", "vector", "acp", "database",
         "memory", "context", "rate_limit", "cors", "system",
-        "graph", "cxfc",
+        "graph", "cxfc", "security",
     }
     assert diff.changed_sections == expected_sections
 

@@ -23,11 +23,13 @@ RADIX-Lite 管理 Agent 扩展工具：8 个新增工具。
 """
 
 import asyncio
+import concurrent.futures
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -39,6 +41,8 @@ _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(_THIS_DIR))
 _DATA_DIR = os.path.join(_PROJECT_ROOT, "data")
 _AGENTS_FILE = os.path.join(_DATA_DIR, "agents.json")
+
+logger = logging.getLogger(__name__)
 
 
 def _iso_now() -> str:
@@ -151,16 +155,27 @@ _REQUIRED_RUBRIC_FIELDS = (
 
 
 def _run_async(coro: Any) -> Any:
-    """同步执行 async 协程（主线程，非子线程 asyncio+aiohttp）。
+    """同步执行 async 协程，确保协程总被消费（不泄漏）。
 
-    rules-0 §三 async 禁止子线程 asyncio+aiohttp，本函数在主线程同步桥接。
+    rules-0 §三 async 禁止子线程 asyncio+aiohttp，本函数在调用方线程同步桥接：
+    - 无运行中事件循环时：直接 asyncio.run（主线程正常路径）。
+    - 已有运行中事件循环时（如在 async 上下文中被同步调用）：
+      asyncio.run 会抛 RuntimeError，且原实现回退 run_until_complete 在同一
+      loop 上二次调度必败。此时改用独立线程的新事件循环执行该协程，
+      并阻塞等待结果（60s 超时），保证协程被消费、异常可传播。
     """
     try:
-        return asyncio.run(coro)
+        asyncio.get_running_loop()
     except RuntimeError:
-        # 已有事件循环时回退到 ensure_future
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(coro)
+        # 无运行中 loop，正常路径
+        return asyncio.run(coro)
+
+    # 有运行中 loop：用独立线程的新 loop 执行（concurrent.futures 桥接）
+    def _run_in_thread() -> Any:
+        return asyncio.run(coro)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+        return ex.submit(_run_in_thread).result(timeout=60)
 
 
 def _make_default_agent() -> AgentRecord:
@@ -734,16 +749,70 @@ class AgentToolsV2:
             raise IOError(f"agents.json 写入失败（500）: {exc}") from exc
 
     def _cascade_cleanup_agent(self, agent_id: str) -> None:
-        """级联清理 agent 关联数据（审计日志 best-effort）。"""
-        # best-effort：清理失败不阻断
+        """级联清理 agent 关联数据（best-effort，失败不阻断删除流程）。
+
+        扫描 data/distillation_sessions/ 下会话文件，删除 target_agent_id
+        匹配的会话（文件 + 内存缓存）；再按被删会话的 session_id 清理
+        data/distillation_logs/ 下关联审计日志（日志文件按 {session_id}.json 命名）。
+        逐文件 try-except，统计删除数写日志。
+        """
+        deleted_sessions = 0
+        deleted_logs = 0
+        matched_session_ids: List[str] = []
+
+        # 1) 扫描会话目录，删除 target_agent_id 匹配的会话文件
+        session_dir = os.path.join(_DATA_DIR, "distillation_sessions")
         try:
-            log_dir = os.path.join(_DATA_DIR, "distillation_logs")
-            if not os.path.isdir(log_dir):
-                return
-            # 审计日志按 session_id 命名，无法直接按 agent_id 清理
-            # 实际级联清理需要 session 关联表，此处仅做 best-effort 占位
+            if os.path.isdir(session_dir):
+                for filename in os.listdir(session_dir):
+                    if not filename.endswith(".json"):
+                        continue
+                    session_path = os.path.join(session_dir, filename)
+                    try:
+                        with open(session_path, "r", encoding="utf-8") as fh:
+                            session = json.load(fh)
+                        if not isinstance(session, dict):
+                            continue
+                        if session.get("target_agent_id") != agent_id:
+                            continue
+                    except (json.JSONDecodeError, OSError):
+                        continue  # 单文件损坏跳过，不阻断
+                    try:
+                        os.remove(session_path)
+                        matched_session_ids.append(filename[: -len(".json")])
+                        deleted_sessions += 1
+                    except OSError:
+                        pass  # 单文件删除失败跳过
         except OSError:
-            pass
+            pass  # 目录不可读时跳过会话清理
+
+        # 2) best-effort：同步清理内存缓存中的关联会话（服务已实例化时）
+        if self._distillation_service is not None:
+            cache = getattr(self._distillation_service, "_sessions_cache", None)
+            if isinstance(cache, dict):
+                for sid in matched_session_ids:
+                    cache.pop(sid, None)
+
+        # 3) 按被删会话的 session_id 清理关联审计日志
+        log_dir = os.path.join(_DATA_DIR, "distillation_logs")
+        if matched_session_ids and os.path.isdir(log_dir):
+            for sid in matched_session_ids:
+                try:
+                    log_path = os.path.join(log_dir, f"{sid}.json")
+                    if os.path.isfile(log_path):
+                        os.remove(log_path)
+                        deleted_logs += 1
+                except OSError:
+                    pass  # 单文件删除失败跳过
+
+        # 4) 统计删除数写日志（审计留痕）
+        if deleted_sessions or deleted_logs:
+            logger.info(
+                "delete_agent 级联清理完成: agent_id=%s, sessions=%d, logs=%d",
+                agent_id,
+                deleted_sessions,
+                deleted_logs,
+            )
 
     def _get_decision_core(self) -> Any:
         """懒加载 DecisionCore 实例。"""

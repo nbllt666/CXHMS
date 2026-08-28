@@ -661,6 +661,7 @@ async def stream_chat(request: ChatRequest):
                     session_id=session_id,
                     user_message=request.message,
                     memory_context=memory_context,
+                    images=request.images,  # B7 修复：流式端点此前漏传 images，多模态请求被静默丢弃（与非流式对齐）
                 )
                 _t_build_end = _time.monotonic()
 
@@ -789,6 +790,10 @@ async def get_chat_history(session_id: str, limit: int = 50):
         }
     except HTTPException:
         raise
+    except ValueError as e:
+        # B15: 非法 session_id（如含路径穿越字符）由 context 层白名单校验拦截，返回 400
+        logger.warning(f"非法 session_id: {e}")
+        raise HTTPException(status_code=400, detail=f"非法 session_id: {str(e)}")
     except Exception as e:
         logger.error(f"获取聊天历史失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

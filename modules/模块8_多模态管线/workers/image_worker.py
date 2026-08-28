@@ -37,8 +37,10 @@ class ImageWorker:
 
     Note:
         OCRBlock 接口契约（.pyi）仅含 text / bbox 字段，不含 confidence。
-        本 worker 内部追踪 PaddleOCR 原始置信度（self._last_ocr_confidence），
-        供 merge 计算 artifact.confidence，但不放入 OCRBlock（严格匹配 .pyi 签名）。
+        ocr() 显式返回平均置信度（avg_confidence），由调用方经 merge 的
+        avg_confidence 参数传入计算 artifact.confidence，不放入 OCRBlock
+        （严格匹配 .pyi 签名），也不在实例上跨调用缓存（M7：避免 4 线程池
+        共享实例属性的竞态）。
     """
 
     def __init__(
@@ -66,8 +68,6 @@ class ImageWorker:
 
         # PaddleOCR 实例懒加载（首次 ocr 调用时初始化，避免构造时即失败）
         self._paddleocr_instance: Any = None
-        # 最近一次 OCR 的平均置信度（供 merge 使用）
-        self._last_ocr_confidence: float = 0.9
 
     # ------------------------------------------------------------------ #
     # OCR 通道
@@ -110,7 +110,6 @@ class ImageWorker:
         blocks.sort(key=lambda b: (b["bbox"][1], b["bbox"][0]))
 
         avg_conf = sum(confidences) / len(confidences) if confidences else 0.9
-        self._last_ocr_confidence = avg_conf
 
         logger.info(
             "ocr 完成: blocks=%d, avg_confidence=%.3f", len(blocks), avg_conf
@@ -403,18 +402,21 @@ class ImageWorker:
         self,
         ocr_blocks: List[Dict[str, Any]],
         vision_description: str,
+        avg_confidence: float = 0.9,
     ) -> Dict[str, Any]:
         """合并 OCR 文本块 + vision 描述为 MultimodalArtifact 原料 dict。
 
         置信度策略（任务要求 confidence = min(ocr_confidence, 0.9)）:
             - vision 描述不贡献 confidence
-            - ocr_confidence 取最近一次 OCR 平均置信度（self._last_ocr_confidence）
-            - 若 OCR 不可得，默认 0.9
+            - ocr_confidence 取调用方传入的 OCR 平均置信度（avg_confidence，
+              来自 ocr() 返回值，M7：消除跨线程共享实例属性的竞态）
+            - 未传入时默认 0.9
             - 降级（vision 为空）时 confidence 进一步降至 0.7
 
         Args:
             ocr_blocks: OCR 文本块列表 [{text, bbox}]
             vision_description: vision 描述文本（降级时为空串）
+            avg_confidence: OCR 平均置信度（ocr() 返回值，0-1，默认 0.9）
 
         Returns:
             dict 含字段: text_content / extra_metadata / confidence / vision_degraded
@@ -424,7 +426,7 @@ class ImageWorker:
         has_vision = bool(vision_description)
         if has_vision:
             text_content = f"{ocr_text}\n\n[视觉描述] {vision_description}"
-            confidence = min(self._last_ocr_confidence, 0.9)
+            confidence = min(avg_confidence, 0.9)
             vision_degraded = False
         else:
             text_content = ocr_text

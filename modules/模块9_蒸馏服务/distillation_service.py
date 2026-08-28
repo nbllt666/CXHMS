@@ -20,6 +20,7 @@ RADIX-Lite 蒸馏服务，独立 FastAPI 子服务（端口 8011）。
 @version 1.0.0
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -44,6 +45,9 @@ _DEFAULT_LOG_DIR = os.path.join(_DATA_DIR, "distillation_logs")
 _CONFIG_PATH = os.path.join(
     _PROJECT_ROOT, "public", "config_template", "radix_config.json"
 )
+# 实例配置（用户可编辑，优先生效）；模板 radix_config.json 是 JSON Schema，
+# 须按 properties.<seg>.properties.<f>.default 提取默认值（M5 修正）
+_CONFIG_INSTANCE_PATH = os.path.join(_PROJECT_ROOT, "config", "radix_config.json")
 
 
 def _iso_now() -> str:
@@ -207,14 +211,100 @@ _TRANSITIONS: Dict[str, Dict[str, str]] = {
 
 # --------------------------------------------------------------------------- #
 # 配置加载（rules-3 §三 auto_fill，best-effort）
+# M5 修正：radix_config.json 模板是 JSON Schema 而非实例配置，
+# 统一经 _load_radix_config 提取模板 defaults + 深合并实例配置。
 # --------------------------------------------------------------------------- #
+
+
+def _read_json_file(path: str) -> Optional[Dict[str, Any]]:
+    """读取 JSON 文件为 dict（best-effort，不存在/解析失败返回 None）。
+
+    Args:
+        path: JSON 文件绝对路径
+
+    Returns:
+        dict 或 None
+    """
+    try:
+        if not os.path.isfile(path):
+            return None
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else None
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> None:
+    """深合并 override 到 base（override 优先，就地修改 base）。"""
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
+
+
+def _extract_seg_defaults_from_template(template: Dict[str, Any]) -> Dict[str, Any]:
+    """从 JSON Schema 模板按 properties.<seg>.properties.<f>.default 提取各段默认值。
+
+    参照模块8 multimodal_pipeline._extract_defaults_from_template 的正确做法。
+
+    Args:
+        template: radix_config.json 模板（draft-07 Schema）
+
+    Returns:
+        Dict[str, Any]: {段名: {字段: default}}；仅包含含 default 的段
+    """
+    result: Dict[str, Any] = {}
+    props = template.get("properties", {})
+    if not isinstance(props, dict):
+        return result
+    for seg_name, seg_schema in props.items():
+        if not isinstance(seg_schema, dict):
+            continue
+        seg_props = seg_schema.get("properties", {})
+        if not isinstance(seg_props, dict):
+            continue
+        seg_defaults = {
+            field: spec["default"]
+            for field, spec in seg_props.items()
+            if isinstance(spec, dict) and "default" in spec
+        }
+        if seg_defaults:
+            result[seg_name] = seg_defaults
+    return result
+
+
+def _load_radix_config() -> Dict[str, Any]:
+    """加载 RADIX 配置（radix_config.json 真实生效入口）。
+
+    优先级（深合并，实例优先）：
+        1. config/radix_config.json 实例配置（用户可编辑）
+        2. public/config_template/radix_config.json 模板 defaults（Schema 提取）
+
+    Returns:
+        Dict[str, Any]: 按段组织的合并配置（如 {"distillation_service": {...}}）
+    """
+    merged: Dict[str, Any] = {}
+
+    # 1) 模板 defaults 兜底
+    template = _read_json_file(_CONFIG_PATH)
+    if template is not None:
+        _deep_merge(merged, _extract_seg_defaults_from_template(template))
+
+    # 2) 实例配置深合并（实例优先）
+    instance = _read_json_file(_CONFIG_INSTANCE_PATH)
+    if instance is not None:
+        _deep_merge(merged, instance)
+
+    return merged
 
 
 def _load_distillation_config() -> Dict[str, Any]:
     """加载 radix_config.json 的 distillation_service 段配置。
 
     缺失字段用默认值补齐（rules-3 §三 auto_fill）。
-    配置文件不存在或解析失败时使用全默认值（best-effort，不阻断启动）。
+    配置不存在或解析失败时使用全默认值（best-effort，不阻断启动）。
 
     Returns:
         Dict[str, Any]: distillation_service 配置段
@@ -229,11 +319,7 @@ def _load_distillation_config() -> Dict[str, Any]:
         "main_backend_url": "http://127.0.0.1:8001",
     }
     try:
-        if not os.path.exists(_CONFIG_PATH):
-            return defaults
-        with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
-            full = json.load(fh)
-        seg = full.get("distillation_service", {})
+        seg = dict(_load_radix_config().get("distillation_service") or {})
         # auto_fill：缺失字段补默认值，范围外字段回退默认值
         for k, v in defaults.items():
             if k not in seg or seg[k] is None:
@@ -258,12 +344,11 @@ def _load_vllm_base_url() -> str:
     """
     default_url = "http://127.0.0.1:8002"
     try:
-        if not os.path.exists(_CONFIG_PATH):
-            return default_url
-        with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
-            full = json.load(fh)
-        vllm_seg = full.get("vllm", {})
-        return vllm_seg.get("base_url", default_url)
+        vllm_seg = _load_radix_config().get("vllm") or {}
+        base_url = vllm_seg.get("base_url", default_url)
+        if isinstance(base_url, str) and base_url:
+            return base_url
+        return default_url
     except (json.JSONDecodeError, OSError, ValueError, TypeError):
         return default_url
 
@@ -284,11 +369,7 @@ def _load_decision_core_config() -> Dict[str, Any]:
         "system_prompt_fallback_enabled": True,
     }
     try:
-        if not os.path.exists(_CONFIG_PATH):
-            return defaults
-        with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
-            full = json.load(fh)
-        seg = full.get("decision_core", {})
+        seg = dict(_load_radix_config().get("decision_core") or {})
         for k, v in defaults.items():
             if k not in seg or seg[k] is None:
                 seg[k] = v
@@ -347,22 +428,35 @@ def _import_template_engine():
 def _import_decision_core():
     """导入 DecisionCore。
 
-    Task 5 尚未实现，使用预生成 Mock。
-    真实实现就位后，切换导入路径即可。
+    RADIX-Lite Task 5: 真实 DecisionCore（模块10_管理Agent扩展.decision_core）
+    已实现，优先导入真实实现；不可用时 fallback 预生成 Mock
+    （rules-0 §三 fallback: try-except）。真实实现依赖 vLLM，
+    LLM 不可用时 DecisionCore 内部回退 system_prompt 规则，不影响本导入。
 
     Returns:
-        DecisionCore 类（当前为 MockDecisionCore）
+        (DecisionCore, RubricSnapshot, DecisionInput, FinalDecision, StorageDecision) 元组
     """
-    # Task 5 未实现，使用 Mock（rules-0 §四-12 Mock 替身）
-    from public.pre_generated_mock.mock_decision_core import (
-        DecisionInput,
-        FinalDecision,
-        MockDecisionCore as DecisionCore,
-        RubricSnapshot,
-        StorageDecision,
-    )
+    try:
+        from modules.模块10_管理Agent扩展.decision_core import (
+            DecisionCore,
+            DecisionInput,
+            FinalDecision,
+            RubricSnapshot,
+            StorageDecision,
+        )
 
-    return DecisionCore, RubricSnapshot, DecisionInput, FinalDecision, StorageDecision
+        return DecisionCore, RubricSnapshot, DecisionInput, FinalDecision, StorageDecision
+    except Exception:
+        # fallback Mock（rules-0 §三 fallback: try-except）
+        from public.pre_generated_mock.mock_decision_core import (
+            DecisionInput,
+            FinalDecision,
+            MockDecisionCore as DecisionCore,
+            RubricSnapshot,
+            StorageDecision,
+        )
+
+        return DecisionCore, RubricSnapshot, DecisionInput, FinalDecision, StorageDecision
 
 
 # --------------------------------------------------------------------------- #
@@ -441,6 +535,9 @@ class DistillationService:
 
         # 内存态 session 索引（持久化层的缓存，提升查询性能）
         self._sessions_cache: Dict[str, Dict[str, Any]] = {}
+
+        # M11: per-session 并发锁（advance_distillation 防护 await 间共享可变状态）
+        self._session_locks: Dict[str, asyncio.Lock] = {}
 
     # ------------------------------------------------------------------ #
     # 公开 API（严格匹配 .pyi 签名）
@@ -546,7 +643,28 @@ class DistillationService:
         session_id: str,
         user_response: Optional[str],
     ) -> AdvanceDistillationResponse:
-        """推进蒸馏状态机一步。
+        """推进蒸馏状态机一步（per-session 并发防护）。
+
+        M11: 通过 per-session asyncio.Lock 保护加载→状态推进→落盘全程，
+        避免多个并发 advance 在 await 间共享可变 session 状态。
+
+        Args:
+            session_id: 会话 ID
+            user_response: 用户对 ask_user 的响应（如无则为 None）
+
+        Returns:
+            AdvanceDistillationResponse: session_id + current_state + agent_action + next_needed
+        """
+        lock = self._session_locks.setdefault(session_id, asyncio.Lock())
+        async with lock:
+            return await self._advance_distillation_impl(session_id, user_response)
+
+    async def _advance_distillation_impl(
+        self,
+        session_id: str,
+        user_response: Optional[str],
+    ) -> AdvanceDistillationResponse:
+        """推进蒸馏状态机一步（内部实现，由 advance_distillation 持锁调用）。
 
         支持回环（S_REFLECT → S_QUESTION）和主动追问（ask_user_on_ambiguity=True）。
 
@@ -1015,6 +1133,21 @@ class DistillationService:
         for sid, session in self._sessions_cache.items():
             if session.get("session_group_id") == group_id:
                 sessions_in_group.append(session)
+
+        # M4: 缓存未命中时扫盘回退（重启后内存缓存为空，复用 _load_session 磁盘加载）
+        if not sessions_in_group:
+            try:
+                for filename in os.listdir(self._session_dir):
+                    if not filename.endswith(".json"):
+                        continue
+                    sid = filename[: -len(".json")]
+                    session = self._load_session(sid)
+                    if session is not None and session.get(
+                        "session_group_id"
+                    ) == group_id:
+                        sessions_in_group.append(session)
+            except OSError:
+                pass  # 目录不可读时按未找到处理
 
         if not sessions_in_group:
             raise KeyError(f"session_group_id 不存在（404）: {group_id}")
@@ -2065,7 +2198,10 @@ class DistillationService:
                 )
                 ref = source_ref if source_ref else ""
                 try:
-                    artifact = self._multimodal_pipeline.preprocess(
+                    # M6: preprocess 为同步阻塞调用（OCR/vision 最长 120s），
+                    # 用 asyncio.to_thread 卸载到线程池，避免冻结事件循环
+                    artifact = await asyncio.to_thread(
+                        self._multimodal_pipeline.preprocess,
                         source_type=mp_source_type,
                         source_ref=ref,
                     )
@@ -2376,10 +2512,10 @@ class DistillationService:
 
         # 调用 DecisionCore（best-effort）
         try:
-            from public.pre_generated_mock.mock_decision_core import (
-                DecisionInput,
-                RubricSnapshot,
-            )
+            # M2: 与 __init__ 使用同一导入入口，保证模型类与活跃的
+            # DecisionCore 实现来自同一模块（真实实现不可用 fallback Mock 时，
+            # 模型类同样来自 Mock，避免跨实现混用导致 pydantic 校验失败）
+            _, RubricSnapshot, DecisionInput, _, _ = _import_decision_core()
 
             rubric = RubricSnapshot(
                 importance_threshold_permanent=self._rubric[

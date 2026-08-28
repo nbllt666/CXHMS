@@ -13,6 +13,7 @@
 """
 
 import threading
+import time
 from typing import List
 
 import pytest
@@ -117,8 +118,12 @@ def test_update_component_returns_none_when_no_old():
 # --------------------------------------------------------------------------- #
 
 
-def test_safe_close_calls_shutdown():
-    """旧实例有 shutdown() 时被调用"""
+def test_safe_close_calls_shutdown(monkeypatch):
+    """旧实例有 shutdown() 时被调用（延迟排空窗口后触发）"""
+    # M8-b：旧实例改为延迟关闭，测试将排空窗口缩短为 0.05s
+    monkeypatch.setattr(
+        "backend.dependencies.OLD_INSTANCE_CLOSE_DELAY_SECONDS", 0.05
+    )
     state = ServiceState()
 
     closed = {"called": False}
@@ -132,6 +137,9 @@ def test_safe_close_calls_shutdown():
 
     state.update_component("memory_manager", "new")
 
+    # 等待延迟 Timer 触发
+    time.sleep(0.3)
+
     assert closed["called"] is True
 
 
@@ -140,8 +148,12 @@ def test_safe_close_calls_shutdown():
 # --------------------------------------------------------------------------- #
 
 
-def test_safe_close_prefers_shutdown_over_close():
-    """旧实例同时有 shutdown() 和 close() 时，只调用 shutdown()"""
+def test_safe_close_prefers_shutdown_over_close(monkeypatch):
+    """旧实例同时有 shutdown() 和 close() 时，只调用 shutdown()（延迟触发）"""
+    # M8-b：旧实例改为延迟关闭，测试将排空窗口缩短为 0.05s
+    monkeypatch.setattr(
+        "backend.dependencies.OLD_INSTANCE_CLOSE_DELAY_SECONDS", 0.05
+    )
     state = ServiceState()
 
     calls = []
@@ -155,6 +167,9 @@ def test_safe_close_prefers_shutdown_over_close():
 
     state.memory_manager = FakeComponent()
     state.update_component("memory_manager", "new")
+
+    # 等待延迟 Timer 触发
+    time.sleep(0.3)
 
     assert calls == ["shutdown"]
 

@@ -102,6 +102,8 @@ class MemoryManager:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         self._lock = threading.Lock()
+        # 向量存储重建赋值专用锁（B12：健康检查自愈路径并发保护）
+        self._vector_store_lock = threading.Lock()
         self._local = threading.local()
         self._connection_pool: Dict[int, Dict] = {}
 
@@ -355,6 +357,23 @@ class MemoryManager:
                 )
                 if dup_result is not None:
                     existing_id, similarity = dup_result
+                    # 删除前重读目标记忆比对内容：内容已被修改说明该记忆
+                    # 已不是写入时的重复内容，跳过删除，避免误删；
+                    # 且只删除当前写入的 new_memory_id，不删其他并发写入的记忆，
+                    # 避免两条相同内容并发写入时去重线程互删、两条全丢。
+                    current = self.get_memory(new_memory_id, agent_id=agent_id)
+                    if current is None:
+                        logger.debug(
+                            f"后台去重跳过: memory_id={new_memory_id} 已不存在，无需删除"
+                        )
+                        return
+                    if current.get("content") != content:
+                        logger.info(
+                            f"后台去重跳过: memory_id={new_memory_id} 内容已变化，"
+                            f"不再删除 (agent={agent_id}, "
+                            f"existing_id={existing_id}, similarity={similarity:.4f})"
+                        )
+                        return
                     logger.info(
                         f"后台去重命中: new_id={new_memory_id}, "
                         f"existing_id={existing_id}, similarity={similarity:.4f}, "
@@ -531,11 +550,14 @@ class MemoryManager:
             try:
                 if not self._vector_store.is_available():
                     logger.warning("向量存储不可用，尝试重新初始化...")
-                    self._vector_store = None
+                    # 置空赋值加锁，避免与向量搜索路径并发访问旧实例
+                    with self._vector_store_lock:
+                        self._vector_store = None
                     self._try_reinit_vector_store()
             except Exception as e:
                 logger.warning(f"向量存储健康检查失败: {e}")
-                self._vector_store = None
+                with self._vector_store_lock:
+                    self._vector_store = None
 
     def _try_reinit_vector_store(self):
         """尝试重新初始化向量存储"""
@@ -583,8 +605,20 @@ class MemoryManager:
                     return
 
                 if vector_store and vector_store.is_available():
-                    self._vector_store = vector_store
-                    logger.info("向量存储重新初始化成功")
+                    # 重建赋值加锁，避免与向量搜索路径并发访问旧实例
+                    with self._vector_store_lock:
+                        self._vector_store = vector_store
+                        # 同步重建混合搜索实例：旧 _hybrid_search 仍持已失效的
+                        # _vector_store 引用，不同步重建则语义/混合搜索继续打在死实例上
+                        if self._embedding_model:
+                            from backend.core.memory.hybrid_search import HybridSearch
+
+                            self._hybrid_search = HybridSearch(
+                                vector_store=self._vector_store,
+                                sqlite_manager=self,
+                                embedding_model=self._embedding_model,
+                            )
+                    logger.info("向量存储重新初始化成功（混合搜索实例已同步重建）")
                 else:
                     logger.warning("向量存储重新初始化失败")
         except Exception as e:
@@ -1060,24 +1094,9 @@ class MemoryManager:
             if row:
                 return self._row_to_memory(row)
 
-            # 如果在指定表中未找到，尝试在其他agent表中查找
-            cursor.execute("SELECT table_name FROM agent_memory_tables")
-            agent_tables = [r[0] for r in cursor.fetchall()]
-
-            for other_table_name in agent_tables:
-                if other_table_name == table_name:
-                    continue
-                try:
-                    agent_query = f"SELECT * FROM {other_table_name} WHERE id = ?"
-                    if not include_deleted:
-                        agent_query += " AND is_deleted = FALSE"
-                    cursor.execute(agent_query, (memory_id,))
-                    row = cursor.fetchone()
-                    if row:
-                        return self._row_to_memory(row)
-                except Exception:
-                    continue
-
+            # 严格限定在 agent_id 对应表内查询：各表 id 独立自增，
+            # 跨表回退查找必然取到其他 agent 的同 id 记录（跨 agent 数据泄漏），
+            # 查不到直接返回 None。
             return None
         except Exception as e:
             logger.error(f"获取记忆失败: {e}", exc_info=True)

@@ -8,6 +8,10 @@ from fastapi import Depends
 
 logger = logging.getLogger(__name__)
 
+# 旧实例延迟关闭窗口（秒，M8-b）：给在途请求留出排空时间，
+# 避免其持旧引用撞上已关闭的连接
+OLD_INSTANCE_CLOSE_DELAY_SECONDS = 30.0
+
 
 class ServiceState:
     def __init__(self):
@@ -30,7 +34,8 @@ class ServiceState:
 
         线程安全：使用 _lock 保护属性赋值。
         不在锁内调用旧实例的 close()/shutdown()（避免死锁）。
-        旧实例的安全关闭在锁外执行；若旧实例的 close 是 async 协程，
+        旧实例的安全关闭在锁外延迟执行（daemon Timer，默认 30s 排空窗口，
+        见 OLD_INSTANCE_CLOSE_DELAY_SECONDS）；若旧实例的 close 是 async 协程，
         则跳过同步关闭（应由调用方在事件循环中处理）。
 
         Args:
@@ -43,11 +48,22 @@ class ServiceState:
         with self._lock:
             old = getattr(self, name, None)
             setattr(self, name, new_instance)
-        # 锁外安全关闭旧实例，避免长 IO 拖累锁
+        # 锁外延迟关闭旧实例（M8-b）：立即关闭会让在途请求持旧引用撞上
+        # 已关闭连接，改用 daemon Timer 延迟一个排空窗口后再安全关闭
         # 单例组件（如 model_router）old 与 new_instance 是同一对象，
         # reinit 方法已自行 close/reinitialize，此处跳过避免关闭刚初始化的实例
         if old is not None and old is not new_instance:
-            self._safe_close(old)
+            def _delayed_close(instance: Any = old) -> None:
+                try:
+                    self._safe_close(instance)
+                except Exception:
+                    pass
+
+            timer = threading.Timer(
+                OLD_INSTANCE_CLOSE_DELAY_SECONDS, _delayed_close
+            )
+            timer.daemon = True
+            timer.start()
         return old
 
     @staticmethod

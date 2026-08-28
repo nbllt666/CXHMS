@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, memo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useTranslation } from 'react-i18next';
@@ -294,6 +294,13 @@ const MessageItem = memo(
   (prev, next) => prev.message === next.message && prev.isStreaming === next.isStreaming
 );
 
+// NEW-5: crypto.randomUUID 在非 secure context（如局域网 http://ip 访问）下不可用，
+// 提供降级生成，避免直接 TypeError。
+const genId = () =>
+  crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 export function ChatPage() {
   const { t, i18n } = useTranslation();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -308,6 +315,8 @@ export function ChatPage() {
   const tempAssistantIdRef = useRef<string>('');
   const abortControllerRef = useRef<AbortController | null>(null);
   const alarmTimeoutRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  // F1: 历史加载请求序号——快速切换 agent 时丢弃过期响应，防止旧会话覆盖新会话。
+  const historyRequestSeqRef = useRef(0);
 
   const { agents, currentAgentId, currentSessionId, fetchAgents } = useChatStore();
 
@@ -322,7 +331,7 @@ export function ChatPage() {
   );
 
   const handleAlarm = useCallback((message: string, triggeredAt: string) => {
-    const alarmId = crypto.randomUUID();
+    const alarmId = genId();
     setAlarms((prev) => [...prev, { id: alarmId, message, triggeredAt }]);
     const id = setTimeout(() => {
       setAlarms((prev) => prev.filter((a) => a.id !== alarmId));
@@ -342,6 +351,16 @@ export function ChatPage() {
     onError: (error) => {
       console.error('WebSocket error:', error);
       setIsLoading(false);
+      // F9: WS 发送失败时移除尾部空 content 的 assistant 占位，避免残留空气泡。
+      // 流中消息一旦收到内容即非空，done/cancelled/error 分支也必写入内容，
+      // 因此仅空 content 的占位会被清除，不影响正在流式输出的消息。
+      setMessages((prev) => {
+        const lastMsg = prev[prev.length - 1];
+        if (lastMsg && lastMsg.role === 'assistant' && lastMsg.content === '') {
+          return prev.slice(0, -1);
+        }
+        return prev;
+      });
     },
     // WS 断开时清除加载态，避免 done/error/cancelled 未送达时 UI 卡在 loading
     onDisconnect: () => {
@@ -357,10 +376,14 @@ export function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const loadAgentHistory = useCallback(async (agentId: string) => {
+    // F1: 自增序号标记本次请求；响应返回时校验仍是最新请求才写入，避免旧响应覆盖新会话。
+    const requestSeq = ++historyRequestSeqRef.current;
     try {
-      // 统一口径：优先真实 sessionId，回退到 `agent-${agentId}`，与 handleClearContext 保持一致
-      const sessionKey = currentSessionId || `agent-${agentId}`;
+      // NEW-4: 会话键统一为 `agent-${agentId}`，忽略遗留 foreign currentSessionId，
+      // 防止 localStorage 残留的其他 agent 会话键造成串扰。
+      const sessionKey = `agent-${agentId}`;
       const data = await api.getChatHistory(sessionKey);
+      if (requestSeq !== historyRequestSeqRef.current) return;
       if (data.messages) {
         const formattedMessages = data.messages.map(
           (msg: {
@@ -387,10 +410,11 @@ export function ChatPage() {
         setShouldAutoScroll(true);
       }
     } catch (error) {
+      if (requestSeq !== historyRequestSeqRef.current) return;
       console.error('加载历史消息失败:', error);
       setMessages([]);
     }
-  }, [currentSessionId]);
+  }, []);
 
   useEffect(() => {
     if (currentAgentId) {
@@ -398,7 +422,7 @@ export function ChatPage() {
     } else {
       setMessages([]);
     }
-  }, [currentAgentId, currentSessionId, loadAgentHistory]);
+  }, [currentAgentId, loadAgentHistory]);
 
   useEffect(() => {
     return () => {
@@ -459,14 +483,14 @@ export function ChatPage() {
     if ((!input.trim() && selectedImages.length === 0) || isLoading) return;
 
     const userMessage: Message = {
-      id: crypto.randomUUID(),
+      id: genId(),
       role: 'user',
       content: input,
       timestamp: new Date().toISOString(),
       images: selectedImages.length > 0 ? selectedImages : undefined,
     };
 
-    const tempAssistantId = crypto.randomUUID();
+    const tempAssistantId = genId();
     tempAssistantIdRef.current = tempAssistantId;
     const streamingMessage: Message = {
       id: tempAssistantId,
@@ -531,7 +555,18 @@ export function ChatPage() {
     }
   };
 
-  const getContextText = () => {
+  // F3: 停止生成按钮分流——WS 已连接时走 WS cancel 协议；
+  // 否则处于 SSE 模式，通过 abort 中止 fetch 流（abortControllerRef 仅在 SSE 分支赋值）。
+  const handleStopGeneration = () => {
+    if (isConnected) {
+      cancelGeneration();
+    } else {
+      abortControllerRef.current?.abort();
+    }
+  };
+
+  // F8: 上下文文本用 useMemo 缓存，避免每次渲染重算 O(n) 映射与时间格式化。
+  const contextText = useMemo(() => {
     const formatTime = (timestamp: string) => {
       try {
         const date = new Date(timestamp);
@@ -545,13 +580,14 @@ export function ChatPage() {
       const time = m.timestamp ? formatTime(m.timestamp) : '';
       return `[${time} ${m.role === 'user' ? t('chat.contextUser') : t('chat.contextAssistant')}] ${m.content}`;
     }).join('\n\n');
-  };
+  }, [messages, i18n.language, t]);
 
   const handleClearContext = async () => {
     if (!confirm(t('chat.confirmClearContext'))) return;
 
     try {
-      const sessionId = currentSessionId || `agent-${currentAgentId || 'default'}`;
+      // NEW-4: 与 loadAgentHistory 统一口径，始终用 `agent-${agentId}`，忽略遗留 foreign currentSessionId
+      const sessionId = `agent-${currentAgentId || 'default'}`;
       await api.clearSessionMessages(sessionId);
       // 清空后重新加载历史（会创建新的空会话）
       await loadAgentHistory(currentAgentId || 'default');
@@ -822,7 +858,7 @@ export function ChatPage() {
           {isLoading ? (
             <Button
               variant="secondary"
-              onClick={cancelGeneration}
+              onClick={handleStopGeneration}
               className="self-end"
               title={t('chat.stopGeneration')}
             >
@@ -912,7 +948,7 @@ export function ChatPage() {
           setShowSummaryModal(false);
           setAutoStartSummary(false);
         }}
-        contextText={getContextText()}
+        contextText={contextText}
         agentId={currentAgentId || 'default'}
         autoStart={autoStartSummary}
         targetSessionId={currentSessionId || `agent-${currentAgentId || 'default'}`}

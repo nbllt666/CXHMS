@@ -40,8 +40,15 @@ function setupInterceptors(axiosInstance: AxiosInstance) {
     async (error: AxiosError) => {
       if (error.response?.status === 401) {
         localStorage.removeItem('cxhms-token');
-        console.warn('Authentication required. Redirecting to home page.');
-        window.location.href = '/';
+        console.warn('Authentication required.');
+        // F5: 防止 401 无限刷新循环——仅在首页以外跳转一次；
+        // 已跳转过（或已在首页）则不再跳转，并在首页上的首次 401 时清除标记。
+        if (window.location.pathname !== '/' && !sessionStorage.getItem('cxhms-401-redirected')) {
+          sessionStorage.setItem('cxhms-401-redirected', '1');
+          window.location.href = '/';
+        } else {
+          sessionStorage.removeItem('cxhms-401-redirected');
+        }
         return Promise.reject(error);
       }
 
@@ -59,6 +66,14 @@ function setupInterceptors(axiosInstance: AxiosInstance) {
       const writeMethods = ['post', 'put', 'delete', 'patch'];
       const method = (config?.method || 'get').toLowerCase();
       if (writeMethods.includes(method)) {
+        return Promise.reject(error);
+      }
+
+      // F12: 已取消的请求与 4xx 响应不重试——取消重试无意义，4xx 属于请求本身的问题。
+      if (axios.isCancel(error) || error.code === 'ERR_CANCELED') {
+        return Promise.reject(error);
+      }
+      if ((error.response?.status ?? 0) < 500) {
         return Promise.reject(error);
       }
 

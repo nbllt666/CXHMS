@@ -205,10 +205,11 @@ class MemoryRouter:
                 if not results:
                     break
 
-                for mem in results:
-                    if mem.get("session_id") == session_id:
-                        memories.append(mem)
-                        recent_count += 1
+                # 检索阶段已用 tags=[session_id] 精确过滤，直接使用返回结果；
+                # 顶层 session_id 键不存在（在 metadata 里），原过滤恒为 False
+                # 会导致检索结果全部被丢弃，"最近交互记忆优先"规则永久失效
+                memories.extend(results)
+                recent_count += len(results)
 
                 page += 1
 

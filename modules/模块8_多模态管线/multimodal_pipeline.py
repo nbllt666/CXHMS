@@ -440,7 +440,7 @@ class MultimodalPipeline:
             RuntimeError: PaddleOCR 引擎异常 / 图片解码失败（500）
         """
         # OCR 通道（必须成功，失败 raise RuntimeError）
-        ocr_blocks_dicts, _avg_conf = self._image_worker_impl.ocr(source_ref)
+        ocr_blocks_dicts, avg_conf = self._image_worker_impl.ocr(source_ref)
 
         # vision 通道（可降级）
         vision_description = ""
@@ -511,7 +511,7 @@ class MultimodalPipeline:
             合并后的 MultimodalArtifact
 
         Note:
-            若未先调用 _ocr_worker，ImageWorker._last_ocr_confidence 为默认 0.9，
+            未显式传入 avg_confidence 时按默认 0.9 计算，
             confidence 取 min(0.9, 0.9)=0.9；降级时（vision 为空）confidence=0.7。
         """
         blocks_dicts = [b.model_dump() for b in ocr_blocks]

@@ -20,6 +20,8 @@ export function AgentsPage() {
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [availableModels, setAvailableModels] = useState<{ name: string }[]>([]);
   const [providers, setProviders] = useState<{ id: string; name: string; provider: string }[]>([]);
+  // F10: 提交中标志，防止重复提交
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 模板移入组件以支持 i18n；system_prompt 为 LLM 指令，保留原文不翻译
   const AGENT_TEMPLATES: AgentTemplate[] = [
@@ -138,10 +140,12 @@ export function AgentsPage() {
   };
 
   const handleCreate = async () => {
+    // F10: 提交期间置标志并禁用按钮，防止重复提交
+    setIsSubmitting(true);
     try {
       await api.createAgent({
         ...formData,
-        model: 'main',
+        model: formData.model || 'main',
         use_memory: true,
         use_tools: true,
         vision_enabled: true,
@@ -153,15 +157,18 @@ export function AgentsPage() {
     } catch (error) {
       console.error('创建 Agent 失败:', error);
       alert(t('agent.createFailed'));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleUpdate = async () => {
     if (!editingAgent) return;
+    setIsSubmitting(true);
     try {
       await api.updateAgent(editingAgent.id, {
         ...formData,
-        model: 'main',
+        model: formData.model || 'main',
         use_memory: true,
         use_tools: true,
         vision_enabled: true,
@@ -173,6 +180,8 @@ export function AgentsPage() {
     } catch (error) {
       console.error('更新 Agent 失败:', error);
       alert(t('agent.updateFailed'));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -608,7 +617,7 @@ export function AgentsPage() {
             </Button>
             <Button
               onClick={editingAgent ? handleUpdate : handleCreate}
-              disabled={!formData.name.trim()}
+              disabled={!formData.name.trim() || isSubmitting}
             >
               {editingAgent ? t('common.save') : t('common.create')}
             </Button>

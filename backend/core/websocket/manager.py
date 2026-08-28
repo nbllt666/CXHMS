@@ -126,7 +126,8 @@ class WebSocketManager:
             return
 
         disconnected = []
-        for client_id in self.channels[channel]:
+        # snapshot 防止 await send 期间 subscribe/unsubscribe 并发修改 set 触发 RuntimeError
+        for client_id in list(self.channels[channel]):
             if client_id in self.connections:
                 try:
                     await self.connections[client_id].send(message)

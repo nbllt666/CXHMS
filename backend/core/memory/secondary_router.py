@@ -550,14 +550,18 @@ class SecondaryModelRouter:
             )
         else:
             result = self.memory_manager.sync_decay_values()
+            # sync_decay_values 实际返回 {total, permanent_count, avg_time_score, mode}，
+            # 异常分支返回 {total, error, mode}；统一用 .get 兜底避免 KeyError
             return SecondaryResult(
                 status="success",
                 command="decay_memories",
                 output={
                     "dry_run": False,
-                    "updated": result["updated"],
-                    "failed": result["failed"],
-                    "total": result["total"],
+                    "total": result.get("total", 0),
+                    "permanent_count": result.get("permanent_count", 0),
+                    "avg_time_score": result.get("avg_time_score", 0.0),
+                    "mode": result.get("mode", "realtime"),
+                    "error": result.get("error"),
                 },
                 execution_time_ms=0.0,
             )

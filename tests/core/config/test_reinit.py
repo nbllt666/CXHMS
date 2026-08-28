@@ -254,3 +254,50 @@ def test_reinit_result_partial_property():
 
     r2 = ReinitResult(failed=["model_router"])
     assert r2.partial is True
+
+
+# --------------------------------------------------------------------------- #
+# 补充：reinit 重入保护（M8-a）
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_reinit_rejects_concurrent_call():
+    """上一次 reinit 进行中时，再次调用被拒绝（success=False + 原因）。
+
+    构造：
+        - reinit_component 用慢速 mock 挂起，第一个 reinit 保持 running
+        - 第二个 reinit 调用应立即被拒绝，不等待
+    验证：
+        - 进行中 get_status 返回 running（由 _reinit_in_progress 驱动）
+        - 第二次调用 success=False，errors["reinit"] 说明原因
+        - 第一个 reinit 完成后标志复位，get_status 恢复 idle
+    """
+    mgr = _make_manager()
+
+    release = asyncio.Event()
+
+    async def slow_reinit_component(name: str) -> None:
+        # 模拟慢速 reinit：挂起直到测试放行
+        await release.wait()
+
+    mgr.reinit_component = slow_reinit_component  # type: ignore[assignment]
+
+    first = asyncio.create_task(mgr.reinit(components={"llm_client"}))
+    # 让第一个 reinit 进入执行并挂起
+    await asyncio.sleep(0.05)
+
+    assert mgr.get_status()["status"] == "running"
+
+    second = await mgr.reinit(components={"llm_client"})
+    assert second.success is False
+    assert "another reinit is in progress" in second.errors["reinit"]
+
+    # 放行第一个 reinit 并确认最终状态复位
+    release.set()
+    result = await first
+    assert result.success is True
+
+    status = mgr.get_status()
+    assert status["status"] == "idle"
+    assert status["last_result"] is not None

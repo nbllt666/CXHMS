@@ -203,13 +203,30 @@ export function useWebSocket(options: WebSocketOptions): UseWebSocketReturn {
     }
     reconnectCountRef.current = MAX_RECONNECT_ATTEMPTS;
     clearPingInterval();
-    if (wsRef.current) {
-      // 只关闭已连接或正在关闭的 WebSocket，避免中断正在连接的
-      if (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CLOSING) {
-        wsRef.current.close();
+    // F2: 无条件清理——先摘除回调防止陈旧 onclose 触发重连循环，
+    // 再关闭任意 readyState（含 CONNECTING）的连接，避免孤儿连接。
+    const oldWs = wsRef.current;
+    wsRef.current = null;
+    if (oldWs) {
+      oldWs.onclose = null;
+      oldWs.onopen = null;
+      oldWs.onmessage = null;
+      oldWs.onerror = null;
+      if (
+        oldWs.readyState === WebSocket.OPEN ||
+        oldWs.readyState === WebSocket.CLOSING ||
+        oldWs.readyState === WebSocket.CONNECTING
+      ) {
+        try {
+          oldWs.close();
+        } catch {
+          // 连接已销毁时 close 可能抛错，忽略
+        }
       }
-      wsRef.current = null;
     }
+    // 回调已摘除，onclose 不会再触发状态更新——此处显式同步连接状态
+    setIsConnected(false);
+    setIsGenerating(false);
   }, [clearPingInterval]);
 
   const reconnect = useCallback(() => {

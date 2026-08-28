@@ -223,11 +223,14 @@ class MCPManager:
                         raise MCPError(f"参数包含危险字符: {arg}")
 
             # 启动进程
+            # B13 修复：PIPE 从不被读取，MCP server 输出写满系统缓冲区会导致子进程挂死；
+            # 改用 DEVNULL 丢弃输出。启动失败诊断处的 communicate() 保持兼容
+            # （DEVNULL 时返回 None，已有 `if stderr` 兜底，无需特判）。
             process = subprocess.Popen(
                 [server.command] + (server.args or []),
                 env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
 
             server.process = process

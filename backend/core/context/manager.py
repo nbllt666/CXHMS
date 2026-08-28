@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -14,6 +15,9 @@ logger = get_contextual_logger(__name__)
 # C3: 增量持久化阈值——_persist 只标记 dirty，达到阈值才真正落盘
 _FLUSH_MSG_INTERVAL = 10  # 每 N 条消息触发一次 flush
 _FLUSH_TIME_INTERVAL = 5.0  # 或距上次 flush 超过 N 秒触发一次
+
+# B15: session_id 白名单——仅允许字母/数字/下划线/连字符，长度 1-128，防止路径穿越
+_SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_\-]{1,128}$")
 
 
 class ContextManager:
@@ -51,8 +55,21 @@ class ContextManager:
 
     # ─── 内部工具方法 ────────────────────────────────────────────
 
+    @staticmethod
+    def _validate_session_id(session_id: str) -> None:
+        """校验 session_id 合法性（B15：防路径穿越）。
+
+        白名单 ^[A-Za-z0-9_-]{1,128}$，含路径分隔符、.. 等非法字符时抛 ValueError，
+        由调用方（如路由层）决定如何转换为 HTTP 错误。
+        """
+        if not isinstance(session_id, str) or not _SESSION_ID_PATTERN.match(session_id):
+            raise ValueError(
+                f"非法 session_id: {session_id!r}（仅允许字母/数字/下划线/连字符，长度 1-128）"
+            )
+
     def _session_file(self, session_id: str) -> str:
         """获取 session 对应的 JSON 文件路径"""
+        self._validate_session_id(session_id)
         return os.path.join(self._context_dir, f"{session_id}.json")
 
     def _atomic_write(self, session_id: str, data: Dict) -> None:
@@ -203,6 +220,7 @@ class ContextManager:
             会话ID
         """
         session_id = session_id or str(uuid.uuid4())
+        self._validate_session_id(session_id)  # B15: 防路径穿越（session_id 参与构造落盘路径）
         now = datetime.now().isoformat()
 
         session_data = {
@@ -276,6 +294,7 @@ class ContextManager:
 
     def delete_session(self, session_id: str) -> bool:
         """从内存和文件中删除 session"""
+        self._validate_session_id(session_id)  # B15: 防路径穿越（session_id 参与构造删除路径）
         with self._lock:
             if session_id not in self._store:
                 return False
@@ -415,6 +434,7 @@ class ContextManager:
         limit 取最后 N 条，offset 从最旧的消息跳过，返回从旧到新顺序。
         过滤 is_deleted。
         """
+        self._validate_session_id(session_id)  # B15: 防路径穿越
         entry = self._store.get(session_id)
         if not entry:
             return []
@@ -624,6 +644,7 @@ class ContextManager:
 
     def get_context_summary(self, agent_id: str) -> Dict:
         """返回该 agent 的上下文摘要"""
+        self._validate_session_id(agent_id)  # B15: 防路径穿越（agent_id 即 session 键）
         entry = self._store.get(agent_id)
         if not entry:
             return {"agent_id": agent_id, "exists": False}
@@ -648,6 +669,7 @@ class ContextManager:
 
     def clear_context(self, agent_id: str) -> bool:
         """等同于 clear_session_messages + 删除 session"""
+        self._validate_session_id(agent_id)  # B15: 防路径穿越（agent_id 即 session 键）
         self.clear_session_messages(agent_id)
         return self.delete_session(agent_id)
 

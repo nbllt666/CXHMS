@@ -4,9 +4,9 @@
 识别哪些顶层段发生了变化以及具体字段路径，供下游决定增量重载策略。
 
 设计要点：
-    - 输入两个 CXHMSConfig 实例（来自 config.settings），递归对比 12 个顶层段
+    - 输入两个 CXHMSConfig 实例（来自 config.settings），递归对比 13 个顶层段
     - 顶层段映射：llm/models/vector/acp/database/memory/context/rate_limit/
-      cors/system/graph/cxfc
+      cors/system/graph/cxfc/security
     - changed_sections 记录哪个顶层段变化（如 "models"、"memory"）
     - field_changes 记录具体字段路径（如 "models.main.model"、"memory.weaviate.host"）
     - 无变化返回空 ConfigDiff
@@ -38,7 +38,8 @@ class ConfigDiff:
         return not self.changed_sections
 
 
-# CXHMSConfig 的 12 个顶层段（与 config.settings.CXHMSConfig 字段对齐）
+# CXHMSConfig 的 13 个顶层段（与 config.settings.CXHMSConfig 字段对齐，
+# M-EX3：补入 security 段，使 security.* 变更可触发热更新流程）
 _TOP_LEVEL_SECTIONS = (
     "llm",
     "models",
@@ -52,6 +53,7 @@ _TOP_LEVEL_SECTIONS = (
     "system",
     "graph",
     "cxfc",
+    "security",
 )
 
 

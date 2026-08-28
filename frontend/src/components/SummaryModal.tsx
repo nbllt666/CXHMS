@@ -77,6 +77,10 @@ export function SummaryModal({
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoStartedRef = useRef(false);
+  // F4: 摘要流 SSE 不可取消问题的修复——持有 AbortController 以便关窗/卸载时中止流，
+  // 并记录自动摘要的 setTimeout id 以便清理，防止关窗后流继续与定时器泄漏。
+  const summaryAbortRef = useRef<AbortController | null>(null);
+  const autoStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 用 ref 持有最新的 onSummaryComplete，避免 handleStreamChunk 闭包陈旧。
   // handleStreamChunk 不是 useCallback，每次渲染重建，但被 handleAutoSummary/handleSend 的
   // useCallback 捕获后，新 onSummaryComplete 不会自动传到旧回调里。ref 桥接保证始终读到最新值。
@@ -238,6 +242,9 @@ export function SummaryModal({
     };
     setMessages((prev) => [...prev, assistantMsg]);
 
+    const controller = new AbortController();
+    summaryAbortRef.current = controller;
+
     try {
       const fullPrompt = `请将以下对话内容整理为日记并保存。
 
@@ -255,10 +262,12 @@ ${contextText}
       await api.sendSummaryAgentMessageStream(
         fullPrompt,
         handleStreamChunk,
-        undefined,
+        controller.signal,
         { targetSessionId }
       );
     } catch (error) {
+      // F4: 主动中止（关窗/卸载）时静默返回，不提示失败
+      if (controller.signal.aborted) return;
       console.error('自动摘要失败:', error);
       setMessages((prev) => [
         ...prev.slice(0, -1),
@@ -302,11 +311,34 @@ ${contextText}
   useEffect(() => {
     if (isOpen && autoStart && !autoStartedRef.current && messages.length > 0) {
       autoStartedRef.current = true;
-      setTimeout(() => {
+      // F4: 记录定时器 id，关窗/卸载时清除，避免关窗后仍触发摘要
+      autoStartTimerRef.current = setTimeout(() => {
         handleAutoSummary();
       }, 100);
     }
   }, [isOpen, autoStart, messages.length, handleAutoSummary]);
+
+  // F4: 关闭弹窗时中止进行中的摘要流并清理自动摘要定时器
+  useEffect(() => {
+    if (!isOpen) {
+      summaryAbortRef.current?.abort();
+      summaryAbortRef.current = null;
+      if (autoStartTimerRef.current) {
+        clearTimeout(autoStartTimerRef.current);
+        autoStartTimerRef.current = null;
+      }
+    }
+  }, [isOpen]);
+
+  // F4: 组件卸载时同样清理
+  useEffect(() => {
+    return () => {
+      summaryAbortRef.current?.abort();
+      if (autoStartTimerRef.current) {
+        clearTimeout(autoStartTimerRef.current);
+      }
+    };
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -341,6 +373,9 @@ ${contextText}
     };
     setMessages((prev) => [...prev, assistantMsg]);
 
+    const controller = new AbortController();
+    summaryAbortRef.current = controller;
+
     try {
       // 判断用户是否在请求摘要
       const summaryKeywords = ['摘要', '总结', '记忆', '保存', '记录', 'summarize', 'summary', 'memory'];
@@ -371,10 +406,12 @@ ${contextText}
       await api.sendSummaryAgentMessageStream(
         fullPrompt,
         handleStreamChunk,
-        undefined,
+        controller.signal,
         { targetSessionId }
       );
     } catch (error) {
+      // F4: 主动中止（关窗/卸载）时静默返回，不提示失败
+      if (controller.signal.aborted) return;
       console.error('摘要生成失败:', error);
       setMessages((prev) => [
         ...prev.slice(0, -1),

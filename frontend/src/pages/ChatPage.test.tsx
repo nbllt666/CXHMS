@@ -223,13 +223,14 @@ describe('ChatPage', () => {
       });
     });
 
-    it('uses currentSessionId when provided', async () => {
+    it('ignores foreign currentSessionId and always uses `agent-${agentId}` (NEW-4)', async () => {
       chatStoreState.currentSessionId = 'real-session-123';
       mockGetChatHistory.mockResolvedValueOnce({ messages: [] });
       render(<ChatPage />);
       await waitFor(() => {
-        expect(mockGetChatHistory).toHaveBeenCalledWith('real-session-123');
+        expect(mockGetChatHistory).toHaveBeenCalledWith('agent-agent-1');
       });
+      expect(mockGetChatHistory).not.toHaveBeenCalledWith('real-session-123');
     });
   });
 
@@ -250,19 +251,19 @@ describe('ChatPage', () => {
       });
     });
 
-    it('reloads history when currentSessionId changes', async () => {
+    it('does not reload with foreign session key when currentSessionId changes (NEW-4)', async () => {
       mockGetChatHistory.mockResolvedValue({ messages: [] });
       const { rerender } = render(<ChatPage />);
       await waitFor(() => {
         expect(mockGetChatHistory).toHaveBeenCalledWith('agent-agent-1');
       });
 
-      // 切换 session（E1 + E6 联动）
+      // 遗留 foreign currentSessionId 变化不再按其键加载（NEW-4：会话键统一为 agent-${agentId}）
       chatStoreState.currentSessionId = 'new-session-456';
       rerender(<ChatPage />);
-      await waitFor(() => {
-        expect(mockGetChatHistory).toHaveBeenCalledWith('new-session-456');
-      });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(mockGetChatHistory).not.toHaveBeenCalledWith('new-session-456');
+      expect(mockGetChatHistory).toHaveBeenLastCalledWith('agent-agent-1');
     });
   });
 
@@ -513,7 +514,7 @@ describe('ChatPage', () => {
       });
     });
 
-    it('uses real sessionId when currentSessionId is set', async () => {
+    it('uses `agent-${agentId}` even when currentSessionId is set (NEW-4)', async () => {
       chatStoreState.currentAgentId = 'agent-1';
       chatStoreState.currentSessionId = 'real-sess';
       mockGetChatHistory.mockResolvedValue({ messages: [] });
@@ -528,7 +529,7 @@ describe('ChatPage', () => {
       fireEvent.click(clearBtn);
 
       await waitFor(() => {
-        expect(mockClearSessionMessages).toHaveBeenCalledWith('real-sess');
+        expect(mockClearSessionMessages).toHaveBeenCalledWith('agent-agent-1');
       });
     });
   });

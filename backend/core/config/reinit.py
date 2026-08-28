@@ -118,6 +118,11 @@ class ReinitManager:
         self._service_state = service_state
         self._settings = settings
         self._lock = threading.Lock()
+        # 重入标志（M8-a）：reinit 进行中为 True，读写由 _lock 保护，
+        # 兼容 watcher 线程与 API 事件循环的跨线程并发场景
+        self._reinit_in_progress: bool = False
+        # 兼容保留：service.py 路由层会写入此属性跟踪后台任务；
+        # get_status 已改由 _reinit_in_progress 驱动，不再读取它
         self._current_task: Optional[asyncio.Task] = None
         self._current_component: Optional[str] = None
         self._last_result: Optional[ReinitResult] = None
@@ -199,7 +204,55 @@ class ReinitManager:
         diff: Optional[ConfigDiff] = None,
         reload_first: bool = False,
     ) -> ReinitResult:
-        """对指定组件集合执行重新初始化。
+        """对指定组件集合执行重新初始化（带重入保护）。
+
+        重入语义（M8-a）：检测到上一次 reinit 仍在进行中时，拒绝并发请求
+        （记录 warning 并返回 success=False 的 ReinitResult），不等待、不排队。
+        标志读写由 threading.Lock 保护，兼容 watcher 线程与 API 事件循环的
+        跨线程并发场景。
+
+        Args:
+            components: 显式指定的组件集合（优先）。
+            diff: 配置差异，用于自动决策组件集合。
+            reload_first: 是否先 reload 配置文件再决策。仅当 diff 为 None 时生效，
+                调用 settings.reload_config_with_diff() 获取新 diff。默认 False，
+                保持向后兼容。
+
+        Returns:
+            ReinitResult: 本次重初始化的结果；并发重入被拒绝时 success=False，
+            errors["reinit"] 说明原因。
+        """
+        started_at = datetime.now().isoformat()
+
+        # 重入保护：进行中则拒绝并发 reinit（拒绝比等待更安全，避免排队风暴）
+        with self._lock:
+            if self._reinit_in_progress:
+                logger.warning(
+                    "拒绝并发 reinit：上一次重初始化仍在进行中（started at %s）",
+                    self._last_at or "unknown",
+                )
+                rejected = ReinitResult(started_at=started_at, success=False)
+                rejected.errors["reinit"] = "another reinit is in progress"
+                rejected.finished_at = started_at
+                return rejected
+            self._reinit_in_progress = True
+
+        try:
+            return await self._do_reinit(
+                components=components, diff=diff, reload_first=reload_first
+            )
+        finally:
+            with self._lock:
+                self._reinit_in_progress = False
+                self._current_component = None
+
+    async def _do_reinit(
+        self,
+        components: Optional[Set[str]] = None,
+        diff: Optional[ConfigDiff] = None,
+        reload_first: bool = False,
+    ) -> ReinitResult:
+        """reinit 主流程（由 reinit 在重入保护内调用）。
 
         逻辑：
             1. 若 reload_first=True 且 diff 为 None → 先 reload 配置获取 diff
@@ -219,8 +272,7 @@ class ReinitManager:
         Returns:
             ReinitResult: 本次重初始化的结果。
         """
-        started_at = datetime.now().isoformat()
-        result = ReinitResult(started_at=started_at)
+        result = ReinitResult(started_at=datetime.now().isoformat())
 
         # reload_first：先 reload 配置获取 diff（用于 ConfigWatcher 触发场景）
         if reload_first and diff is None:
@@ -523,7 +575,9 @@ class ReinitManager:
             空闲:   {"status": "idle", "last_result": ..., "last_at": ...}
         """
         with self._lock:
-            if self._current_task is not None and not self._current_task.done():
+            # M8-a：由重入标志驱动 running 状态
+            # （原 _current_task 从不赋值，属死代码判断，已替换）
+            if self._reinit_in_progress:
                 affected_count = (
                     len(self._last_result.affected) if self._last_result else 0
                 )

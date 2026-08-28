@@ -40,8 +40,8 @@ from backend.core.logging_config import LogContext, get_contextual_logger, setup
 from backend.dependencies import ServiceState, set_service_state
 from config.settings import settings
 
-# 配置结构化日志
-log_file_config = getattr(settings.config, "logging", {})
+# 配置结构化日志（M-EX2：CXHMSConfig 未建模 logging 段，从 raw_config 原始 dict 读取）
+log_file_config = getattr(settings, "raw_config", {}).get("logging", {})
 log_file = (
     log_file_config.get("file", "logs/app.log")
     if isinstance(log_file_config, dict)

@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -14,6 +15,9 @@ logger = get_contextual_logger(__name__)
 
 # Agent 配置文件路径
 AGENTS_CONFIG_PATH = "data/agents.json"
+
+# B2: 模块级锁——保护 agents.json 的并发读取与写入（_load_agents / _save_agents）
+_agents_lock = threading.Lock()
 
 
 # RADIX-Lite Task 6: 默认 tools_config / decision_rubric（与 radix_config.json 对齐）
@@ -158,9 +162,11 @@ def _load_agents() -> List[dict]:
         agent_config_cache.set("all_agents", [default_agent, memory_agent])
         return [default_agent, memory_agent]
 
+    # B2: 读取+解析阶段持锁，防止与 _save_agents 并发交错读到半写状态
     try:
-        with open(AGENTS_CONFIG_PATH, "r", encoding="utf-8") as f:
-            agents = json.load(f)
+        with _agents_lock:
+            with open(AGENTS_CONFIG_PATH, "r", encoding="utf-8") as f:
+                agents = json.load(f)
 
         # RADIX-Lite Task 6: auto_fill 旧记录缺失的 3 字段（rules-3 §三 auto_fill）
         # 旧 agents.json 无 tools_config / decision_rubric / distillation_enabled，
@@ -182,15 +188,20 @@ def _load_agents() -> List[dict]:
         agent_config_cache.set("all_agents", agents)
         return agents
     except Exception as e:
-        logger.error(f"加载Agent配置失败: {e}", exc_info=True)
-        return []
+        # B2: 文件存在但读取/解析失败时 fail-fast——若返回空列表，create_agent 会以
+        # [新agent] 覆盖写回，丢失全部既有配置；此处拒绝继续，提示检查/备份损坏文件
+        logger.error(f"agents.json 加载失败，拒绝以空列表继续以防覆盖丢失: {e}", exc_info=True)
+        raise RuntimeError(f"agents.json 加载失败，拒绝以空列表继续以防覆盖丢失: {e}") from e
 
 
 def _save_agents(agents: List[dict]):
-    """保存所有 Agent 配置"""
+    """保存所有 Agent 配置（B2: 原子写——先写 .tmp 再 os.replace，防止中途崩溃留下半写文件）"""
     _ensure_data_dir()
-    with open(AGENTS_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(agents, f, ensure_ascii=False, indent=2)
+    with _agents_lock:
+        tmp_path = AGENTS_CONFIG_PATH + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(agents, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, AGENTS_CONFIG_PATH)
     agent_config_cache.delete("all_agents")
 
 
@@ -538,6 +549,9 @@ async def clone_agent(agent_id: str):
             "created_at": now,
             "updated_at": now,
         }
+        # B9: {**source_agent} 会保留源 agent 的 agent_id，显式修正为克隆体自身 id
+        # （auto_fill 只补缺失字段、不纠正错值，否则克隆体身份指向源 agent）
+        new_agent["agent_id"] = new_agent["id"]
 
         agents.append(new_agent)
         _save_agents(agents)
@@ -563,9 +577,13 @@ async def get_agent_stats(agent_id: str):
             raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' 不存在")
 
         context_mgr = get_context_manager()
-        # 获取使用该 Agent 的会话数量
         sessions = context_mgr.list_sessions()
-        agent_sessions = [s for s in sessions if s.get("id", "").startswith(f"agent-{agent_id}")]
+        # NEW-1: 精确段匹配——纯前缀匹配在 agent_id 存在前缀关系时会统计互串
+        agent_sessions = [
+            s for s in sessions
+            if s.get("id", "") == f"agent-{agent_id}"
+            or s.get("id", "").startswith(f"agent-{agent_id}-")
+        ]
 
         return {
             "status": "success",
@@ -597,8 +615,11 @@ async def get_agent_context(agent_id: str, limit: int = 20):
             raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' 不存在")
 
         context_mgr = get_context_manager()
-        summary = context_mgr.get_context_summary(agent_id)
-        messages = context_mgr.get_message_history(agent_id, limit=limit)
+        # B10: 会话键与聊天写入统一（chat.py 以 f"agent-{agent_id}" 持久化）；
+        # get_context_summary / get_message_history 内部以传入参数作为 session 键查内存 store
+        session_key = f"agent-{agent_id}"
+        summary = context_mgr.get_context_summary(session_key)
+        messages = context_mgr.get_message_history(session_key, limit=limit)
 
         return {
             "status": "success",
@@ -636,7 +657,9 @@ async def clear_agent_context(agent_id: str):
             raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' 不存在")
 
         context_mgr = get_context_manager()
-        context_mgr.clear_context(agent_id)
+        # B10: 会话键与聊天写入统一（chat.py 以 f"agent-{agent_id}" 持久化）；
+        # clear_context 内部以传入参数作为 session 键清空消息并删除会话文件
+        context_mgr.clear_context(f"agent-{agent_id}")
 
         return {"status": "success", "message": f"Agent '{agent_id}' 的上下文已清空"}
     except HTTPException:

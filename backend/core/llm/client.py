@@ -358,15 +358,25 @@ class VLLMClient(LLMClient):
                 self._bg_semaphore.release()
                 raise
         else:
+            # B4 修复：waited 标记"已登记等待计数且尚未递减"。acquire 被取消
+            # （CancelledError/BaseException）时在 except 中回滚一次 _user_waiting，
+            # 防止计数泄漏导致后台任务永久饥饿空转；标记置位防双重递减。
+            waited = False
             async with self._user_count_lock:
                 self._user_waiting += 1
+                waited = True
             acquired_semaphore = False
             try:
                 await self._semaphore.acquire()
                 acquired_semaphore = True
                 async with self._user_count_lock:
                     self._user_waiting -= 1
+                    waited = False
             except BaseException:
+                if waited:
+                    waited = False
+                    async with self._user_count_lock:
+                        self._user_waiting -= 1
                 if acquired_semaphore:
                     self._semaphore.release()
                 raise

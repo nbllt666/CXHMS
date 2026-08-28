@@ -16,8 +16,8 @@ from config.settings import settings
 
 def main():
     """主函数"""
-    # 初始化日志配置
-    log_file_config = getattr(settings.config, "logging", {})
+    # 初始化日志配置（M-EX2：CXHMSConfig 未建模 logging 段，从 raw_config 原始 dict 读取）
+    log_file_config = getattr(settings, "raw_config", {}).get("logging", {})
     log_file = (
         log_file_config.get("file", "logs/app.log")
         if isinstance(log_file_config, dict)

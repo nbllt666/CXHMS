@@ -225,6 +225,10 @@ export function MemoriesPage() {
         addToast('success', t('memory.memoryDeleted'));
       }
     },
+    // F11: 请求本身失败（网络/服务端异常）时提示用户，而非静默无反馈
+    onError: () => {
+      addToast('error', t('memory.batchDeleteFailed'));
+    },
   });
 
   const batchArchiveMutation = useMutation({
@@ -232,6 +236,10 @@ export function MemoriesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['memories'] });
       clearSelection();
+    },
+    // F11: 请求失败时提示用户
+    onError: () => {
+      addToast('error', t('memory.batchArchiveFailed'));
     },
   });
 
@@ -250,6 +258,10 @@ export function MemoriesPage() {
       setShowBatchTagModal(false);
       setBatchTags('');
       clearSelection();
+    },
+    // F11: 请求失败时提示用户
+    onError: () => {
+      addToast('error', t('memory.batchTagsFailed'));
     },
   });
 

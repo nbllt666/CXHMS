@@ -15,6 +15,7 @@
 import base64
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -76,12 +77,12 @@ def parse_png_character_card(file_bytes: bytes) -> Dict[str, Any]:
         raise ValueError(f"Pillow 未安装: {e}") from e
 
     try:
-        img = Image.open(io.BytesIO(file_bytes))
+        # with 上下文确保 PNG 句柄及时关闭（M12 修复资源泄漏）
+        with Image.open(io.BytesIO(file_bytes)) as img:
+            # Pillow 的 img.info 包含 tEXt chunk 数据
+            text_chunks: Dict[str, str] = dict(img.info or {})
     except Exception as e:
         raise ValueError(f"PNG 文件解析失败: {e}") from e
-
-    # Pillow 的 img.info 包含 tEXt chunk 数据
-    text_chunks: Dict[str, str] = dict(img.info or {})
 
     # 按优先级查找角色卡数据
     raw_json: Optional[str] = None
@@ -96,6 +97,13 @@ def parse_png_character_card(file_bytes: bytes) -> Dict[str, Any]:
         raise ValueError(
             "PNG 文件中未找到角色卡数据（tEXt chunk 无 chara/chara_card_v3 关键字）"
         )
+
+    # M12: tEXt chunk 值被 Pillow 以 latin-1 解码，真实 UTF-8 内容（如中文角色卡）
+    # 会呈乱码；尝试还原（成功则用解码值，失败说明已是可读文本，保持原值）
+    try:
+        raw_json = raw_json.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        pass
 
     logger.info(f"PNG 角色卡使用 tEXt 关键字: {used_key}")
 
@@ -124,13 +132,14 @@ def _decode_card_json(raw: str) -> Dict[str, Any]:
     except (json.JSONDecodeError, UnicodeDecodeError):
         pass
 
-    # 尝试 base64 解码
+    # 尝试 base64 解码（M12: 先去除空白字符，SillyTavern 等工具可能插入换行；
+    # 解码后 JSON 解析失败才走下一分支）
     try:
-        decoded = base64.b64decode(raw, validate=True)
+        decoded = base64.b64decode(re.sub(r"\s+", "", raw))
         data = json.loads(decoded.decode("utf-8"))
         if isinstance(data, dict):
             return data
-    except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as e:
+    except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
         pass
 
     raise ValueError(

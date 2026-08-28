@@ -626,6 +626,9 @@ class CXHMSConfig:
 class Settings:
     _instance: Optional["Settings"] = None
     _config: Optional[CXHMSConfig] = None
+    # 最近一次加载的原始配置 dict（yaml + 环境变量合并后），
+    # 供读取 dataclass 未建模段（如 logging）的调用方使用
+    _raw_config: Optional[Dict[str, Any]] = None
     _config_path: Optional[str] = None
     _validation_result: Optional[ValidationResult] = None
     _lock = threading.Lock()
@@ -645,12 +648,22 @@ class Settings:
     def reset(cls):
         cls._instance = None
         cls._config = None
+        cls._raw_config = None
         cls._config_path = None
         cls._validation_result = None
 
     @property
     def config(self) -> CXHMSConfig:
         return self._config
+
+    @property
+    def raw_config(self) -> Dict[str, Any]:
+        """最近一次加载的原始配置 dict（yaml + 环境变量合并后）。
+
+        CXHMSConfig 未建模的段（如 logging）只能从这里读取；
+        未加载时返回空 dict，调用方用 .get(section, {}) 安全取段。
+        """
+        return self._raw_config or {}
 
     @property
     def validation_result(self) -> Optional[ValidationResult]:
@@ -693,6 +706,9 @@ class Settings:
 
         for field, message in self._validation_result.warnings:
             logger.warning(f"配置警告 [{field}]: {message}")
+
+        # 保存原始 dict（含 dataclass 未建模的段如 logging），供 raw_config 读取
+        self._raw_config = merged_config
 
         return CXHMSConfig.from_dict(merged_config)
 
