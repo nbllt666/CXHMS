@@ -165,6 +165,15 @@ class WeaviateVectorStore:
         if not self._client:
             return False
 
+        # 空向量防御：embedding 为空（None / 空序列）时插入会产生无向量对象，
+        # 读取路径将抛 WeaviateInvalidInputError，故直接拒绝写入（日志如实，不谎报成功）。
+        if not embedding:
+            logger.warning(
+                f"Weaviate 空向量防御: memory_id={memory_id}, "
+                f"原因=embedding 为空（None 或空序列），未写入"
+            )
+            return False
+
         try:
             # 从 metadata 中获取 agent_id（优先使用参数）
             effective_agent_id = agent_id
@@ -176,6 +185,11 @@ class WeaviateVectorStore:
 
             collection_name = self._collection_name_for_agent(effective_agent_id)
             collection = self._client.collections.get(collection_name)
+
+            # 写入幂等：collection.data.insert 非 upsert，同一 memory_id 重复写入会产生
+            # 重复对象。故插入前先删除该 collection 内所有同 memory_id 的既存对象（先删后插），
+            # 使同一 memory_id 至多保留 1 个对象。
+            await self.delete_by_memory_id(memory_id, agent_id=effective_agent_id)
 
             # 准备数据对象（移除 agent_id property，per-agent collection 已隔离）
             data_object = {
@@ -294,7 +308,7 @@ class WeaviateVectorStore:
             return []
 
     async def delete_by_memory_id(self, memory_id: int, agent_id: str = "default") -> bool:
-        """根据记忆ID删除向量（在 per-agent collection 中）"""
+        """根据记忆ID删除向量（在 per-agent collection 中，删除所有同 ID 对象）"""
         if not self._client:
             return False
 
@@ -305,19 +319,28 @@ class WeaviateVectorStore:
             # 查找并删除
             from weaviate.classes.query import Filter
 
-            result = collection.query.fetch_objects(
-                filters=Filter.by_property("memory_id").equal(memory_id), limit=1
-            )
+            deleted_any = False
+            # 循环删除直至无剩余：修复原 limit=1 只删 1 个、重复对象删不干净的问题。
+            # 设最大轮次上限（10 轮）防止异常情况下 fetch 持续返回对象导致死循环。
+            max_rounds = 10
+            for _ in range(max_rounds):
+                result = collection.query.fetch_objects(
+                    filters=Filter.by_property("memory_id").equal(memory_id), limit=100
+                )
 
-            if result.objects:
-                uuid = result.objects[0].uuid
-                collection.data.delete_by_id(uuid)
+                if not result.objects:
+                    break
+
+                for obj in result.objects:
+                    collection.data.delete_by_id(obj.uuid)
+                    deleted_any = True
+
+            if deleted_any:
                 logger.debug(
                     f"Weaviate 向量已删除: memory_id={memory_id}, collection={collection_name}"
                 )
-                return True
 
-            return False
+            return deleted_any
 
         except Exception as e:
             logger.error(f"Weaviate 删除向量失败: {e}")

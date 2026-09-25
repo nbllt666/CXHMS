@@ -14,7 +14,8 @@
       空值返 ``0.0``
     - ``_apply_filters``：permanent 不再无条件放行；``explicitly_mentioned`` 保留
     - ``_dedupe_memories``：按 ``id``（缺 id 按 ``content``）去重，
-      保留 ``final_score`` 较高者，同分优先 ``search_score`` 来源，保持首现顺序
+      保留 ``final_score`` 较高者，同分优先 ``search_score`` 来源，保持首现顺序；
+      缺 id 且 content 为空/None 时各自独立成键，不互相合并
     - ``route()`` 接线：最近记忆并入候选无豁免、``applied_rules`` 标签正确、
       同 ``id`` 只出现一次
 
@@ -428,6 +429,38 @@ def test_dedupe_keeps_higher_score_search_source_and_first_order():
     second = {"id": 11, "content": "B", "final_score": 0.9}
     out_order = router._dedupe_memories([first, second])
     assert [m["id"] for m in out_order] == [10, 11]
+
+
+def test_dedupe_does_not_merge_distinct_memories_with_empty_content():
+    """缺 id 且 content 为 None/"" 的不同记忆不得互相合并（各自独立保留）。"""
+    router = _make_router()
+
+    # content=None：两条不同记忆 → 均保留，且保持首现顺序、不被高分者吞并
+    a = {"content": None, "final_score": 0.5, "marker": "A"}
+    b = {"content": None, "final_score": 0.9, "marker": "B"}
+    out_none = router._dedupe_memories([a, b])
+    assert len(out_none) == 2
+    assert [m["marker"] for m in out_none] == ["A", "B"]
+
+    # content=""：同上
+    c = {"content": "", "final_score": 0.4, "marker": "C"}
+    d = {"content": "", "final_score": 0.8, "marker": "D"}
+    out_empty = router._dedupe_memories([c, d])
+    assert len(out_empty) == 2
+    assert [m["marker"] for m in out_empty] == ["C", "D"]
+
+    # 空 content 记忆不得与「有 content 的缺 id 记忆」撞键
+    e = {"content": None, "final_score": 0.3, "marker": "E"}
+    f = {"content": "有内容记忆", "final_score": 0.6, "marker": "F"}
+    out_mixed = router._dedupe_memories([e, f])
+    assert len(out_mixed) == 2
+
+    # 非空 content 的缺 id 去重语义保持不变（同内容仍合并，保留高分者）
+    g = {"content": "重复内容", "final_score": 0.2, "marker": "G"}
+    h = {"content": "重复内容", "final_score": 0.7, "marker": "H"}
+    out_same = router._dedupe_memories([g, h])
+    assert len(out_same) == 1
+    assert out_same[0]["marker"] == "H"
 
 
 # --------------------------------------------------------------------------- #

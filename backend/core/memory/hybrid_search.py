@@ -32,11 +32,64 @@ class HybridSearchOptions:
     agent_id: str = "default"
 
 
+# 虚字集合（用于剔除含虚字的 2 字对；这不是分词，只是单字过滤）。
+# 2 字滑窗产生的假组合若含虚字（如「什么」「么咖」），噪声大且几乎不携带语义，故直接剔除。
+_FUNCTION_CHARS = set(
+    "我你他她它们的地得了吗呢啊吧是在有和与就都也很太不没要想能会可以个这那么什怎为还要把被给对从到向"
+)
+
+
+def extract_key_terms(query: str, max_terms: int = 8) -> List[str]:
+    """提取 query 的「2 字滑窗」关键片段（不做中文分词、不依赖词典）。
+
+    中文实词以 2 字为主（咖啡 / 喜欢 / 偏好），相邻 2 字组合即可覆盖真词；
+    含虚字的 2 字对（如「什么」「么咖」）予以剔除以降低噪声。
+
+    规则：
+        - ``query`` 为 ``None`` 或长度 < 2 → 返回 ``[]``；
+        - 对 ``query`` 做相邻 2 字滑窗 ``query[i:i+2]``；
+        - 若该 2 字对任一字符在 ``_FUNCTION_CHARS`` 中 → 丢弃；
+        - 去重且保持出现顺序；截断到 ``max_terms``。
+
+    Args:
+        query: 待提取的查询字符串
+        max_terms: 返回词元数量上限（默认 8，用于控制下游 SQL OR 数量）
+
+    Returns:
+        保序去重后的 2 字词元列表
+    """
+    if not query or len(query) < 2:
+        return []
+
+    terms: List[str] = []
+    seen = set()
+    for i in range(len(query) - 1):
+        pair = query[i : i + 2]
+        # 含任意虚字则丢弃（如「什么」「么咖」「我喜」）
+        if pair[0] in _FUNCTION_CHARS or pair[1] in _FUNCTION_CHARS:
+            continue
+        if pair in seen:
+            continue
+        seen.add(pair)
+        terms.append(pair)
+        if len(terms) >= max_terms:
+            break
+    return terms
+
+
 def calculate_keyword_relevance(content: str, query: str) -> float:
     """关键词实时相关度（模块级单一真相源，供多条路径复用）。
 
-    命中时保持既有位置衰减语义：``min(1.0 - position/length + 0.1, 1.0)``；
-    未命中返回 ``0.0``（原实现返回 ``0.1``，属 spec 明确标注的行为变更）；
+    ⚠️ 本函数为「相关度门控」的输入源：``0.0`` 表示完全无关，不得回退为任何非零默认值。
+    三分支语义：
+
+        - 分支 A（保持原语义）：``query`` 整句命中 ``content``
+          → ``min(1.0 - position/length + 0.1, 1.0)``；
+        - 分支 B（新增，2 字滑窗部分命中）：整句未命中，但 ``extract_key_terms(query)``
+          中至少 1 个词元出现在 ``content`` 里
+          → ``0.5 + 0.5 * (命中词元数 / 词元总数)``，上限 ``1.0``；
+        - 分支 C（不变量）：整句未命中且词元全部未命中 → **仍返回 ``0.0``**。
+
     ``content`` 或 ``query`` 为空 / ``None`` 时返回 ``0.0``。
 
     Args:
@@ -53,6 +106,7 @@ def calculate_keyword_relevance(content: str, query: str) -> float:
     query_lower = query.lower()
     content_lower = content.lower()
 
+    # 分支 A：整句命中，保持既有位置衰减语义
     if query_lower in content_lower:
         position = content_lower.find(query_lower)
         length = len(content_lower)
@@ -60,7 +114,14 @@ def calculate_keyword_relevance(content: str, query: str) -> float:
         base_score = 1.0 - (position / length) if length > 0 else 0.5
         return min(base_score + 0.1, 1.0)
 
-    # 未命中即无关，返回 0，使相关度门控可真正触零
+    # 分支 B：整句未命中，退化为 2 字滑窗词元的部分命中（保底 0.5 使单个实词即可越过阈值）
+    key_terms = extract_key_terms(query)
+    if key_terms:
+        hit_count = sum(1 for term in key_terms if term.lower() in content_lower)
+        if hit_count > 0:
+            return min(0.5 + 0.5 * (hit_count / len(key_terms)), 1.0)
+
+    # 分支 C：完全无重叠 → 0.0（相关度硬门控不变量，严禁放宽）
     return 0.0
 
 

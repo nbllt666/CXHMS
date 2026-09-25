@@ -5,6 +5,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backend.core.exceptions import ContextError
@@ -27,16 +28,20 @@ class ContextManager:
     每个 agent 一个 JSON 文件，内存中维护完整副本。
 
     Attributes:
-        db_path: 兼容参数，实际使用 data/context/ 目录
+        db_path: 会话数据库路径；其父目录用于推导上下文 JSON 存储目录
     """
 
     def __init__(self, db_path: str = "data/sessions.db") -> None:
         """初始化上下文管理器
 
         Args:
-            db_path: 兼容参数，忽略，改用 data/context/ 目录
+            db_path: 会话数据库路径；上下文目录取其父目录下的 context/ 子目录
+                （默认 "data/sessions.db" → "data/context"，与既有默认行为一致），
+                使 CXHMS_DATABASE_SESSIONS_DB 等路径覆盖能同步作用于上下文存储。
         """
-        self._context_dir = "data/context"
+        # 由 db_path 父目录推导上下文目录，尊重配置覆盖；用 as_posix 保持既有的
+        # 正斜杠路径字符串（默认值与历史硬编码 "data/context" 完全一致）
+        self._context_dir = Path(db_path).parent.joinpath("context").as_posix()
         self._lock = threading.Lock()
         self._store: Dict[str, Dict] = {}
 
@@ -81,7 +86,7 @@ class ContextManager:
         os.replace(tmp_path, file_path)
 
     def _load_from_disk(self) -> None:
-        """启动时从 data/context/ 加载所有 .json 文件到内存"""
+        """启动时从上下文目录（self._context_dir，默认 data/context/）加载所有 .json 文件到内存"""
         if not os.path.isdir(self._context_dir):
             return
         for filename in os.listdir(self._context_dir):

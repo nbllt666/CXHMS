@@ -333,6 +333,8 @@ class MemoryRouter:
     def _dedupe_memories(self, memories: List[Dict]) -> List[Dict]:
         """按 id 去重（缺 id 时退回用 content 作键），保持首次出现顺序。
 
+        缺 id 且 content 为空/None 时按对象身份各成独立键（空值不可作身份，
+        否则多条不同记忆会被误合并；falsy 非字符串值亦视同空值）。
         同一键保留 ``final_score`` 较高者；``final_score`` 相等时优先保留
         ``component_scores.relevance_source == "search_score"`` 的那条。
         必须在评分之后、过滤之前调用（依赖 final_score 判定保留哪一条）。
@@ -343,8 +345,15 @@ class MemoryRouter:
         for memory in memories:
             key = memory.get("id")
             if key is None:
-                # 缺 id 时退回 content 作去重键（元组前缀避免与真实 id 撞键）
-                key = ("__content__", memory.get("content"))
+                content = memory.get("content")
+                if content:
+                    # 缺 id 时退回 content 作去重键（元组前缀避免与真实 id 撞键）
+                    key = ("__content__", content)
+                else:
+                    # 无 id 且 content 为空/None 时，空值不构成可区分的身份：
+                    # 用固定键会让多条不同记忆共用一个键被误合并（只剩高分一条），
+                    # 故改用对象身份作唯一键（调用期内对象均存活，id 唯一）
+                    key = ("__no_content__", id(memory))
 
             if key not in best:
                 # 记录首次出现位置，保证输出稳定

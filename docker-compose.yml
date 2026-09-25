@@ -66,6 +66,7 @@ services:
       --no-enable-prefix-caching
       --quantization int8_per_channel_weight_only
       --attention-backend triton_attn
+      --served-model-name nomic-embed-text
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s

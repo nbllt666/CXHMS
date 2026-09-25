@@ -7,10 +7,10 @@ import logging
 import os
 import shutil
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, is_dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple, get_args, get_origin, get_type_hints
 
 import yaml
 
@@ -61,6 +61,114 @@ def deep_merge(base: Dict, override: Dict) -> Dict:
             result[key] = deep_merge(result[key], value)
         else:
             result[key] = value
+    return result
+
+
+# ─── 配置类型规整 ──────────────────────────────────────────────
+# 环境变量（config/env.py）写入配置字典的值一律是字符串，而 dataclass 声明的
+# 字段可能是 int/float/bool/List[str]（如 CXHMS_PORT、CXHMS_WEAVIATE_PORT、
+# CXHMS_RATE_LIMIT_REQUESTS、CXHMS_CORS_ORIGINS）。若不做规整，这些字符串会一路
+# 传到 uvicorn.run(port=...) 等处并抛 TypeError。此处按字段声明类型统一规整。
+_BOOL_TRUE_TOKENS = {"true", "1", "yes", "on"}
+_BOOL_FALSE_TOKENS = {"false", "0", "no", "off"}
+
+
+def _resolve_field_kind(hint: Any) -> Tuple[str, Any]:
+    """解析字段类型注解，返回 (kind, target)。
+
+    kind 取值：
+      - "scalar"   ：int/float/bool/str 标量，target 为目标类型；
+      - "list_str" ：List[str]，按逗号切分；
+      - "dataclass"：嵌套 dataclass，target 为嵌套类，若值为 dict 则递归；
+      - "skip"     ：不改动（Optional/Union/Dict/Any 及其他未建模类型）。
+    """
+    origin = get_origin(hint)
+    if origin is not None:
+        # 泛型容器仅规整 List[str]；Optional[X]/Union/Dict[...] 等一律不改动
+        if origin in (list, List) and get_args(hint) == (str,):
+            return "list_str", None
+        return "skip", None
+    if hint is Any:
+        return "skip", None
+    if is_dataclass(hint):
+        return "dataclass", hint
+    if hint in (bool, int, float, str):
+        return "scalar", hint
+    return "skip", None
+
+
+def _coerce_scalar_value(value: Any, target: type, field_name: str) -> Any:
+    """把字符串值规整为标量类型。
+
+    非字符串一律保留原值；转换失败时保留原值并记 warning（不抛异常，
+    避免单个环境变量写错导致启动失败）。
+    """
+    if not isinstance(value, str):
+        return value
+    if target is str:
+        return value
+    if target is bool:
+        token = value.strip().lower()
+        if token in _BOOL_TRUE_TOKENS:
+            return True
+        if token in _BOOL_FALSE_TOKENS:
+            return False
+        logger.warning(f"配置字段 {field_name} 无法转换为 bool，保留原值: {value!r}")
+        return value
+    if target in (int, float):
+        try:
+            return target(value.strip())
+        except (ValueError, TypeError):
+            logger.warning(
+                f"配置字段 {field_name} 无法转换为 {target.__name__}，保留原值: {value!r}"
+            )
+            return value
+    return value
+
+
+def coerce_config_types(raw: Dict[str, Any], model_cls: type) -> Dict[str, Any]:
+    """按 dataclass 声明类型递归规整配置字典中的字符串值。
+
+    仅处理「值为字符串且目标类型明确」的字段：
+      - int / float：直接转换；
+      - bool：true/1/yes/on → True，false/0/no/off → False（忽略大小写）；
+      - List[str]：按逗号切分并 strip（与既有 CXHMS_CORS_ORIGINS 用法一致）；
+      - 嵌套 dataclass：值为 dict 时递归；
+      - Optional[X] / Dict / Any / 非字符串 / 转换失败：一律保留原值
+        （转换失败仅记 warning，不抛异常）。
+
+    Args:
+        raw: 待规整的配置字典（不做就地修改，返回新的 dict）
+        model_cls: 提供字段类型声明的 dataclass 类
+
+    Returns:
+        规整后的新配置字典；入参非 dict 或非 dataclass 时原样返回
+    """
+    if not isinstance(raw, dict) or not is_dataclass(model_cls):
+        return raw
+    try:
+        hints = get_type_hints(model_cls)
+    except Exception as e:
+        # 注解解析失败时放弃规整，避免阻断配置加载
+        logger.warning(f"解析 {model_cls.__name__} 类型注解失败，跳过类型规整: {e}")
+        return raw
+
+    result: Dict[str, Any] = dict(raw)
+    for field_name, hint in hints.items():
+        if field_name not in result:
+            continue
+        value = result[field_name]
+        kind, target = _resolve_field_kind(hint)
+        if kind == "dataclass":
+            if isinstance(value, dict):
+                result[field_name] = coerce_config_types(value, target)
+        elif kind == "list_str":
+            if isinstance(value, str):
+                result[field_name] = [
+                    item.strip() for item in value.split(",") if item.strip()
+                ]
+        elif kind == "scalar":
+            result[field_name] = _coerce_scalar_value(value, target, field_name)
     return result
 
 
@@ -605,7 +713,11 @@ class CXHMSConfig:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "CXHMSConfig":
-        server_data = data.get("server", data.get("system", {}))
+        # 环境变量覆盖值均为字符串，装配前统一按字段声明类型规整（含嵌套 dataclass）
+        data = coerce_config_types(data, cls)
+        # default.yaml 使用 server 段（system 为兼容别名），而 server 不是 cls 的声明字段，
+        # 无法被上一步按 cls 注解覆盖，故按其真实模型 SystemConfig 单独规整一次
+        server_data = coerce_config_types(data.get("server", data.get("system", {})), SystemConfig)
         return cls(
             llm=LLMConfig.from_dict(data.get("llm", {})),
             models=ModelsConfig.from_dict(data),

@@ -1,7 +1,10 @@
 # 当前交接状态（current-note.md）
 
-> 最后更新：2026-09-25 03:10:00
-> 状态：**全项目体检与修复批次闭合（2026-08-28：s0602 技术债扫描 + TRAE-code-review 全项目审查 43 项问题双 agent 验证 CONFIRMED + 6 并行修复批次全部完成 + 技术债治理 + 全量回归 1040 passed 0 failed + 前端 303 passed）**
+> 最后更新：2026-09-25 23:33
+> 状态：**去重键空 content 误合并修复已闭合（模块1-20260925-03：复现确认 → 修复 + 单测 → GN-004 警示放行（无 SOFT_BLOCK）→ 观察项已处置；定向 11 / units 138 / contracts 620 passed）。本轮与遗留批处理改动同处工作区，均未 git 提交。**
+> （此前状态：遗留项批处理已交付（P1 关键词 2 字滑窗召回 / P2 向量写入链路 / P3 配置类型规整 / P5 会话路径 / compose 服务名；GN-004 第六轮警示放行 + 人类 [V] 批准交付 + 验证产物已清理）。该轮改动尚未 git 提交。）
+> （此前状态：记忆召回相关度门控修复已交付（GN-004 五轮审查 + 人类 [V] 批准，commit `d8de6b4`））
+> （此前状态：**全项目体检与修复批次闭合（2026-08-28：s0602 技术债扫描 + TRAE-code-review 全项目审查 43 项问题双 agent 验证 CONFIRMED + 6 并行修复批次全部完成 + 技术债治理 + 全量回归 1040 passed 0 failed + 前端 303 passed）**）
 > （此前状态：spec 实施已交付 + gemma4 工具调用全链路修复 + 多轮工具调用端到端验证通过 + 语义搜索失效修复 + 工具调用失败根因修复 + 隐藏系统提示词设计原则修正 + 摘要后聊天记录不更新修复 + write_long_term_memory 工具卡住修复 + 配置热更新与组件重初始化 + 上下文摘要保留数量配置项 + 前端消息渲染重构 + RADIX-Lite spec 全生命周期闭合 + 文档全量重写 v3.0.0 + Weaviate per-agent collection 改造闭合 + 文档增量更新 v3.1.0）
 
 ## 〇.S1/s0103 融合定稿（2026-07-15）：管理 Agent 扩展 - RADIX-Lite 去音视频扩展性优先版
@@ -1700,3 +1703,93 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
 
 1. 主线程对本次 10 个文件 + 变更文档拉起 GN-004 独立审查（交付前闸门）。
 2. 可选治理项（另案）：在 `docker-compose.yml` 的 `vllm-embedding` 增加 `--served-model-name nomic-embed-text`，使 compose 重建不再复现 404。
+
+---
+
+## 〇、最新变更（2026-09-25 05:30）：遗留项批处理（P1 / P2 / P3 / P5 / compose）
+
+> 关联变更文档：`.trae/documents/20260925_模块1_修复向量写入与关键词召回.md`（issue_id `模块1-20260925-02`）、`.trae/documents/20260925_模块0_修复配置装配与compose服务名.md`（issue_id `模块0-20260925-03`）
+> 授权来源：人类裁决「接着改」并勾选全部四项遗留（P1 关键词检索 / P2 向量写入 / P3+P5 配置装配 / compose 服务名）
+> 关键口径：P1 **不做中文分词**（用户明确否定 jieba 方案），改用「2 字滑窗 + 虚字剔除」
+
+### 工程过程
+
+1. 调研定位三处根因：① `config/env.py` 把环境变量值原样（字符串）写入配置，`SystemConfig.from_dict` 未转 int → `CXHMS_PORT="8765"` 使 uvicorn 崩 `TypeError`；② `ContextManager.__init__` 忽略 `db_path`、硬编码 `data/context`；③ trigram 是 3 字符**精确**匹配，中文自然问句与记忆措辞不同即交集为空（`么咖啡` ≠ `式咖啡`），故 FTS5 与整句 LIKE 双路皆 0 召回。
+2. 先写两份变更文档（rules-6），再分两批并行实施：批次 A = P2（`manager.py` / `weaviate_store.py`）；批次 B = P3+P5+compose（`settings.py` / `context/manager.py` / `docker-compose.yml`）——两批文件不重叠。
+3. 批次 A/B 核验通过（`port: int 8765`、`data/context` 默认不变、向量守卫 9 passed）后，派批次 C = P1（`hybrid_search.py` / `manager.py`；与批次 A 同文件，故串行）。
+4. P1 核验：`extract_key_terms("我喜欢喝什么咖啡")` → `['喜欢','欢喝','咖啡']`；相关度 `0.0 → 0.667`；门控不变量（无重叠）仍 `0.0`。
+5. 全量回归 + 真实链路验证（向量关闭 + 副本库，未向向量库写入）。
+6. **实施中发现并修正一处判断错误**：初判 `CXHMS_HOST/PORT/DEBUG → server.*` 为「映射错位」，核查发现 `config/default.yaml` 确实存在 `server:` 段，该映射**本正确**；若强行改 `system.*`，env 覆盖反而会被 yaml 的 `server` 段遮蔽。已停手未改，真正根因由类型规整修复（详见模块0 变更文档「判断修正」）。
+
+### 交接状态
+
+| 项 | 状态 |
+|----|------|
+| P1 关键词 2 字滑窗召回 | 已闭合 |
+| P2 向量写入链路（写前校验 / 幂等 / 如实日志） | 已闭合 |
+| P3 配置类型规整（`CXHMS_PORT` 等） | 已闭合 |
+| P5 会话路径尊重覆盖 | 已闭合 |
+| compose 补 `--served-model-name` | 已闭合（上轮 L1687 段登记的「另案治理项」已完成） |
+| 本轮变更文档 GN-004 审查 + 人类 [V] | 已闭合（GN-004 第六轮：警示放行，1 项软阻断已补登闭合；人类 [V]：**批准交付**） |
+| 其他向量后端（chroma / milvus / qdrant）同类防御 | 未闭合（登记） |
+| `tests/units` **整目录**偶发原生崩溃（既有竞态，`test_router.py`，2 次中 1 次；逐文件 137 passed 全绿） | 未闭合（登记，建议单独立项） |
+| P2 空向量场景的真实向量库实验 | 未闭合（避免无授权写入向量库，以 9 个 mock 单测 + 静态核验为证据） |
+| 本轮验证产物 `.dbg/`（`p1verify/` + `x/context`，约 1.33 MB） | 已闭合（人类授权后已清理；关键结论已落两份变更文档） |
+| P1 分支 B 的精度代价（命中 1 个常用词元即得 0.667，可能召回"仅共享常用词"的记忆） | 已登记为有意取舍（详见模块1 变更文档「已知精度代价与边界」） |
+
+### 最终结果
+
+**测试**：`tests/units/test_keyword_bigram_recall.py` **7 passed**；`tests/units/test_vector_write_guard.py` **9 passed**；`tests/units` 逐文件 **137 passed**；`tests/contracts` **620 passed**；`tests/simulation` **50 passed, 1 skipped**。
+
+**P1 关键对照**：
+- `calculate_keyword_relevance("用户偏好喝美式咖啡，不加糖", "我喜欢喝什么咖啡")`：**0.0 → 0.667**
+- 门控不变量：同 query vs「今天天气很好适合散步」→ **仍为 0.0**（未放宽）
+- 真实链路（向量关闭 + 副本库）：`POST /api/memories/search?query=我喜欢喝什么咖啡` → `total=1`，且同 query 的**原始 FTS5 trigram 查询命中 0 行** → 证明该召回由 2 字滑窗兜底产生；无关记忆未被召回；精确子串 query「美式咖啡」仍 1 条（FTS5 正常路径未破坏）
+
+**P3 / P5 关键对照**：`CXHMS_PORT="8765"` → **`int 8765`**（修复前 `str`，会崩启动）；`ContextManager()._context_dir` = `data/context`（默认不变量守住），自定义路径 → 尊重覆盖。
+
+**改动文件**：`backend/core/memory/manager.py`、`backend/core/memory/weaviate_store.py`、`backend/core/memory/hybrid_search.py`、`config/settings.py`、`backend/core/context/manager.py`、`docker-compose.yml`；新增 `tests/units/test_keyword_bigram_recall.py`、`tests/units/test_vector_write_guard.py`。`config/env.py` 经核查**未改**。
+
+**未向真实向量库写入任何数据**；真实 `data/memories.db` 的 MD5 与 mtime 与操作前一致。
+
+### 接续入口
+
+1. 主线程对本次 6 个生产文件 + 2 份变更文档 + 2 个新测试文件拉起 GN-004 独立审查，并按 rules-0 §四-5 拉起人类 [V] 裁决。
+2. 新登记遗留（详见两份变更文档「未闭合项」）：其他向量后端同类防御、`weaviate_store.update_memory_vector` 的一次冗余删除、`config/env.py` 的 `server.*`/`system.*` 双键并存、`tests/units` 整目录偶发原生崩溃。
+
+---
+
+## 〇、最新变更（2026-09-25 23:33）：去重键空 content 误合并修复（模块1-20260925-03）
+
+> 关联变更文档：`.trae/documents/20260925_模块1_修复去重键误合并.md`（issue_id `模块1-20260925-03`）
+> 来源：代码审查 Issue1 —— commit `d8de6b4` 引入的 `MemoryRouter._dedupe_memories` 缺 id 兜底键 `("__content__", content)`，在 content 为 None/"" 时使多条不同记忆共用一个键被误合并。
+
+### 工程过程
+
+1. **复现确认**（修复前实测）：两条缺 id + `content=None`（0.5/0.9）→ 输出 1 条（只剩高分）；`content=""` 同理 → 1 条。问题真实存在（静默丢候选，无日志）。
+2. **先写变更文档**（rules-6）→ 修复 `router._dedupe_memories`：缺 id 且 content 为空/None 时改用对象身份键 `("__no_content__", id(memory))`（空值不构成身份，不可共用固定键）；有 content 路径语义不变。
+3. **新增单测** `test_dedupe_does_not_merge_distinct_memories_with_empty_content`（None 不合并 / "" 不合并 / 空与非空不撞键 / 非空同内容仍合并）；模块与函数 docstring 同步。
+4. **回归**：定向 11 passed / `tests/units` 138 passed / `tests/contracts` 620 passed。
+5. **GN-004 独立审查**（agent id `72901e66-929b-40eb-a4d9-f464996a8132`）：**警示放行（CAUTION-PASS）**，无 HARD BLOCK、无 [SOFT_BLOCK]；问题存在性 / 修复有效性 / 键空间安全 / 边界 / 回归 / 调用链时序 / 判别力均独立复跑吻合。观察项 O-1（文档排查声明失真，已修正）/ O-3（falsy 非字符串语义，docstring 已注明）/ O-4（note 待补，本条即补）/ O-5（复现脚本持久化，登记）已处置；O-2（工作区混处）登记未闭合。
+
+### 交接状态
+
+| 项 | 状态 |
+|----|------|
+| 问题存在性验证（复现 1 条 ← 两条不同记忆） | 已闭合 |
+| 代码修复 + 单测 + 回归 | 已闭合 |
+| GN-004 审查 + 观察项处置 | 已闭合（警示放行，观察项 4 项已处置） |
+| 提交粒度（本轮 2 文件与遗留批处理 6 文件同处工作区，勿 `git add -A`） | 未闭合（登记，待人裁定） |
+
+### 最终结果
+
+- 行为对照：缺 id + 空 content 的两条不同记忆 **1 条 → 2 条**；相同非空 content 的缺 id 记忆**仍合并为 1 条**（保留 `final_score` 高者）——既有去重语义未变。
+- 测试证据：`tests/units/test_memory_relevance_gate.py` **11 passed**；`tests/units` **138 passed**；`tests/contracts` **620 passed**。
+- 改动文件：`backend/core/memory/router.py`（L343-L356 + docstring）、`tests/units/test_memory_relevance_gate.py`（新增 1 例 + docstring）；文档：`.trae/documents/20260925_模块1_修复去重键误合并.md`。
+- 同类写法排查：`manager.py` `search_all_memories` 的 content 指纹去重有空指纹守卫，**无同类缺口**。
+- 均未 git 提交。
+
+### 接续入口
+
+1. 提交前确认粒度：本轮 2 个文件（`backend/core/memory/router.py`、`tests/units/test_memory_relevance_gate.py`）与遗留批处理 6 个生产文件不要一次扫入；按文件精确暂存。
+2. 遗留批处理未闭合项照旧（见上节清单与两份对应变更文档）：其他向量后端同类防御、`config/env.py` 双键并存、`tests/units` 整目录偶发原生崩溃等。

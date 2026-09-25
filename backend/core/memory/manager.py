@@ -411,6 +411,14 @@ class MemoryManager:
 
             async def _sync():
                 embedding = await self._embedding_model.get_embedding(content)
+                # 写前校验：embedding 服务异常（如 404）时可能返回 None，
+                # 直接写入会向向量库塞入无向量对象（读取路径抛异常）并污染数据，故跳过写入。
+                if not embedding:
+                    logger.warning(
+                        f"向量同步跳过: memory_id={memory_id}, "
+                        f"原因=embedding 为空（None 或空序列），未写入向量库"
+                    )
+                    return False
                 return await self._vector_store.add_memory_vector(
                     memory_id=memory_id, content=content, embedding=embedding, metadata=metadata
                 )
@@ -418,6 +426,11 @@ class MemoryManager:
             result = self._run_async_sync(_sync())
             if result:
                 logger.info(f"向量同步成功: memory_id={memory_id}")
+            else:
+                logger.warning(
+                    f"向量同步失败: memory_id={memory_id}, "
+                    f"原因=向量库未写入（add_memory_vector 返回 False）"
+                )
             return result
         except Exception as e:
             logger.warning(f"向量同步失败: memory_id={memory_id}, error={e}")
@@ -445,10 +458,17 @@ class MemoryManager:
             async def _update():
                 # 从 metadata 提取 agent_id，定位 per-agent collection
                 agent_id = metadata.get("agent_id", "default") if metadata else "default"
-                await self._vector_store.delete_by_memory_id(
-                    memory_id, agent_id=agent_id
-                )
                 embedding = await self._embedding_model.get_embedding(content)
+                # 写前校验：embedding 为空时直接跳过，且保留旧向量不删除，
+                # 避免"删了旧向量又写不进新向量"导致该记忆彻底丢失向量。
+                if not embedding:
+                    logger.warning(
+                        f"向量更新跳过: memory_id={memory_id}, "
+                        f"原因=embedding 为空（None 或空序列），保留旧向量不删除"
+                    )
+                    return False
+                # 幂等改由存储层 add_memory_vector 内部承担（写入前按 memory_id 删除既存对象），
+                # 故此处不再手动调用 delete_by_memory_id，避免重复删除。
                 return await self._vector_store.add_memory_vector(
                     memory_id=memory_id,
                     content=content,
@@ -460,6 +480,11 @@ class MemoryManager:
             result = self._run_async_sync(_update())
             if result:
                 logger.info(f"向量更新成功: memory_id={memory_id}")
+            else:
+                logger.warning(
+                    f"向量更新失败: memory_id={memory_id}, "
+                    f"原因=向量库未写入（add_memory_vector 返回 False）"
+                )
             return result
         except Exception as e:
             logger.warning(f"向量更新失败: memory_id={memory_id}, error={e}")
@@ -1210,6 +1235,43 @@ class MemoryManager:
                         fts_params,
                     )
                     rows = cursor.fetchall()
+
+                    # P1: FTS5 trigram 命中为空时的「2 字滑窗」兜底。
+                    # trigram 要求 3 个连续字符精确匹配，中文自然语言问句措辞不同即交集为空
+                    # （如「么咖啡」≠「式咖啡」），故用 2 字词元做 content LIKE OR 兜底再查一次。
+                    # 触发条件严格限定为「FTS5 查询成功但 0 行」；FTS5 不可用/异常路径不受影响。
+                    if not rows and query:
+                        try:
+                            from backend.core.memory.hybrid_search import extract_key_terms
+
+                            key_terms = extract_key_terms(query, max_terms=8)
+                            if key_terms:
+                                like_parts = []
+                                like_term_params = []
+                                for term in key_terms:
+                                    # 词元需转义 LIKE 通配符（% 与 _）
+                                    escaped_term = term.replace("%", "\\%").replace("_", "\\_")
+                                    like_parts.append("content LIKE ? ESCAPE '\\'")
+                                    like_term_params.append(f"%{escaped_term}%")
+                                # OR 组作为单个条件追加在 conditions 末尾；
+                                # 参数顺序须与条件顺序严格对应：既有 params → 词元参数 → limit/offset
+                                fallback_conditions = conditions + [
+                                    "(" + " OR ".join(like_parts) + ")"
+                                ]
+                                fallback_where = " AND ".join(fallback_conditions)
+                                fallback_params = params + like_term_params + [limit, offset]
+                                cursor.execute(
+                                    f"SELECT * FROM {table_name} WHERE {fallback_where} "
+                                    f"ORDER BY importance DESC, created_at DESC LIMIT ? OFFSET ?",
+                                    fallback_params,
+                                )
+                                rows = cursor.fetchall()
+                        except Exception as fallback_e:
+                            # 兜底查询失败不得让整个搜索抛错：保持空结果并记 warning
+                            logger.warning(
+                                f"2 字滑窗兜底查询失败，保持空结果: query={query!r}, err={fallback_e}"
+                            )
+                            rows = []
                 except Exception as fts_inner_e:
                     # FTS5 查询语法异常 → 回退 LIKE 全表扫
                     logger.warning(
