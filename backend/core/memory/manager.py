@@ -2182,7 +2182,7 @@ class MemoryManager:
         weights: Tuple[float, float, float] = (0.35, 0.25, 0.4),
         workspace_id: str = "default",
     ) -> List[Dict]:
-        from backend.core.memory.decay import DecayCalculator
+        from backend.core.memory.decay import DecayCalculator, RELEVANCE_SOURCE_UNRESOLVED
 
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -2207,10 +2207,14 @@ class MemoryManager:
                     params.append(f'%"{escaped_tag[:100]}"%')
 
             where_clause = " AND ".join(conditions)
-            # C5: decay 计算下推到 SQL。沿用 async_manager.sync_decay_values 的
-            # julianday 线性衰减约定（importance * (1 - days/30)），将 ORDER BY 改为
-            # DB 端近似最终分，仅拉取 limit 行（而非 limit*2）交由 Python 精算最终分。
-            # relevance 在此路径恒为 0.5（无 query embedding），作为常量参与 min(,1) 上限对齐。
+            # decay 计算下推到 SQL，沿用 async_manager.sync_decay_values 的 julianday 线性衰减约定
+            # （importance * (1 - days/30)）。排序键改为「归一化内层」近似，与 Python 端
+            # DecayCalculator.calculate_final_score 的 inner = (imp·w_i + time·w_t) / (w_i + w_t) 对齐。
+            # 相关度在 SQL 中不再是常量：有 query 时由 Python 端按关键词实时相关度精算（未命中 = 0），
+            # 无 query 时为 1.0，SQL 无法精确复刻关键词位置分，故不再保留任何常量相关度项。
+            # 有意偏离原 C5 优化：候选行由 LIMIT limit 改为 LIMIT limit*2，多取一倍候选，
+            # 再由 Python 端用真实相关度精算、排序并截断为 limit 行，防止近似排序漏召。
+            # NULLIF(?, ?) 防 w_i + w_t == 0 除零；MIN(..., 1.0) 仅作防御性上限，不改排序单调性。
             # DecayCalculator 真实用 created_at 计算衰减（非 accessed_at），故此处用 created_at。
             decay_order_sql = f"""
                 SELECT * FROM (
@@ -2222,29 +2226,29 @@ class MemoryManager:
                     WHERE {where_clause}
                 )
                 ORDER BY MIN(
-                    _imp * ?
-                    + (
-                        CASE WHEN permanent = 1 THEN 1.0
-                        ELSE
-                            MIN(
-                                CASE WHEN reactivation_count > 0 THEN
-                                    (_imp * MAX(0.0, 1.0 - _days / 30.0))
-                                        * (1.0 + 0.2 * reactivation_count)
-                                        + 0.1 + 0.05 * abs(emotion_score)
-                                ELSE
-                                    _imp * MAX(0.0, 1.0 - _days / 30.0)
-                                END,
-                                1.0
-                            )
-                        END
-                    ) * ?
-                    + 0.5 * ?
-                    + (CASE WHEN permanent = 1 THEN 0.15 ELSE 0 END),
+                    (
+                        _imp * ?
+                        + (
+                            CASE WHEN permanent = 1 THEN 1.0
+                            ELSE
+                                MIN(
+                                    CASE WHEN reactivation_count > 0 THEN
+                                        (_imp * MAX(0.0, 1.0 - _days / 30.0))
+                                            * (1.0 + 0.2 * reactivation_count)
+                                            + 0.1 + 0.05 * abs(emotion_score)
+                                    ELSE
+                                        _imp * MAX(0.0, 1.0 - _days / 30.0)
+                                    END,
+                                    1.0
+                                )
+                            END
+                        ) * ?
+                    ) / NULLIF(? + ?, 0.0),
                     1.0
                 ) DESC
                 LIMIT ?
             """
-            params.extend([weights[0], weights[1], weights[2], limit])
+            params.extend([weights[0], weights[1], weights[0], weights[1], limit * 2])
 
             cursor.execute(decay_order_sql, params)
 
@@ -2259,27 +2263,29 @@ class MemoryManager:
         for row in rows:
             memory = self._row_to_memory(row)
 
-            importance_score = decay_calculator.calculate_importance_score(memory)
-            time_score = decay_calculator.calculate_time_score(memory, apply_reactivation=True)
-            relevance_score = memory.get("score", 0.5)
-
-            final_score = (
-                importance_score * weights[0]
-                + time_score * weights[1]
-                + relevance_score * weights[2]
-            )
-
-            if memory.get("permanent"):
-                final_score = min(final_score + 0.15, 1.0)
-
-            final_score = min(final_score, 1.0)
+            # 接入共享打分入口（唯一打分真相源），相关度来源口径为：
+            # - 无 score 字段且有 query → 关键词实时相关度（未命中 = 0，硬门控）
+            # - 无 score 字段且无 query → no_query（1.0，不做门控，退化为「重要性 × 时间」排序）
+            # final_score 已含 permanent 加成（仅 relevance > 0 时 +0.15）并 clamp 到 [0, 1]，
+            # 故此处不得再自行加成、也不得再自行加权求和。
+            # 单行评分异常时 fail-closed（与 router 同口径）：final_score = 0.0、
+            # relevance_source = unresolved，不中断整批 3D 搜索
+            try:
+                final_score, component_scores = decay_calculator.calculate_final_score(
+                    memory, weights=weights, query=query
+                )
+            except Exception as e:
+                logger.warning(f"3D搜索单条记忆评分失败（fail-closed 置 0）: {e}")
+                final_score = 0.0
+                component_scores = {
+                    "importance": 0.0,
+                    "time": 0.0,
+                    "relevance": 0.0,
+                    "relevance_source": RELEVANCE_SOURCE_UNRESOLVED,
+                }
 
             memory["final_score"] = final_score
-            memory["component_scores"] = {
-                "importance": importance_score,
-                "time": time_score,
-                "relevance": relevance_score,
-            }
+            memory["component_scores"] = component_scores
             memory["applied_weights"] = {
                 "importance": weights[0],
                 "time": weights[1],

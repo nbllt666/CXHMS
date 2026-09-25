@@ -35,7 +35,7 @@
 | 服务 | 默认地址 | 用途 | 是否必选 |
 |------|---------|------|---------|
 | vLLM 主模型 | http://localhost:8002 | 主模型 `gemma4-e4b` 推理 | 必选 |
-| vLLM Embedding | http://localhost:8101 | Embedding 模型 `Qwen3-Embedding-0.6B` | 必选 |
+| vLLM Embedding | http://localhost:8101 | Embedding 模型（服务 id `nomic-embed-text`，权重 `Qwen3-Embedding-0.6B`） | 必选 |
 | Weaviate 向量库 | http://localhost:8090 | 默认向量后端（gRPC 端口 50061） | 必选 |
 | Ollama | http://localhost:11434 | 摘要/记忆副模型 `qwen3-vl:8b`（默认禁用，回退到 main） | 可选 |
 | RADIX-Lite 蒸馏服务 | http://localhost:8011 | 多轮蒸馏独立 FastAPI 服务 | 启用 RADIX-Lite 时必选 |
@@ -101,7 +101,7 @@ mkdir -p data/templates/custom
 
 ```bash
 # 主模型 gemma4-e4b 由 vLLM 提供（端口 8002）
-# Embedding 模型 Qwen3-Embedding-0.6B 由 vLLM 提供（端口 8101）
+# Embedding 模型由 vLLM 提供（端口 8101，服务 id nomic-embed-text，权重 Qwen3-Embedding-0.6B）
 
 # 摘要/记忆副模型（可选，默认禁用回退到 main）
 ollama pull qwen3-vl:8b
@@ -163,7 +163,7 @@ models:
   embedding:            # Embedding 模型（默认启用）
     provider: vllm
     host: "http://localhost:8101"
-    model: "/models/Qwen3-Embedding-0.6B"
+    model: "nomic-embed-text"
     apiKey: ""
     enabled: true
     port: 8101

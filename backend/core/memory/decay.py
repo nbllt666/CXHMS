@@ -6,8 +6,16 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 from backend.core.logging_config import get_contextual_logger
+# 关键词实时相关度复用 hybrid_search 的模块级实现（hybrid_search 不反向依赖 decay，无循环导入风险）
+from backend.core.memory.hybrid_search import calculate_keyword_relevance
 
 logger = get_contextual_logger(__name__)
+
+# 相关度来源枚举（与 spec「相关度来源可追溯」要求对齐，取值限定为以下四者）
+RELEVANCE_SOURCE_SEARCH = "search_score"
+RELEVANCE_SOURCE_KEYWORD = "keyword_realtime"
+RELEVANCE_SOURCE_NO_QUERY = "no_query"
+RELEVANCE_SOURCE_UNRESOLVED = "unresolved"
 
 
 @dataclass
@@ -372,33 +380,101 @@ class DecayCalculator:
     def calculate_importance_score(self, memory: Dict) -> float:
         return memory.get("importance_score", memory.get("importance", 3) / 5.0)
 
+    def resolve_relevance(self, memory: Dict, query: Optional[str]) -> Tuple[float, str]:
+        """按优先级解析相关度，返回 (relevance, relevance_source)。
+
+        优先级（与 spec v4「相关度取值优先级」一致，彻底删除伪造默认值）：
+        1. ``memory["score"]`` 存在 → ``clamp(score, 0, 1)``，来源 ``search_score``
+        2. query 非空但无 score → 关键词实时相关度，来源 ``keyword_realtime``（未命中 = 0）
+        3. query 为空 / ``None`` → ``1.0``，来源 ``no_query``（无查询信号即不做门控）
+
+        ``unresolved`` 不由此方法产生：它由调用方在评分过程抛异常时按 fail-closed 口径赋值。
+
+        Args:
+            memory: 记忆数据
+            query: 当前查询字符串，可为 ``None``
+
+        Returns:
+            ``(relevance, relevance_source)`` 二元组
+        """
+        # 1. 显式搜索分数优先：有相关度证据即以之为准并夹取到 [0, 1]
+        score = memory.get("score")
+        if score is not None:
+            return max(0.0, min(1.0, float(score))), RELEVANCE_SOURCE_SEARCH
+
+        # 2. 有 query 但无 score → 关键词实时相关度（未命中即 0）
+        if query:
+            content = memory.get("content") or ""
+            relevance = calculate_keyword_relevance(content, query)
+            return max(0.0, min(1.0, relevance)), RELEVANCE_SOURCE_KEYWORD
+
+        # 3. 无查询信号 → 不门控，相关度视为 1.0，退化为「重要性 × 时间」排序
+        return 1.0, RELEVANCE_SOURCE_NO_QUERY
+
     def calculate_final_score(
         self,
         memory: Dict,
-        query_embedding=None,
         weights: Tuple[float, float, float] = (0.35, 0.25, 0.4),
+        query: Optional[str] = None,
         apply_reactivation: bool = True,
-        apply_network: bool = False,
-    ) -> float:
+    ) -> Tuple[float, Dict]:
+        """相关度门控评分（router 与 manager 共用的唯一打分入口）。
+
+        公式（spec v4「三维评分公式」）：
+        - ``inner = (importance × w_i + time × w_t) ÷ (w_i + w_t)``；``w_i + w_t == 0`` 时 ``inner = 0.0``
+        - ``final = relevance × [ (1 - w_r) × inner + w_r ]``
+        - ``relevance <= 0`` → ``final = 0.0``（硬门控，任何加成都不生效）
+        - ``permanent`` 且 ``relevance > 0`` → ``final = min(final + 0.15, 1.0)``
+        - 最终夹取上下界：``final = max(0.0, min(final, 1.0))``，值域 ``[0, 1]``
+
+        Args:
+            memory: 记忆数据
+            weights: ``(w_i, w_t, w_r)`` 三元权重，分别对应重要性 / 时间 / 相关度
+            query: 当前查询，用于解析相关度
+            apply_reactivation: 时间分数是否应用再激活加成
+
+        Returns:
+            ``(final_score, component_scores)``，``component_scores`` 含
+            ``importance`` / ``time`` / ``relevance`` / ``relevance_source``
+        """
         importance_w, time_w, relevance_w = weights
 
+        # 复用既有维度实现，不在此重写衰减逻辑
         importance_score = self.calculate_importance_score(memory)
+        time_score = self.calculate_time_score(memory, apply_reactivation=apply_reactivation)
 
-        time_score = self.calculate_time_score(
-            memory=memory, apply_reactivation=apply_reactivation, apply_network=apply_network
-        )
+        relevance, relevance_source = self.resolve_relevance(memory, query)
 
-        relevance_score = memory.get("score", 0.5)
+        component_scores = {
+            "importance": importance_score,
+            "time": time_score,
+            "relevance": relevance,
+            "relevance_source": relevance_source,
+        }
 
-        base_score = (
-            importance_score * importance_w + time_score * time_w + relevance_score * relevance_w
-        )
+        # 归一化内层：避免两维权重之和不为一导致内层被放大/缩小
+        weight_sum = importance_w + time_w
+        if weight_sum == 0:
+            inner = 0.0
+        else:
+            inner = (importance_score * importance_w + time_score * time_w) / weight_sum
+
+        # 相关度作为乘性门控，w_r 作为残差分量
+        final_score = relevance * ((1.0 - relevance_w) * inner + relevance_w)
+
+        # 硬门控：相关度为零即彻底出局，importance / time 不得抬升
+        if relevance <= 0:
+            final_score = 0.0
 
         permanent = memory.get("permanent", False)
-        if permanent:
-            return min(base_score + 0.15, 1.0)
+        if permanent and relevance > 0:
+            final_score = min(final_score + 0.15, 1.0)
 
-        return min(base_score, 1.0)
+        # 值域收紧到 [0, 1]：非常规权重（例如 /api/memories/3d 可传入负权重）下
+        # relevance × 残差内层可能为负，与 spec「值域 [0, 1]」不符，故上下界一并钳制
+        final_score = max(0.0, min(final_score, 1.0))
+
+        return final_score, component_scores
 
 
 def importance_to_score(importance: int) -> float:

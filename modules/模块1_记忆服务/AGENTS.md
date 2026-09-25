@@ -63,6 +63,7 @@
 - C2: 复用 ThreadPoolExecutor 跑 embedding
 - C5: search_memories_3d DB 端过滤（decay 计算下推 SQL）
 - C6: search_memories content 列加索引
+- 相关度门控修复（2026-09-25）：三维评分由**加权求和**改为**相关度乘性门控**（`relevance ≤ 0 → final = 0`，importance/time/permanent 加成均不生效），删除伪造默认值（无 `score` 缺省 0.5、异常兜底 0.3、关键词未命中 0.1），新增 `component_scores.relevance_source` 四枚举（`search_score`/`keyword_realtime`/`no_query`/`unresolved`）；C5 的 SQL 排序下推同步改为「归一化内层」近似 + `LIMIT limit×2` 候选，`permanent` 不再过滤阶段无条件放行。详见 `.trae/specs/fix-memory-recall-relevance-gate/spec.md` 与 `.trae/documents/20260925_模块1_修复记忆召回相关度门控.md`
 
 ### 3.4 测试要求
 

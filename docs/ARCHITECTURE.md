@@ -88,7 +88,7 @@ CXHMS 按 AC 范式 v6 划分为 11 个业务模块，模块0-6 为主干服务�
 | 前端开发服务器 | 3000 | Vite dev server，代理转发至 8001 |
 | 控制服务 | 8765 | 独立进程，管理后端启停 |
 | vLLM 主模型 | 8002 | gemma4-e4b 主对话模型 |
-| vLLM Embedding | 8101 | Qwen3-Embedding-0.6B 嵌入模型 |
+| vLLM Embedding | 8101 | 嵌入模型（服务 id nomic-embed-text，权重 Qwen3-Embedding-0.6B） |
 | Weaviate HTTP | 8090 | 向量数据库 HTTP 接口 |
 | Weaviate gRPC | 50061 | 向量数据库 gRPC 接口 |
 | RADIX-Lite 蒸馏服务 | 8011 | v1.2.0 新增，4 API 端点 |
@@ -167,7 +167,7 @@ class Memory:
 - `main`: 主对话模型（vLLM gemma4-e4b @8002，128k 上下文）
 - `summary`: 摘要生成模型（默认回退到 main）
 - `memory`: 记忆处理模型（默认回退到 main）
-- `embedding`: 嵌入模型（vLLM Qwen3-Embedding-0.6B @8101）
+- `embedding`: 嵌入模型（vLLM 服务 id `nomic-embed-text`，权重 `Qwen3-Embedding-0.6B` @8101）
 
 **特性**: 同步/流式对话、错误分类处理、请求验证、超时控制、多模态支持（图片输入）、`max_tool_rounds = 10`（流式与非流式统一）
 
@@ -596,10 +596,9 @@ CXFCManager → GraphDatabase → AlarmManager → WebSocketManager(stop_cleanup
    - 向量搜索（语义相似度，余弦）
    - 关键词搜索（SQLite LIKE / BM25）
    - 结果融合排序（RRF: 0.6*vector + 0.4*text）
-3. 三维评分计算（场景感知）
-   - chat: 0.45/0.20/0.35
-   - task: 0.30/0.20/0.50
-   - creative: 0.30/0.40/0.30
+3. 三维评分计算（相关度门控，场景感知）
+   - 公式：inner = (importance × w_i + time × w_t) ÷ (w_i + w_t)（w_i + w_t == 0 时 inner = 0）；final = relevance × [ (1 − w_r) × inner + w_r ]；relevance ≤ 0 → final = 0
+   - 场景权重 (importance/time/relevance)：chat 0.45/0.20/0.35、task 0.30/0.20/0.50、creative 0.30/0.40/0.30
 4. 过滤低分记忆（阈值 0.3）
 5. 返回 Top-K
 ```
@@ -695,7 +694,7 @@ models:
   embedding:          # 默认 Embedding 模型
     provider: vllm
     host: http://localhost:8101
-    model: /models/Qwen3-Embedding-0.6B
+    model: nomic-embed-text
     enabled: true
   summary:            # 摘要副模型（默认禁用，回退到 main）
     provider: ollama
@@ -1049,13 +1048,13 @@ python -m pytest tests/e2e/ -v
 
 #### B.2 记忆检索评分流程
 
-检索请求 → 生成查询向量（LLMClient.get_embedding）→ 并行执行向量搜索（余弦相似度）与关键词搜索（BM25/TF-IDF）→ 分数融合（RRF: `score = 0.6*vector_rank + 0.4*text_rank`）→ 3D 评分（场景感知：`final = importance_w*importance + time_w*time + relevance_w*relevance`；chat=0.45/0.20/0.35，task=0.30/0.20/0.50，creative=0.30/0.40/0.30）→ 过滤低分记忆（阈值 0.3）→ 返回 Top-K。
+检索请求 → 生成查询向量（LLMClient.get_embedding）→ 并行执行向量搜索（余弦相似度）与关键词搜索（BM25/TF-IDF）→ 分数融合（RRF: `score = 0.6*vector_rank + 0.4*text_rank`）→ 3D 评分（相关度门控：`inner = (importance × w_i + time × w_t) ÷ (w_i + w_t)`、`final = relevance × [ (1 − w_r) × inner + w_r ]`，`relevance ≤ 0` → `final = 0`；场景权重 chat=0.45/0.20/0.35，task=0.30/0.20/0.50，creative=0.30/0.40/0.30）→ 过滤低分记忆（阈值 0.3）→ 返回 Top-K。
 
 #### B.3 ACP 消息流程
 
 Agent A 发送消息 → 消息序列化（ACPMessageInfo → JSON，添加时间戳、相关性 ID）→ 路由选择（直接消息 / 广播 / 群组消息）→ HTTP POST `http://target:port/acp/receive` → Agent B 接收并验证格式、查找消息处理器 → 消息处理（chat / memory_request / tool_call）→ 发送响应（如需要）。
 
-> 配置系统详情见本文档「六、配置系统」章节；LLM 提供商支持 OLLAMA/VLLM/OPENAI/ANTHROPIC/DEEPSEEK/LOCAL，当前默认主模型为 VLLM (`gemma4-e4b` @8002)，嵌入模型为 vLLM `Qwen3-Embedding-0.6B` @8101。
+> 配置系统详情见本文档「六、配置系统」章节；LLM 提供商支持 OLLAMA/VLLM/OPENAI/ANTHROPIC/DEEPSEEK/LOCAL，当前默认主模型为 VLLM (`gemma4-e4b` @8002)，嵌入模型为 vLLM 服务 id `nomic-embed-text`（权重 `Qwen3-Embedding-0.6B`）@8101。
 
 ### 附录 C：术语表
 

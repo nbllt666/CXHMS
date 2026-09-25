@@ -10,3 +10,15 @@ agents:
   port: 0
   status: online
   version: 1.0.0
+- capabilities:
+  - memory
+  - tools
+  - chat
+  host: 172.23.64.1
+  id: cxo-agent-001
+  last_seen: '2026-09-25T21:23:25.116972'
+  metadata: {}
+  name: CX-O Agent
+  port: 9999
+  status: online
+  version: 1.0.0

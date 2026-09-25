@@ -32,6 +32,38 @@ class HybridSearchOptions:
     agent_id: str = "default"
 
 
+def calculate_keyword_relevance(content: str, query: str) -> float:
+    """关键词实时相关度（模块级单一真相源，供多条路径复用）。
+
+    命中时保持既有位置衰减语义：``min(1.0 - position/length + 0.1, 1.0)``；
+    未命中返回 ``0.0``（原实现返回 ``0.1``，属 spec 明确标注的行为变更）；
+    ``content`` 或 ``query`` 为空 / ``None`` 时返回 ``0.0``。
+
+    Args:
+        content: 待评估的记忆内容
+        query: 当前查询字符串
+
+    Returns:
+        相关度分数，值域 ``[0, 1]``
+    """
+    # 先判空，避免 None.lower() 抛异常
+    if not content or not query:
+        return 0.0
+
+    query_lower = query.lower()
+    content_lower = content.lower()
+
+    if query_lower in content_lower:
+        position = content_lower.find(query_lower)
+        length = len(content_lower)
+        # 位置越靠前相关度越高；length 为 0 时退化为固定基准分（防御性分支）
+        base_score = 1.0 - (position / length) if length > 0 else 0.5
+        return min(base_score + 0.1, 1.0)
+
+    # 未命中即无关，返回 0，使相关度门控可真正触零
+    return 0.0
+
+
 class HybridSearch:
     def __init__(self, vector_store, sqlite_manager, embedding_model=None):
         self.vector_store = vector_store
@@ -126,18 +158,8 @@ class HybridSearch:
             return []
 
     def _calculate_keyword_score(self, content: str, query: str) -> float:
-        query_lower = query.lower()
-        content_lower = content.lower()
-
-        if query_lower in content_lower:
-            position = content_lower.find(query_lower)
-            length = len(content_lower)
-
-            base_score = 1.0 - (position / length) if length > 0 else 0.5
-
-            return min(base_score + 0.1, 1.0)
-
-        return 0.1
+        """委托模块级 calculate_keyword_relevance（保留方法以兼容既有调用方与外部脚本）"""
+        return calculate_keyword_relevance(content, query)
 
     def _merge_results(
         self,

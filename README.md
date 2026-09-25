@@ -6,7 +6,7 @@ CXHMS (CX-O History & Memory Service) 是一个智能记忆管理平台，提供
 
 ## 核心特性
 
-- **智能记忆系统**: 多向量存储后端（Milvus Lite/Chroma/Qdrant/Weaviate/Weaviate Embedded）、双阶段指数衰减+艾宾浩斯遗忘曲线、三维评分、混合搜索、情感分析、去重检测、副模型路由、write_with_decision 决策化写入（含 rejected_content 30 天保留）、**per-agent collection 隔离**（每个 agent 独立 Weaviate collection + SQLite 图数据库，懒创建+生命周期清理）
+- **智能记忆系统**: 多向量存储后端（Milvus Lite/Chroma/Qdrant/Weaviate/Weaviate Embedded）、双阶段指数衰减+艾宾浩斯遗忘曲线、三维评分（相关度门控）、混合搜索、情感分析、去重检测、副模型路由、write_with_decision 决策化写入（含 rejected_content 30 天保留）、**per-agent collection 隔离**（每个 agent 独立 Weaviate collection + SQLite 图数据库，懒创建+生命周期清理）
 - **RADIX-Lite 管理 Agent 扩展**（v1.2.0 新增）:
   - **模块7 模板引擎**: Jinja2 DSL 模板渲染 + frontmatter 解析 + CRUD
   - **模块8 多模态管线**: 3 worker（OCR / 视觉 / 文本）+ 模态融合 + 降级开关
@@ -43,7 +43,7 @@ pip install -r requirements.txt
 
 # 2. 准备模型服务（默认使用 vLLM）
 #    主模型 gemma4-e4b 由 vLLM 提供：http://localhost:8002
-#    Embedding 模型 Qwen3-Embedding-0.6B 由 vLLM 提供：http://localhost:8101
+#    Embedding 模型（服务 id nomic-embed-text，权重 Qwen3-Embedding-0.6B）由 vLLM 提供：http://localhost:8101
 #    摘要/记忆副模型（可选）使用 Ollama: ollama pull qwen3-vl:8b
 
 # 3. 启动后端
@@ -199,7 +199,7 @@ models:
   embedding:          # 默认 Embedding 模型
     provider: vllm
     host: http://localhost:8101
-    model: /models/Qwen3-Embedding-0.6B
+    model: nomic-embed-text
     enabled: true
   summary:            # 摘要副模型（默认禁用，回退到 main）
     provider: ollama

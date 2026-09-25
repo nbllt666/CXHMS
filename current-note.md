@@ -1,6 +1,6 @@
 # 当前交接状态（current-note.md）
 
-> 最后更新：2026-08-28 13:30:00
+> 最后更新：2026-09-25 03:10:00
 > 状态：**全项目体检与修复批次闭合（2026-08-28：s0602 技术债扫描 + TRAE-code-review 全项目审查 43 项问题双 agent 验证 CONFIRMED + 6 并行修复批次全部完成 + 技术债治理 + 全量回归 1040 passed 0 failed + 前端 303 passed）**
 > （此前状态：spec 实施已交付 + gemma4 工具调用全链路修复 + 多轮工具调用端到端验证通过 + 语义搜索失效修复 + 工具调用失败根因修复 + 隐藏系统提示词设计原则修正 + 摘要后聊天记录不更新修复 + write_long_term_memory 工具卡住修复 + 配置热更新与组件重初始化 + 上下文摘要保留数量配置项 + 前端消息渲染重构 + RADIX-Lite spec 全生命周期闭合 + 文档全量重写 v3.0.0 + Weaviate per-agent collection 改造闭合 + 文档增量更新 v3.1.0）
 
@@ -1599,3 +1599,104 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
 | 修复批4 | S4 | general_purpose_task | 12 项修复+254 测试 | 缺失（同上） | 批4 文档 | 审查前状态 | 已完成 |
 | 修复批5 | S4 | general_purpose_task | 4 项修复+43 测试 | 缺失（同上） | 批5 文档 | 审查前状态 | 已完成 |
 | 技术债治理 | S4 | 主线程（非subagent） | .gitignore+迁移+删除 | 主线程 | 批5 文档 | 扫描清单 | 已完成 |
+
+## 2026-09-25 记忆召回相关度门控修复（模块1）
+
+> 关联 spec：`.trae/specs/fix-memory-recall-relevance-gate/spec.md`（v4；[V] 节点 D8 待人类裁决）
+> 关联变更文档：`.trae/documents/20260925_模块1_修复记忆召回相关度门控.md`（status=已完成）
+> 关联调试记录：`debug-memory-recall-zero-relevance.md`（sessionId `memory-recall-zero-relevance`，runId `pre`/`post`）
+
+### 工程过程
+
+1. **Task 1 调试证据**（TRAE-debugger）：5 条根因假设全部成立。pre-fix 无关记忆（"今天天气很好" × query "量子纠缠退相干实验数据"）`final_score = 0.825`、`kept = True`（越过高优阈值 0.8）；异常记忆兜底 `0.3`、`kept = True`；关键词未命中返 `0.1`；`all_memories`（recent 通道）为死代码。
+2. **Task 2 变更文档**（rules-6 先写后改）：`.trae/documents/20260925_模块1_修复记忆召回相关度门控.md`。
+3. **Task 3 共享打分链路**：`decay.py` 新增 `resolve_relevance` + 门控公式 `calculate_final_score`，收敛为唯一打分入口；`hybrid_search.py` 抽出 `calculate_keyword_relevance`。
+4. **Task 4/5 两条路径并行改造**：`router.py`（评分接入共享入口 + 异常 fail-closed + `all_memories` 接线 + 按 `id` 先去重后过滤 + 移除 permanent 无条件放行 + `applied_rules` 标签改为「同会话最近记忆纳入候选」）；`manager.py`（`search_memories_3d` SQL 排序改归一化内层 + `LIMIT limit×2` + Python 精算截断）。
+5. **Task 6 测试与实测**：新增 `tests/units/test_memory_relevance_gate.py`；`units 121 passed`、`contracts 620 passed`、`simulation 50 passed 1 skipped`、`test_3d_search_ranking.py 4 passed`；post-fix 两条闭合判据均满足。
+6. **Task 7 代码审查**（TRAE-code-review + 2 个独立交叉验证 subagent）：确认 2 条问题并已修复——`decay.py` 的 `final_score` 增加下界钳制 `max(0.0, min(final_score, 1.0))`；`tests/simulation/scenarios/test_3d_search_ranking.py` 陈旧 docstring 更新。修复后定向回归 20 passed。
+7. **Task 8 文档同步**（本任务）：`docs/MODULES.md`、`docs/TECHNICAL.md`、`docs/ARCHITECTURE.md`、`docs/API.md`、`docs/PROJECT_OVERVIEW.md`、`README.md`、`modules/模块1_记忆服务/AGENTS.md` 同步；变更文档步骤清单勾选 + 结果记录补齐 + `status=已完成`。
+
+### 交接状态
+
+| Task | 内容 | 状态 |
+|------|------|------|
+| Task 1 | 调试证据采集（5 条根因假设成立） | 已闭合 |
+| Task 2 | 变更文档（rules-6） | 已闭合 |
+| Task 3 | 共享打分链路（decay + hybrid_search） | 已闭合 |
+| Task 4 | router.py 路径改造 | 已闭合 |
+| Task 5 | manager.py 3D 路径改造 | 已闭合 |
+| Task 6 | 测试与召回收缩实测（判据 a/b 满足） | 已闭合 |
+| Task 7 | 代码审查（2 条问题已修复 + 20 passed 回归） | 已闭合 |
+| Task 8 | 文档与锚点同步（本任务） | 已闭合 |
+| Task 9 | GN-004 交付前审查 + 人类 [V] 裁决（spec D8） | 已闭合（批准交付） |
+
+**最终状态（已交付，2026-09-25）**：
+1. **Task 9 已闭合**：GN-004 交付前审查（警示放行，无 SOFT_BLOCK）+ GN-004 最终交付审查（第五轮，警示放行）+ 人类 [V] 裁决（**批准交付**、授权清理调试产物、授权清理向量库测试对象、批准另开一轮同步旧模型名）全部完成；三份变更文档（`20260925_模块1_...`、`20260925_模块0_修复embedding模型名不匹配`、`20260925_模块0_同步embedding模型名与本地服务`）`status` 均已推进为 **`已关闭`**。
+2. **真实链路实测已执行并复验**（证据：`debug-memory-recall-zero-relevance.md` §6~§8）：
+   - 真实后端（8765 端口 + 记忆库副本）+ 真实 `POST /api/chat`：**无关记忆（id 1413，`permanent=true`）`relevance=0 → final_score=0.0 → 未注入`** ✅；输出中无零相关度记忆被注入 ✅
+   - 真实 `/api/memories/3d`：SQL 执行无报错，无 query → 全 `no_query`；带 query → 命中行 `keyword_realtime, relevance=1.0, final_score=0.76` ✅
+   - 实测暴露的「自然语言问句召回 0 条」根因为 **embedding 模型名配置漂移**（服务实际提供 `nomic-embed-text`，配置写 `/models/Qwen3-Embedding-0.6B`）→ 已修配置并复验：`search_results` **0 → 14**，来源全为 `search_score` ✅
+3. **调试产物已清理**（人类 [V] 确认后执行）：`router.py` 的 `#region debug-point score-gate` 插桩与 `_dbg_report` 已移除（连带清理无用 `import json` 与 `kept` 变量）、7777 端口 Debug Server 已停止、`.dbg/` 已删除；清理后复跑 `tests/units` **121 passed**、`tests/contracts` **620 passed**、定向回归 **20 passed**。保留 `debug-memory-recall-zero-relevance.md`（证据）与 `tests/manual/repro_memory_recall_zero_relevance.py`（已去除插桩依赖，可独立运行，post-fix 输出 A/B 场景均 `0.0/kept=False`、关键词未命中 `0.0`）。
+4. **向量库测试对象已按人类逐次授权清理**：两轮共删除 5 + 2 条实测写入真实 weaviate 的测试对象（总数 18→13，复核无测试内容残留；真实 SQLite 库未被触碰）。
+5. **契约影响**：`public/` 下无任何契约编码该评分公式，本次**不涉及契约变更**（执行者全量检索 + GN-004 独立复核 + `git status` 中 `public/` 零改动）。
+
+**遗留未修复项（均已登记，非本次引入，待后续处置）**：
+- P1 关键词检索要求「整句为子串」（自然语言问句仅靠向量路召回）；`manager.search_memories_3d` 的 `content LIKE '%整句%'` 同源限制
+- P2（优先级最高）embedding 调用失败仍**静默写入 weaviate 且日志谎报「向量同步成功」**，读取路径反抛 `WeaviateInvalidInputError`；`insert` 非 upsert 会致重复对象
+- P3 `CXHMS_PORT` 环境变量覆盖不生效（uvicorn 崩 `TypeError`），只能用 `CXHMS_CONFIG_PATH`
+- P5 `ContextManager` 硬编码 `data/context`，忽略 `CXHMS_DATABASE_SESSIONS_DB`
+- `docker-compose.yml` 的 `vllm-embedding` 未显式声明 `--served-model-name nomic-embed-text`：按 compose 重建容器会复现 404
+- `explicitly_mentioned` 全仓无写入点，`_apply_filters` 的显式通道当前恒为 False（读取逻辑按 spec 保留）
+- `relevance_source` 是否前端可视化 / 写入 API 响应契约文档；同会话最近记忆通道长期是否保留（spec「已知不在本次范围」）
+
+### 最终结果
+
+**改动文件清单**：
+- 生产代码（4）：`backend/core/memory/decay.py`、`backend/core/memory/hybrid_search.py`、`backend/core/memory/router.py`、`backend/core/memory/manager.py`
+- 测试：新增 `tests/units/test_memory_relevance_gate.py`；更新 `tests/simulation/scenarios/test_3d_search_ranking.py`
+- 文档：`docs/MODULES.md`、`docs/TECHNICAL.md`、`docs/ARCHITECTURE.md`、`docs/API.md`、`docs/PROJECT_OVERVIEW.md`、`README.md`、`modules/模块1_记忆服务/AGENTS.md`、变更文档、本 note
+
+**测试与实测结论**：`tests/units/test_memory_relevance_gate.py` **10 passed**；`tests/units -q` **121 passed**；`tests/contracts -q` **620 passed**；`tests/simulation -q` **50 passed 1 skipped**（skip 为既有 `test_tool_integration.py:164` 环境问题）；`tests/simulation/scenarios/test_3d_search_ranking.py` **4 passed**；修复后定向回归 **20 passed**。post-fix 实测：判据 (a) 输出中 `relevance=0`/`unresolved` 条数 = **0** ✅；判据 (b) 同 query 召回 2 条 vs 修复前基线 2 条 = **100% ≥ 50%** ✅。
+
+**未闭合项**：本次修复的 Task 1~9 全部闭合，交付已由人类 [V] 批准；调试插桩/`.dbg/`/Debug Server 已清理，向量库测试对象已按授权清理。本次**不宣称「无风险 / 全部完美」**：`high_priority_threshold=0.8` 分支在新公式下可达性下降已在 spec v4 显式记录（字段与分支未改动）；`manager.search_memories_3d` 的实路径由真实链路实测（`/api/memories/3d` 真实 SQLite）与 `test_3d_search_ranking.py` 双重覆盖；上文「遗留未修复项」为既有问题，未在本次修复范围内。
+
+### 接续入口
+
+1. **遗留项处置（建议优先 P2）**：embedding 失败静默写入 weaviate + 日志谎报成功 + `insert` 非 upsert，属「静默失败 + 错误日志」，会持续污染向量库；建议另开一轮变更（新 spec）处理，与 P1（关键词整句子串限制，可考虑分词/多词命中）合并评估。
+2. **compose 治理**：在 `docker-compose.yml` 的 `vllm-embedding` 服务显式声明 `--served-model-name nomic-embed-text`，消除"按 compose 重建即复现 404"的隐患。
+3. **可选评估**（非阻塞）：`relevance_source` 是否前端可视化 / 写入 API 响应契约文档；同会话最近记忆通道长期是否保留。
+4. **证据留存**：`debug-memory-recall-zero-relevance.md`（pre/post 对比 + 两轮清理记录）与 `tests/manual/repro_memory_recall_zero_relevance.py`（可独立复跑）已按人类意见保留，未随调试产物清理删除。
+
+---
+
+## 〇、最新变更（2026-09-25 03:10）：同步 embedding 模型名残留（模块0 小改动批次）
+
+> 关联变更文档：`.trae/documents/20260925_模块0_同步embedding模型名与本地服务.md`（issue_id `模块0-20260925-02`）
+> 判定口径：标准是「**服务实际提供的模型 id 是否被正确引用**」；纯权重名叙述可保留，凡会被当作请求参数/默认值/配置示例使用的位置必须写 `nomic-embed-text`。
+
+### 工程过程
+
+1. 全仓 grep `Qwen3-Embedding` / `nomic-embed-text`，逐处按上述口径判定：14 处需改（配置示例 3、叙述误导 11），其余为权重目录/挂载路径/历史报错原文（保留）。
+2. 改配置示例 → `nomic-embed-text`：`docs/DEPLOYMENT.md:38/104/166`、`docs/ARCHITECTURE.md:91/170/697/1057`、`docs/TECHNICAL.md:183/492`、`docs/MODULES.md:793`、`docs/API.md:32`、`README.md:46/202`。
+3. 改前端硬编码 → `nomic-embed-text`：`frontend/src/pages/SettingsPage.tsx:260`（state 初值）、`:834`（placeholder）。
+4. 改锚点文件：`AGENTS.md:106`、`PROJECT_REPORT.md:24`（原把请求 model id 写成权重路径，属误导，已改为「服务 id + 权重」并列）。
+5. grep 复核通过；未跑测试、未构建前端（无代码逻辑/类型变更，仅字符串字面量与文档）。
+
+### 交接状态
+
+- **状态**：已完成（变更文档 `status=已完成`，**未置已关闭**，待 GN-004）
+- **未闭合项**：
+  1. **GN-004 独立审查未执行**：本批次在 subagent 上下文完成，按 rules-0 §四-8 需主线程对本批 10 个文件 + 变更文档拉起 GN-004（subagent 不得自行拉取）。
+  2. `docker-compose.yml` 的 `vllm-embedding` 未声明 `--served-model-name nomic-embed-text`：按该 compose 重建容器会使服务 id 退回权重路径 `/models/Qwen3-Embedding-0.6B` → 配置再次失配（404 复发）。上轮变更文档已登记为「另案治理项」，本次**未修改**。
+  3. `current-note.md:1638` 保留历史诊断原文（当时确为 404），不追改历史结论。
+
+### 最终结果
+
+- 改动文件（10）：`docs/DEPLOYMENT.md`、`docs/ARCHITECTURE.md`、`docs/TECHNICAL.md`、`docs/MODULES.md`、`docs/API.md`、`README.md`、`AGENTS.md`、`PROJECT_REPORT.md`、`frontend/src/pages/SettingsPage.tsx`、本 note。
+- 复核结论：`Qwen3-Embedding` 剩余命中仅为权重目录（`.gitignore:39`、`docker-compose.yml:45/59`）、历史报错原文（`debug-memory-recall-zero-relevance.md`、`.dbg/`）、历史诊断（本 note:1638），均符合判定口径。
+- 前端影响面：`modelsConfig.embedding.model` 初值在「LLM 配置」保存时经 `updateServiceConfig({models: modelsConfig})` 整体回写后端（`SettingsPage.tsx:380-388`）；服务端配置加载后会浅合并覆盖初值（`:308-310`），故原硬编码属**潜在漂移**（后端返回体缺 `models.embedding` 时会以旧名回写），现已对齐服务实际 id。
+
+### 接续入口
+
+1. 主线程对本次 10 个文件 + 变更文档拉起 GN-004 独立审查（交付前闸门）。
+2. 可选治理项（另案）：在 `docker-compose.yml` 的 `vllm-embedding` 增加 `--served-model-name nomic-embed-text`，使 compose 重建不再复现 404。

@@ -158,7 +158,13 @@ CXHMS 核心模块，提供长期记忆存储、多策略搜索、衰减管理�
 
 ### 三维评分系统
 
-`search_memories_3d()` 综合考虑：重要性分数 × 0.35 + 时间分数 × 0.25 + 相关度分数 × 0.4（权重可配置，支持场景感知：chat/task/creative）。
+`search_memories_3d()` 采用**相关度门控**评分（取代早期加权求和）：
+
+- `inner = (importance × w_i + time × w_t) ÷ (w_i + w_t)`；`w_i + w_t == 0` 时 `inner = 0`
+- `final = relevance × [ (1 − w_r) × inner + w_r ]`，最终夹取到 `[0, 1]`
+- `relevance ≤ 0` → `final = 0`（硬门控，importance / time / permanent 加成均不能抬升）；`permanent` 仅在 `relevance > 0` 时 `+0.15`
+
+`w_i / w_t / w_r` 取自场景权重（`SCENE_CONFIGS`，支持场景感知 chat/task/creative 等），`relevance_weight` 作为残差分量参与 `final` 计算。相关度来源可追溯，`component_scores.relevance_source` 取值优先级为：`search_score`（记忆自带 `score`）> `keyword_realtime`（有 query 无 score，未命中 = 0）> `no_query`（query 为空取 1.0，不做门控）> `unresolved`（评分异常 fail-closed 取 0）。
 
 ### 去重检测
 
@@ -784,7 +790,7 @@ LLM 端到端测试框架（8 个文件），验证 LLM 集成完整性与正确
 
 所有客户端继承 `LLMClient` 抽象基类，统一 `chat()`、`stream_chat()`、`get_embedding()`、`is_available()` 接口。支持 Ollama、VLLM/OpenAI 兼容、Anthropic Claude、DeepSeek、Local 五种。
 
-> **当前默认配置**（见 `config/default.yaml`）：main = vLLM `gemma4-e4b` @8002；embedding = vLLM `Qwen3-Embedding-0.6B` @8101；summary/memory = Ollama `qwen3-vl:8b`（禁用，回退 main）。
+> **当前默认配置**（见 `config/default.yaml`）：main = vLLM `gemma4-e4b` @8002；embedding = vLLM `nomic-embed-text`（权重 Qwen3-Embedding-0.6B）@8101；summary/memory = Ollama `qwen3-vl:8b`（禁用，回退 main）。
 
 ### 多模态支持
 

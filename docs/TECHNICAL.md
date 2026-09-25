@@ -44,7 +44,7 @@ RADIX-Lite 子系统（契约版本 v1.2.0，spec `add-management-agent-radix` �
 
 **副模型路由** 系统支持 10 种副模型指令，通过 secondary_router 管理记忆处理、摘要生成等辅助任务。`model_defaults` 配置副模型回退策略：summary 与 memory 副模型默认回退到 main 主模型。
 
-**三维评分系统** 在 search_memories_3d() 方法中实现，综合考虑重要性分数、时间分数和相关度分数。重要性分数由 importance_score 字段决定，时间分数根据衰减模型计算，相关度分数来自搜索匹配度。默认权重分配为 importance × 0.35 + time × 0.25 + relevance × 0.4。
+**三维评分系统** 在 search_memories_3d() 方法中实现，综合考虑重要性分数、时间分数和相关度分数。重要性分数由 importance_score 字段决定，时间分数根据衰减模型计算，相关度分数来自搜索匹配度。评分采用**相关度门控**（取代加权求和）：`inner = (importance × w_i + time × w_t) ÷ (w_i + w_t)`（`w_i + w_t == 0` 时 `inner = 0`），`final = relevance × [ (1 − w_r) × inner + w_r ]`，`relevance ≤ 0` → `final = 0`（硬门控，importance/time/permanent 加成均不生效）。权重默认 `w_i/w_t/w_r = 0.35/0.25/0.4`，支持场景感知（chat/task/creative 等），`relevance_weight` 作为残差分量参与 `final` 计算。相关度来源由 `component_scores.relevance_source` 标注（`search_score` / `keyword_realtime` / `no_query` / `unresolved`）。
 
 **记忆重激活** recall_memory() 方法实现了记忆召回功能，每次召回会重置时间衰减分数，增加 reactivation_count 计数，并根据情感强度给予额外加分。reactivation_boost 默认 0.2，decay_interval_days 默认 7 天，decay_rate 默认 0.1。
 
@@ -180,7 +180,7 @@ WebSocket 管理系统位于 `backend/core/websocket/`，负责 WebSocket 连接
 
 **模型路由器** ModelRouter 类管理多个 LLM 模型客户端，支持按需切换不同模型。系统预配置三种模型用途：main（主对话模型，128k 上下文）、summary（摘要生成）、memory（记忆处理）。`model_defaults` 指定回退策略：summary 与 memory 均默认回退到 main。
 
-**客户端实现** 支持 Ollama（本地）、VLLM/OpenAI 兼容接口、Anthropic Claude、DeepSeek 和 Local 五种客户端。所有客户端继承自 LLMClient 抽象基类，实现统一的 chat()、stream_chat()、get_embedding() 和 is_available() 接口。默认主模型为 vLLM 提供的 gemma4-e4b（http://localhost:8002），Embedding 模型为 Qwen3-Embedding-0.6B（http://localhost:8101）。
+**客户端实现** 支持 Ollama（本地）、VLLM/OpenAI 兼容接口、Anthropic Claude、DeepSeek 和 Local 五种客户端。所有客户端继承自 LLMClient 抽象基类，实现统一的 chat()、stream_chat()、get_embedding() 和 is_available() 接口。默认主模型为 vLLM 提供的 gemma4-e4b（http://localhost:8002），Embedding 模型为 vLLM 服务 id nomic-embed-text（权重 Qwen3-Embedding-0.6B，http://localhost:8101）。
 
 **多模态支持** 支持图片输入，通过 base64 编码传递图片数据。Agent 配置中的 vision_enabled 字段控制是否启用多模态功能。RADIX-Lite 多模态管线（模块8）进一步扩展了多模态预处理能力。
 
@@ -489,7 +489,7 @@ models:
     host: http://localhost:8002
     enabled: true
     temperature: 0.7
-  embedding:              # Embedding 模型（Qwen3-Embedding-0.6B）
+  embedding:              # Embedding 模型（vLLM 服务 id nomic-embed-text，权重 Qwen3-Embedding-0.6B）
     provider: vllm
     host: http://localhost:8101
     enabled: true

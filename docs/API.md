@@ -29,7 +29,7 @@ CXHMS 采用多服务架构，各服务独立端口运行：
 | 前端界面 | http://localhost:3000 | React 前端开发服务器 |
 | 控制服务 | http://localhost:8765 | 后端启停管理 |
 | vLLM 主模型 | http://localhost:8002 | 主模型 gemma4-e4b |
-| vLLM Embedding | http://localhost:8101 | Embedding 模型 Qwen3-Embedding-0.6B |
+| vLLM Embedding | http://localhost:8101 | Embedding 模型（服务 id nomic-embed-text，权重 Qwen3-Embedding-0.6B） |
 | Weaviate 向量库 | http://localhost:8090 | 向量存储后端 |
 
 > 端口配置以 `config/default.yaml` 与 `public/config_template/radix_config.json` 为真相源。前端开发服务器通过代理转发请求至 8001 端口，Swagger/ReDoc 文档可通过前端代理访问。
@@ -412,6 +412,8 @@ CXHMS 采用多服务架构，各服务独立端口运行：
 }
 ```
 
+> `weights` 现按 `[w_i, w_t, w_r]` 三元组解释：`w_i` / `w_t` 参与归一化内层 `inner = (importance × w_i + time × w_t) ÷ (w_i + w_t)`（`w_i + w_t == 0` 时 `inner = 0`），`w_r` 作为残差分量代入 `final = relevance × [ (1 − w_r) × inner + w_r ]`。相关度为**乘性门控**——`relevance ≤ 0` 时 `final = 0`，不因重要性/时间而抬升。不传 `weights` 时按场景权重（`SCENE_CONFIGS`）取值；`applied_weights` 返回结构不变。
+
 **响应示例**:
 ```json
 {
@@ -425,6 +427,8 @@ CXHMS 采用多服务架构，各服务独立端口运行：
   }
 }
 ```
+
+> 每条返回记忆的 `component_scores` 新增 `relevance_source` 字段，标识相关度来源，取值 `search_score`（记忆自带 `score`）/ `keyword_realtime`（有 query 无 score，未命中 = 0）/ `no_query`（query 为空取 1.0，不做门控）/ `unresolved`（评分异常 fail-closed 取 0）。
 
 ### 15. 按类型查询
 

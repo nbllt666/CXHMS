@@ -68,7 +68,7 @@ models:
   embedding:
     provider: vllm
     host: http://localhost:8101
-    model: /models/Qwen3-Embedding-0.6B
+    model: nomic-embed-text
     apiKey: ''
     enabled: true
     port: 8101

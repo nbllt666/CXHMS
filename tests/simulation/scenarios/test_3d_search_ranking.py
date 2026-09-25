@@ -1,16 +1,17 @@
 """C5 三维搜索排序回归测试。
 
 覆盖修复点 C5：``search_memories_3d`` 把 decay 计算下推到 SQL（用
-``julianday`` 线性衰减），``ORDER BY`` 在 DB 端按近似最终分排序，仅拉取
-``limit`` 行（而非 ``limit*2``）交由 Python 精算最终分。
+``julianday`` 线性衰减），``ORDER BY`` 在 DB 端按「归一化内层」近似排序，
+拉取 ``limit*2`` 行候选交由 Python 精算最终分后截断为 ``limit`` 行。
 
-最终分公式（见 ``manager.search_memories_3d``）：
-    final_score = importance_score * w[0] + time_score * w[1] + relevance_score * w[2]
-    permanent 记忆额外 +0.15，最终 min(final_score, 1.0)
+最终分公式（见 ``decay.DecayCalculator.calculate_final_score`` 的相关度门控口径）：
+    inner = (importance_score * w[0] + time_score * w[1]) / (w[0] + w[1])   # 分母为 0 时取 0.0
+    final_score = relevance * ((1 - w[2]) * inner + w[2])
+    relevance = 0 时 final_score 严格为 0；permanent 且 relevance > 0 时额外 +0.15，最终夹取到 [0, 1]
 
 回归策略：
     1. 写入不同 importance 的记忆，验证按 importance DESC 排序。
-    2. 验证 limit 生效（C5 只拉取 limit 行）。
+    2. 验证 limit 生效（SQL 取 limit*2 行候选，Python 截断为 limit 行）。
     3. 验证 permanent 记忆获得 +0.15 bonus，排在前面。
 """
 
@@ -137,7 +138,7 @@ def test_3d_search_ranks_by_importance_score_desc(sim_app, sim_actor):
     """C5 回归：高 importance_score 的记忆应排在低 importance_score 前面。
 
     C5 的 SQL 端排序用 ``COALESCE(importance_score, importance * 1.0 / 5.0)``
-    计算 _imp，``ORDER BY _imp * (1 - days/30) DESC``。本测试直接更新
+    计算 _imp，``ORDER BY`` 归一化内层 ``DESC``。本测试直接更新
     importance_score 制造差异，验证 SQL 端排序与 Python 端 final_score 一致。
 
     注：写入时 importance_score 固定为 0.6，故需 ``_set_importance_score`` 制造差异。
@@ -182,8 +183,8 @@ def test_3d_search_ranks_by_importance_score_desc(sim_app, sim_actor):
 def test_3d_search_respects_limit(sim_actor):
     """C5 回归：``limit`` 参数应生效，只返回 limit 行。
 
-    C5 修复把 ORDER BY 下推到 SQL 并只拉取 limit 行（而非 limit*2）。
-    本测试验证 limit 严格生效。
+    C5 修复把 ORDER BY 下推到 SQL，SQL 侧拉取 limit*2 行候选，
+    Python 精算后截断为 limit 行。本测试验证 limit 严格生效。
     """
     # 写入 5 条记忆
     for i in range(5):

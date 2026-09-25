@@ -1,10 +1,13 @@
 import asyncio
-import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional
 
 from backend.core.logging_config import get_contextual_logger
+from backend.core.memory.decay import (
+    RELEVANCE_SOURCE_SEARCH,
+    RELEVANCE_SOURCE_UNRESOLVED,
+)
 
 logger = get_contextual_logger(__name__)
 
@@ -121,16 +124,24 @@ class MemoryRouter:
             )
             if recent_memories:
                 all_memories.extend(recent_memories)
-                applied_rules.append("最近交互记忆优先")
+                # 原标签「最近交互记忆优先」与实际行为不符（该规则从未接线），
+                # 改为如实描述：最近记忆仅作为候选纳入，不享有相关度豁免
+                applied_rules.append("同会话最近记忆纳入候选")
 
             search_results = await self._search_memories(query, options, agent_id)
             logger.info(f"记忆路由: query='{query}', hybrid_search={self.hybrid_search is not None}, search_results={len(search_results)}")
 
+            # 候选合并：同会话最近记忆在前、搜索结果在后，统一交给共享评分入口；
+            # 最近记忆不设任何相关度豁免，相关度一律走共享入口的解析口径
+            candidates = list(all_memories) + list(search_results)
+
             scored_memories = self._score_memories(
-                search_results, query, applied_weights, context or {}
+                candidates, query, applied_weights, context or {}
             )
 
-            filtered = self._apply_filters(scored_memories)
+            # 顺序固定：先评分 → 再去重 → 后过滤（去重依赖 final_score，过滤前必须完成去重）
+            deduped_memories = self._dedupe_memories(scored_memories)
+            filtered = self._apply_filters(deduped_memories)
             logger.info(f"记忆路由: scored={len(scored_memories)}, filtered={len(filtered)}")
 
             final_memories = self._apply_scene_adjustment(filtered, scene_type, applied_weights)
@@ -207,7 +218,7 @@ class MemoryRouter:
 
                 # 检索阶段已用 tags=[session_id] 精确过滤，直接使用返回结果；
                 # 顶层 session_id 键不存在（在 metadata 里），原过滤恒为 False
-                # 会导致检索结果全部被丢弃，"最近交互记忆优先"规则永久失效
+                # 会导致检索结果全部被丢弃，"同会话最近记忆纳入候选"规则永久失效
                 memories.extend(results)
                 recent_count += len(results)
 
@@ -267,35 +278,102 @@ class MemoryRouter:
     def _score_memories(
         self, memories: List[Dict], query: str, weights: Dict[str, float], context: Dict
     ) -> List[Dict]:
+        """对候选记忆打分。
+
+        统一走 ``DecayCalculator.calculate_final_score``（相关度门控公式，唯一打分入口），
+        结果写入 ``memory["final_score"]`` / ``memory["component_scores"]``。
+        单条记忆评分异常时 fail-closed（``final_score = 0.0``），该记忆仍保留在返回
+        列表中，由后续 ``_apply_filters`` 按阈值淘汰，等价于不注入。
+        """
         scored = []
 
         for memory in memories:
             try:
-                importance_score = self.decay_calculator.calculate_importance_score(memory)
-                time_score = self.decay_calculator.calculate_time_score(memory)
-                relevance_score = memory.get("score", 0.5)
-
-                final_score = (
-                    importance_score * weights["importance"]
-                    + time_score * weights["time"]
-                    + relevance_score * weights["relevance"]
+                # 共享入口：权重以 (w_importance, w_time, w_relevance) 三元组传入
+                final_score, component_scores = self.decay_calculator.calculate_final_score(
+                    memory,
+                    weights=(
+                        weights["importance"],
+                        weights["time"],
+                        weights["relevance"],
+                    ),
+                    query=query,
                 )
-
-                memory["final_score"] = min(final_score, 1.0)
-                memory["component_scores"] = {
-                    "importance": importance_score,
-                    "time": time_score,
-                    "relevance": relevance_score,
-                }
+                memory["final_score"] = final_score
+                memory["component_scores"] = component_scores
 
                 scored.append(memory)
 
             except Exception as e:
                 logger.warning(f"记忆评分失败: {e}")
-                memory["final_score"] = memory.get("score", 0.3)
+                # fail-closed：禁止任何兜底分数，置 0 后由 _apply_filters 淘汰
+                memory["final_score"] = 0.0
+                # 前两维尽力取值（异常状态下可能同样取不到或非数值），取不到即填 0.0
+                try:
+                    importance_fallback = float(
+                        self.decay_calculator.calculate_importance_score(memory)
+                    )
+                except Exception:
+                    importance_fallback = 0.0
+                try:
+                    time_fallback = float(self.decay_calculator.calculate_time_score(memory))
+                except Exception:
+                    time_fallback = 0.0
+                memory["component_scores"] = {
+                    "importance": importance_fallback,
+                    "time": time_fallback,
+                    "relevance": 0.0,
+                    "relevance_source": RELEVANCE_SOURCE_UNRESOLVED,
+                }
+
                 scored.append(memory)
 
         return scored
+
+    def _dedupe_memories(self, memories: List[Dict]) -> List[Dict]:
+        """按 id 去重（缺 id 时退回用 content 作键），保持首次出现顺序。
+
+        同一键保留 ``final_score`` 较高者；``final_score`` 相等时优先保留
+        ``component_scores.relevance_source == "search_score"`` 的那条。
+        必须在评分之后、过滤之前调用（依赖 final_score 判定保留哪一条）。
+        """
+        best: Dict = {}
+        positions: Dict = {}
+
+        for memory in memories:
+            key = memory.get("id")
+            if key is None:
+                # 缺 id 时退回 content 作去重键（元组前缀避免与真实 id 撞键）
+                key = ("__content__", memory.get("content"))
+
+            if key not in best:
+                # 记录首次出现位置，保证输出稳定
+                positions[key] = len(positions)
+                best[key] = memory
+                continue
+
+            incumbent = best[key]
+            candidate_score = memory.get("final_score", 0)
+            incumbent_score = incumbent.get("final_score", 0)
+            if candidate_score > incumbent_score:
+                best[key] = memory
+                continue
+            if candidate_score == incumbent_score:
+                candidate_source = (memory.get("component_scores") or {}).get(
+                    "relevance_source"
+                )
+                incumbent_source = (incumbent.get("component_scores") or {}).get(
+                    "relevance_source"
+                )
+                # 同分时优先保留 search_score 来源，避免来源归属失真
+                if (
+                    candidate_source == RELEVANCE_SOURCE_SEARCH
+                    and incumbent_source != RELEVANCE_SOURCE_SEARCH
+                ):
+                    best[key] = memory
+
+        ordered_keys = sorted(best.keys(), key=lambda k: positions[k])
+        return [best[k] for k in ordered_keys]
 
     def _apply_filters(self, memories: List[Dict]) -> List[Dict]:
         filtered = []
@@ -303,10 +381,7 @@ class MemoryRouter:
         for memory in memories:
             score = memory.get("final_score", 0)
 
-            if memory.get("permanent"):
-                filtered.append(memory)
-                continue
-
+            # permanent 不再无条件放行：与普通记忆同走分数阈值判定
             if score >= self.config.high_priority_threshold:
                 filtered.append(memory)
             elif score >= self.config.min_score_threshold:

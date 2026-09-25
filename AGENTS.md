@@ -103,7 +103,7 @@ Project_Root (c:\CXHMS):
 - **唯一配置真相源**: `config/default.yaml`。所有文档、代码、部署配置以 default.yaml 为准。
 - **当前默认配置**:
   - 主模型: vLLM / `gemma4-e4b` @ http://localhost:8002，`temperature: 0.7`
-  - 嵌入模型: vLLM / `/models/Qwen3-Embedding-0.6B` @ http://localhost:8101
+  - 嵌入模型: vLLM（权重 `Qwen3-Embedding-0.6B`，服务 id `nomic-embed-text`）@ http://localhost:8101
   - 摘要/记忆副模型: Ollama `qwen3-vl:8b`（默认禁用，`model_defaults.summary: main` / `model_defaults.memory: main` 回退主模型）
   - 后端 API: 0.0.0.0:8001（Swagger / ReDoc 同端口）
   - 前端开发服务器: 3000

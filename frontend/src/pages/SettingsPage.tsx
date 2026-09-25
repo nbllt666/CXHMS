@@ -257,7 +257,7 @@ export function SettingsPage() {
     embedding: {
       provider: 'vllm',
       host: 'http://localhost:8101',
-      model: '/models/Qwen3-Embedding-0.6B',
+      model: 'nomic-embed-text',
       apiKey: '',
       enabled: true,
     },
@@ -831,7 +831,7 @@ export function SettingsPage() {
                               }))
                             }
                             className="w-full px-3 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-[var(--radius-md)]"
-                            placeholder="/models/Qwen3-Embedding-0.6B"
+                            placeholder="nomic-embed-text"
                           />
                         </div>
                       </div>

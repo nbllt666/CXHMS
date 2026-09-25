@@ -53,7 +53,7 @@ CXHMS (晨曦人格化记忆系统, CX-O History & Memory Service) 是一个基�
 
 - **多向量存储后端**: Milvus Lite / Chroma / Qdrant / Weaviate / Weaviate Embedded
 - **衰减模型**: 双阶段指数衰减（默认）+ 艾宾浩斯遗忘曲线（实验性）
-- **三维评分**: importance × 0.35 + time × 0.25 + relevance × 0.4
+- **三维评分**: 相关度门控 `final = relevance × [ (1 − w_r) × inner + w_r ]`（`inner = (importance × w_i + time × w_t) ÷ (w_i + w_t)`），`relevance = 0` 即出局；相关度来源可追溯（`component_scores.relevance_source`）
 - **混合搜索**: 向量相似度 + 关键词匹配，RRF 算法融合
 - **情感分析**: emotion_score 字段，影响重激活加分
 - **去重检测**: dedup_threshold = 0.85
