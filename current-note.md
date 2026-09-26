@@ -1,7 +1,7 @@
 # 当前交接状态（current-note.md）
 
 > 最后更新：2026-09-26 16:52
-> 状态：**竞态修复（模块1-20260926-01）+ GN-004 第八轮警示放行后的补强批次已交付**：向量后端防线（chroma/milvus 空向量 + 幂等）/ 配置 `server`·`system` 合并读取 / H3 判定与残留窗口加固（`skip_thread_ids`）均已落地，新增单测 14 + 4 + 6 passed；整目录 **153 passed 0 崩溃**（含本轮新增第 6 例；此前 152 × 3 次 0 崩溃）、contracts 620、simulation 50+1。**本轮产出已提交 `6884301`**（另：`875219a` 遗留项批处理、`d8de6b4` 门控，均已提交——此前头部"均未 git 提交"的描述已失效）；本轮修正 4 文件（`manager.py` 注释/注解、本 note、`debug-memory-recall-zero-relevance.md` §9、`test_dedup_thread_lifecycle.py` 新增用例）已获批准提交；`.dbg/` 实验产物已清理。**人类 [V] 已裁决（16:52）：批准交付 + 授权清理 `.dbg/` 全部产物 + 批准现在提交**；GN-004 第九轮警示放行（无 SOFT_BLOCK）。本轮全部闭合。
+> 状态：**竞态修复（模块1-20260926-01）+ GN-004 第八轮警示放行后的补强批次已交付**：向量后端防线（chroma/milvus 空向量 + 幂等）/ 配置 `server`·`system` 合并读取 / H3 判定与残留窗口加固（`skip_thread_ids`）均已落地，新增单测 14 + 4 + 6 passed；整目录 **153 passed 0 崩溃**（含本轮新增第 6 例；此前 152 × 3 次 0 崩溃）、contracts 620、simulation 50+1。**本轮产出已提交 `6884301`**（另：`875219a` 遗留项批处理、`d8de6b4` 门控，均已提交——此前头部"均未 git 提交"的描述已失效）；本轮修正 4 文件（`manager.py` 注释/注解、本 note、`debug-memory-recall-zero-relevance.md` §9、`test_dedup_thread_lifecycle.py` 新增用例）已获批准并提交 `645afd0`；`.dbg/` 实验产物已清理。**人类 [V] 已裁决（16:52）：批准交付 + 授权清理 `.dbg/` 全部产物 + 批准现在提交**；GN-004 第九轮警示放行（无 SOFT_BLOCK）。本轮全部闭合。
 > （此前状态：**去重键空 content 误合并修复已闭合（模块1-20260925-03：复现确认 → 修复 + 单测 → GN-004 警示放行（无 SOFT_BLOCK）→ 观察项已处置；定向 11 / units 138 / contracts 620 passed）**）
 > （此前状态：遗留项批处理已交付（P1 关键词 2 字滑窗召回 / P2 向量写入链路 / P3 配置类型规整 / P5 会话路径 / compose 服务名；GN-004 第六轮警示放行 + 人类 [V] 批准交付 + 验证产物已清理））
 > （此前状态：记忆召回相关度门控修复已交付（GN-004 五轮审查 + 人类 [V] 批准，commit `d8de6b4`））
