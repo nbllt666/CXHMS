@@ -1907,7 +1907,7 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
 | SOFT_BLOCK 人类裁定 | **已闭环**（裁定「补实现并修复 F-2/F-3」+「加写入后回读校验流程」）→ N-2 重做、F-2/F-3/F-4 全修；回读校验已执行确认 |
 | 防护流程固化 | **写入后回读校验**：关键修改（代码/契约/锚点文档）写入后必须 `Grep`/`Read` 回读确认实体内容，不得仅凭 Edit 回执声明完成 |
 | GN-004 第十四轮复审 | **SOFT_BLOCK 已解除**（警示放行：GN-004 以磁盘实体回读独立确认 F-1/F-2/F-3/F-4 四项在位）；O-2 已顺手修（`payload` 排除 `content`）；O-1（`output_fields` 硬编码风险）/ O-3（审查期间版本漂移）已登记，O-3 处置为「复审前冻结写入」 |
-| 人类 [V] 第三轮（交付 + 提交裁决） | 待拉起 |
+| 人类 [V] 第三轮（交付 + 提交裁决） | **已闭合**（批准交付 + 提交 `f09eeaf`） |
 
 ### 最终结果
 
@@ -1915,8 +1915,8 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
   代码 5 文件（`milvus_lite_store.py` / `weaviate_store.py` / `vector_store.py` / `chroma_store.py` / `config/settings.py`）、
   测试 3 文件（新增 19 例并升级 1 例判别力）。
 - 验证结论：修复前对照实锤（6 failed）→ 各批修正后定向 **41 passed**；units **176** / contracts 620 / simulation 50+1；
-  `synced` 消费点无逻辑依赖（仅日志/透传）；已提交 `bab3406`（第二批）。
-- 未提交（第三批 O-2/O-3/回滚窗口 + N/F 项处置），待 GN-004 第十四轮 + 人类 [V] 第三轮。
+  `synced` 消费点无逻辑依赖（仅日志/透传）。
+- 已提交：`bab3406`（第二批）、**`f09eeaf`（第三批 + N/F 项处置）**；工作区干净。
 - **环境风险（已固化防护）**：本轮 4 次出现「Edit 报告成功但内容未持久化」，其中一次触发 GN-004 SOFT_BLOCK；
   现要求关键修改写入后一律 `Grep`/`Read` 回读校验。
 
