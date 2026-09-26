@@ -587,3 +587,107 @@ async def test_milvus_rollback_query_no_fallback_on_first_success():
     assert result is not None
     assert client.query.call_count == 1, "首次成功不应触发降级（只查一次）"
     assert "agent_id" in calls[0], "首次查询应含扩展字段（可直接取回 metadata 投影）"
+
+
+# --------------------------------------------------------------------------- #
+# 12: 读取路径的可选字段降级（GN-004 第十五轮 P-4）
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_milvus_get_vector_by_id_degrades_when_created_at_missing():
+    """P-4：``get_vector_by_id`` 因 ``created_at`` 不可用而失败时，应降级重试并仍返回实体。
+
+    修复前：单次硬编码查询失败即返回 None → ``check_exists`` 误判「不存在」→ 同步重复写入。
+    """
+    calls = []
+
+    def _query(**kwargs):
+        calls.append(list(kwargs["output_fields"]))
+        if len(calls) == 1:
+            raise RuntimeError("未知输出字段 created_at（模拟旧 schema）")
+        return [{"id": 5, "content": "内容", "memory_id": 5}]
+
+    client = MagicMock()
+    client.query.side_effect = _query
+    store = _make_fake_milvus_store(client)
+
+    result = await store.get_vector_by_id(5)
+
+    assert result is not None, "降级后仍应返回实体（否则存在性判断失败）"
+    assert result["memory_id"] == 5
+    assert len(calls) == 2, "应发生「扩展字段 → 基础字段」两次查询"
+    assert "created_at" in calls[0]
+    assert "created_at" not in calls[1], "降级查询不含可选字段"
+
+
+@pytest.mark.asyncio
+async def test_milvus_search_degrades_when_created_at_missing():
+    """P-4：``search_similar`` 因 ``created_at`` 不可用而失败时，应降级重试并仍返回结果。
+
+    修复前：单次查询失败即返回 [] → 语义搜索静默失效。
+    """
+    calls = []
+
+    def _search(**kwargs):
+        calls.append(list(kwargs["output_fields"]))
+        if len(calls) == 1:
+            raise RuntimeError("未知输出字段 created_at（模拟旧 schema）")
+        return [[{"id": 9, "distance": 0.1, "entity": {"content": "命中内容", "memory_id": 9}}]]
+
+    client = MagicMock()
+    client.search.side_effect = _search
+    store = _make_fake_milvus_store(client)
+
+    results = await store.search_similar([0.1] * 4, min_score=0.5)
+
+    assert len(results) == 1, "降级后仍应返回检索结果（否则语义搜索静默失效）"
+    assert results[0]["memory_id"] == 9
+    assert len(calls) == 2, "应发生「扩展字段 → 基础字段」两次检索"
+    assert "created_at" not in calls[1]
+
+
+@pytest.mark.asyncio
+async def test_milvus_read_path_no_degrade_on_first_success():
+    """P-4 对照：读取路径首次成功时不得触发降级（只调用一次）。"""
+    calls = []
+
+    def _query(**kwargs):
+        calls.append(list(kwargs["output_fields"]))
+        return [{"id": 6, "content": "内容", "memory_id": 6, "created_at": "2026-01-01"}]
+
+    client = MagicMock()
+    client.query.side_effect = _query
+    store = _make_fake_milvus_store(client)
+
+    result = await store.get_vector_by_id(6)
+
+    assert result is not None
+    assert client.query.call_count == 1, "首次成功不应降级"
+    assert "created_at" in calls[0]
+
+
+@pytest.mark.asyncio
+async def test_milvus_read_path_degrades_then_falls_back_on_double_failure():
+    """Q-2（GN-004 第十六轮）：读取路径降级后**仍失败**时，应走原兜底（返回 None），且确经两次调用。"""
+    client = MagicMock()
+    client.query.side_effect = RuntimeError("查询持续失败")
+    store = _make_fake_milvus_store(client)
+
+    result = await store.get_vector_by_id(8)
+
+    assert result is None, "两次均失败应走原兜底（返回 None），不得抛出"
+    assert client.query.call_count == 2, "应确经「扩展字段 → 基础字段」两次调用"
+
+
+@pytest.mark.asyncio
+async def test_milvus_search_degrades_then_returns_empty_on_double_failure():
+    """Q-2：``search_similar`` 降级后仍失败时返回空列表（原兜底语义不变）。"""
+    client = MagicMock()
+    client.search.side_effect = RuntimeError("检索持续失败")
+    store = _make_fake_milvus_store(client)
+
+    results = await store.search_similar([0.1] * 4, min_score=0.5)
+
+    assert results == []
+    assert client.search.call_count == 2

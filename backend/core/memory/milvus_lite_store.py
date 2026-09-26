@@ -132,6 +132,38 @@ class MilvusLiteVectorStore:
             await self._rollback_to_previous(previous)
             return False
 
+    # 读取路径的字段分级（GN-004 第十五轮 P-4）：created_at 仅用于 metadata 展示，
+    # 不应因旧 schema 缺该字段而使「存在性检查 / 相似度检索」整体失效
+    _READ_BASE_OUTPUT_FIELDS = ["content", "memory_id"]
+    _READ_EXTENDED_OUTPUT_FIELDS = [*_READ_BASE_OUTPUT_FIELDS, "created_at"]
+
+    def _call_with_optional_field_fallback(
+        self, fn, kwargs: Dict, optional_fields: List[str], label: str
+    ):
+        """按「必需 + 可选」字段分级调用客户端方法，可选字段不可用时降级重试一次。
+
+        Args:
+            fn: 同步客户端方法（``query`` / ``search``）
+            kwargs: 调用参数字典（须含 ``output_fields``）
+            optional_fields: 可选字段列表（降级时从 ``output_fields`` 移除）
+            label: 日志标签
+
+        Returns:
+            客户端返回对象
+
+        Raises:
+            最后一次调用的异常（若降级后仍失败），由调用方决定兜底语义
+        """
+        try:
+            return fn(**kwargs)
+        except Exception as e:  # noqa: BLE001
+            degraded = {k: v for k, v in kwargs.items() if k != "output_fields"}
+            degraded["output_fields"] = [
+                f for f in kwargs.get("output_fields", []) if f not in optional_fields
+            ]
+            logger.warning(f"{label}调用失败，已降级为仅必需字段重试: {e}")
+            return fn(**degraded)
+
     async def _get_vector_with_embedding(self, memory_id: int) -> Optional[Dict]:
         """取回含向量的既有实体（供「先删后插」失败回滚使用）。
 
@@ -241,12 +273,17 @@ class MilvusLiteVectorStore:
                 "collection_name": self.collection_name,
                 "data": [query_embedding],
                 "limit": limit,
-                "output_fields": ["content", "memory_id", "created_at"],
+                "output_fields": list(self._READ_EXTENDED_OUTPUT_FIELDS),
             }
             if expr:
                 search_kwargs["filter"] = expr
 
-            results = self._client.search(**search_kwargs)
+            results = self._call_with_optional_field_fallback(
+                self._client.search,
+                search_kwargs,
+                optional_fields=["created_at"],
+                label="相似度检索",
+            )
 
             filtered_results = []
             for result in results[0]:
@@ -287,10 +324,15 @@ class MilvusLiteVectorStore:
                 logger.warning(f"无效的memory_id类型: {type(memory_id)}, 期望int")
                 return None
 
-            results = self._client.query(
-                collection_name=self.collection_name,
-                filter=f'memory_id == "{memory_id}"',
-                output_fields=["content", "memory_id", "created_at"],
+            results = self._call_with_optional_field_fallback(
+                self._client.query,
+                {
+                    "collection_name": self.collection_name,
+                    "filter": f'memory_id == "{memory_id}"',
+                    "output_fields": list(self._READ_EXTENDED_OUTPUT_FIELDS),
+                },
+                optional_fields=["created_at"],
+                label="取回向量",
             )
 
             if results:
