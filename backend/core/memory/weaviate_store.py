@@ -360,9 +360,8 @@ class WeaviateVectorStore:
             if effective_agent_id == "default" and metadata and metadata.get("agent_id"):
                 effective_agent_id = metadata["agent_id"]
 
-            # 先删除旧向量
-            await self.delete_by_memory_id(memory_id, agent_id=effective_agent_id)
-            # 添加新向量
+            # 幂等下沉在 add_memory_vector 内：其内部已在插入前先删同 memory_id 的既存对象，
+            # 故此处不再手动删除（避免一次冗余删除）。
             return await self.add_memory_vector(
                 memory_id, content, embedding, metadata, agent_id=effective_agent_id
             )

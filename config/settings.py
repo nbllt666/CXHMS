@@ -716,8 +716,14 @@ class CXHMSConfig:
         # 环境变量覆盖值均为字符串，装配前统一按字段声明类型规整（含嵌套 dataclass）
         data = coerce_config_types(data, cls)
         # default.yaml 使用 server 段（system 为兼容别名），而 server 不是 cls 的声明字段，
-        # 无法被上一步按 cls 注解覆盖，故按其真实模型 SystemConfig 单独规整一次
-        server_data = coerce_config_types(data.get("server", data.get("system", {})), SystemConfig)
+        # 无法被上一步按 cls 注解覆盖，故按其真实模型 SystemConfig 单独规整一次。
+        # server 为配置契约键（见 public/test_cases/test_config_template.py 与
+        # validation/repair 表），system 为历史字段名；二者合并读取，server 同名键优先，
+        # 避免两段并存时 system 段独有字段被整体丢弃
+        server_data = coerce_config_types(
+            {**(data.get("system") or {}), **(data.get("server") or {})},
+            SystemConfig,
+        )
         return cls(
             llm=LLMConfig.from_dict(data.get("llm", {})),
             models=ModelsConfig.from_dict(data),

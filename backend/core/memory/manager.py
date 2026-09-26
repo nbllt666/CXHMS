@@ -119,6 +119,9 @@ class MemoryManager:
 
         self._stop_event = threading.Event()
         self._cleanup_thread = None
+        # 在途后台去重线程登记表：供 shutdown() 在关闭连接池前等待，避免
+        # 「worker 仍在使用 sqlite 连接」与「close_all_connections」并发导致 C 层 use-after-free
+        self._dedup_threads: set = set()
         self._start_cleanup_task()
 
         logger.info(f"记忆管理器初始化完成: db={db_path}")
@@ -346,6 +349,12 @@ class MemoryManager:
 
         def _dedup_worker():
             try:
+                # 关闭流程已开始时不再发起任何数据库访问：避免与 shutdown() →
+                # close_all_connections() 竞态（同一 sqlite 连接被并发 close/执行 → C 层崩溃）
+                # 注意：早退必须位于 try 内，否则 finally 中的自我注销不会执行（登记表泄漏）
+                if self._stop_event.is_set():
+                    logger.debug("后台去重跳过: 记忆管理器正在关闭")
+                    return
                 dup_result = self._run_async_sync(
                     self.deduplication_engine.find_duplicate_memory(
                         content=content,
@@ -386,10 +395,17 @@ class MemoryManager:
                 logger.warning(
                     f"后台去重检查失败 [{type(e).__name__}]: {e}"
                 )
+            finally:
+                # 自我注销：shutdown() 依赖该登记表判定"是否仍有在途 worker"
+                with self._lock:
+                    self._dedup_threads.discard(threading.current_thread())
 
         thread = threading.Thread(
             target=_dedup_worker, daemon=True, name="DedupCheck"
         )
+        # 登记后再启动，确保 shutdown() 不会漏掉刚创建的 worker（登记/启动之间存在窗口）
+        with self._lock:
+            self._dedup_threads.add(thread)
         thread.start()
 
     def _sync_vector_for_memory(self, memory_id: int, content: str, metadata: Dict = None) -> bool:
@@ -649,6 +665,40 @@ class MemoryManager:
         except Exception as e:
             logger.warning(f"重新初始化向量存储失败: {e}")
 
+    def _join_dedup_threads(self, timeout: float = 5.0) -> None:
+        """等待在途后台去重线程结束（有界超时）。
+
+        必须在 ``close_all_connections()`` **之前**调用：worker 会使用本线程自己的
+        sqlite 连接，若在其实时执行查询期间关闭该连接，会触发 sqlite3 C 层
+        use-after-free（表现为 STATUS_ACCESS_VIOLATION 原生崩溃）。
+
+        不持锁 join（worker 在 finally 中需要取同一把锁自我注销，持锁 join 会互等）。
+
+        Args:
+            timeout: 总等待上限（秒），超时仅记 warning 后继续关闭流程
+        """
+        deadline = time.monotonic() + timeout
+        with self._lock:
+            pending = [t for t in self._dedup_threads if t.is_alive()]
+
+        for thread in pending:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            thread.join(timeout=remaining)
+
+        with self._lock:
+            still_alive = [t for t in self._dedup_threads if t.is_alive()]
+            # 兜底清理已结束的登记项：正常路径由 worker 自我注销，此处防止异常路径下登记表泄漏
+            for finished in [t for t in self._dedup_threads if not t.is_alive()]:
+                self._dedup_threads.discard(finished)
+        if still_alive:
+            logger.warning(
+                f"关闭时仍有 {len(still_alive)} 个后台去重线程未结束"
+                f"（已等待 {timeout}s），继续关闭连接池（将跳过这些线程的连接）"
+            )
+        return still_alive
+
     def shutdown(self):
         logger.info("正在关闭记忆管理器...")
         self._stop_event.set()
@@ -656,7 +706,12 @@ class MemoryManager:
         if self._cleanup_thread and self._cleanup_thread.is_alive():
             self._cleanup_thread.join(timeout=5)
 
-        self.close_all_connections()
+        # 先等待在途去重线程再关闭连接池（避免与 worker 的 sqlite 查询竞态导致原生崩溃）
+        still_alive = self._join_dedup_threads(timeout=5)
+
+        # 超时仍未结束的 worker：跳过它们正在使用的连接，避免并发 close → C 层 use-after-free
+        skip_ids = {t.ident for t in still_alive if t.ident is not None}
+        self.close_all_connections(skip_thread_ids=skip_ids)
 
         if self._vector_store:
             try:
@@ -968,9 +1023,24 @@ class MemoryManager:
         """释放连接（线程本地保留，下次复用）"""
         pass
 
-    def close_all_connections(self):
+    def close_all_connections(self, skip_thread_ids: Optional[set] = None):
+        """关闭连接池中的连接（清空池）。
+
+        Args:
+            skip_thread_ids: 需**跳过**的线程 ident 集合。用于 shutdown 场景下
+                「仍有未结束的后台去重线程」时，避免关闭它们正在使用的连接
+                （同一 sqlite 连接被并发 close/执行 → C 层 use-after-free）。
+                注意：池以 ``threading.get_ident()`` 为键，故可精确匹配。
+        """
+        skipped = skip_thread_ids or set()
         with self._lock:
             for thread_id, conn_info in list(self._connection_pool.items()):
+                if thread_id in skipped:
+                    # 保留该连接在池中：等下次 shutdown 或进程退出回收，优先保证不崩
+                    logger.warning(
+                        f"关闭连接池时跳过仍被后台线程使用的连接: thread_id={thread_id}"
+                    )
+                    continue
                 try:
                     if isinstance(conn_info, dict):
                         conn_info["connection"].close()
@@ -978,7 +1048,11 @@ class MemoryManager:
                         conn_info.close()
                 except Exception as e:
                     logger.warning(f"关闭连接失败: {e}")
-            self._connection_pool.clear()
+            # 仅移除「已关闭」的条目：跳过的连接必须继续留在池中，
+            # 否则 clear() 会把刚跳过的连接一并移除，使上面的跳过逻辑失效
+            for thread_id in list(self._connection_pool.keys()):
+                if thread_id not in skipped:
+                    del self._connection_pool[thread_id]
 
     def write_memory(
         self,

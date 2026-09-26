@@ -83,7 +83,21 @@ class MilvusLiteVectorStore:
         if not self._client:
             return False
 
+        # 空向量防御：embedding 为空（None / 空序列）时写入会产生无向量对象，
+        # 读取路径将抛异常，故直接拒绝写入（日志如实，不谎报成功）。
+        if not embedding:
+            logger.warning(
+                f"Milvus Lite 空向量防御: memory_id={memory_id}, "
+                f"原因=embedding 为空（None 或空序列），未写入"
+            )
+            return False
+
         try:
+            # 写入幂等：Milvus insert 为追加语义，重复写入会产生重复实体，
+            # 故插入前先删除同 memory_id 的既存实体（先删后插），使同一 memory_id 至多保留 1 个实体。
+            # 无旧实体时 delete_by_memory_id 返回 False 属正常，不作为失败处理。
+            await self.delete_by_memory_id(memory_id)
+
             data = [
                 {
                     "id": memory_id,

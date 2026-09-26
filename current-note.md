@@ -1,8 +1,9 @@
 # 当前交接状态（current-note.md）
 
-> 最后更新：2026-09-25 23:33
-> 状态：**去重键空 content 误合并修复已闭合（模块1-20260925-03：复现确认 → 修复 + 单测 → GN-004 警示放行（无 SOFT_BLOCK）→ 观察项已处置；定向 11 / units 138 / contracts 620 passed）。本轮与遗留批处理改动同处工作区，均未 git 提交。**
-> （此前状态：遗留项批处理已交付（P1 关键词 2 字滑窗召回 / P2 向量写入链路 / P3 配置类型规整 / P5 会话路径 / compose 服务名；GN-004 第六轮警示放行 + 人类 [V] 批准交付 + 验证产物已清理）。该轮改动尚未 git 提交。）
+> 最后更新：2026-09-26 01:10
+> 状态：**后台去重线程与连接池关闭竞态（`tests/units` 偶发原生崩溃）修复已实施（模块1-20260926-01：复现定位 → 实验（含失败实验如实登记，观察者效应导致因果不可统计证明）→ 最小修复 `manager.py` 3 处 → 确定性单测 3 passed + 单文件 12 次 0 崩溃 + 整目录 3 次 0 崩溃（141 passed）+ contracts 620 + simulation 50+1）；待 GN-004 与人类 [V]。注意：工作区并行存在他轮改动（去重键修复 + 遗留批处理），均未 git 提交。**
+> （此前状态：**去重键空 content 误合并修复已闭合（模块1-20260925-03：复现确认 → 修复 + 单测 → GN-004 警示放行（无 SOFT_BLOCK）→ 观察项已处置；定向 11 / units 138 / contracts 620 passed）**）
+> （此前状态：遗留项批处理已交付（P1 关键词 2 字滑窗召回 / P2 向量写入链路 / P3 配置类型规整 / P5 会话路径 / compose 服务名；GN-004 第六轮警示放行 + 人类 [V] 批准交付 + 验证产物已清理））
 > （此前状态：记忆召回相关度门控修复已交付（GN-004 五轮审查 + 人类 [V] 批准，commit `d8de6b4`））
 > （此前状态：**全项目体检与修复批次闭合（2026-08-28：s0602 技术债扫描 + TRAE-code-review 全项目审查 43 项问题双 agent 验证 CONFIRMED + 6 并行修复批次全部完成 + 技术债治理 + 全量回归 1040 passed 0 failed + 前端 303 passed）**）
 > （此前状态：spec 实施已交付 + gemma4 工具调用全链路修复 + 多轮工具调用端到端验证通过 + 语义搜索失效修复 + 工具调用失败根因修复 + 隐藏系统提示词设计原则修正 + 摘要后聊天记录不更新修复 + write_long_term_memory 工具卡住修复 + 配置热更新与组件重初始化 + 上下文摘要保留数量配置项 + 前端消息渲染重构 + RADIX-Lite spec 全生命周期闭合 + 文档全量重写 v3.0.0 + Weaviate per-agent collection 改造闭合 + 文档增量更新 v3.1.0）
@@ -1731,8 +1732,8 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
 | P5 会话路径尊重覆盖 | 已闭合 |
 | compose 补 `--served-model-name` | 已闭合（上轮 L1687 段登记的「另案治理项」已完成） |
 | 本轮变更文档 GN-004 审查 + 人类 [V] | 已闭合（GN-004 第六轮：警示放行，1 项软阻断已补登闭合；人类 [V]：**批准交付**） |
-| 其他向量后端（chroma / milvus / qdrant）同类防御 | 未闭合（登记） |
-| `tests/units` **整目录**偶发原生崩溃（既有竞态，`test_router.py`，2 次中 1 次；逐文件 137 passed 全绿） | 未闭合（登记，建议单独立项） |
+| 其他向量后端同类防御（chroma / milvus_lite） | **已闭合**（2026-09-26：`20260926_模块1_修复向量后端空向量与幂等缺口.md`；chroma/milvus 补空向量防御 + 先删后插幂等，weaviate `update_memory_vector` 去冗余删除；单测 14 passed、contracts 620 保持。注：仓库无 `qdrant_store.py`，qdrant 无独立实现文件，未涉及） |
+| `tests/units` **整目录**偶发原生崩溃（既有竞态，`test_router.py`） | **已闭合（结构性修复）**：`20260926_模块1_修复后台去重线程与连接池关闭竞态.md`；修复后 12 次单文件 + 3 次整目录 0 崩溃。**注：崩溃的统计证明属「当前不可判定」**（观察者效应），已以确定性单测（4 passed）替代 |
 | P2 空向量场景的真实向量库实验 | 未闭合（避免无授权写入向量库，以 9 个 mock 单测 + 静态核验为证据） |
 | 本轮验证产物 `.dbg/`（`p1verify/` + `x/context`，约 1.33 MB） | 已闭合（人类授权后已清理；关键结论已落两份变更文档） |
 | P1 分支 B 的精度代价（命中 1 个常用词元即得 0.667，可能召回"仅共享常用词"的记忆） | 已登记为有意取舍（详见模块1 变更文档「已知精度代价与边界」） |
@@ -1755,7 +1756,62 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
 ### 接续入口
 
 1. 主线程对本次 6 个生产文件 + 2 份变更文档 + 2 个新测试文件拉起 GN-004 独立审查，并按 rules-0 §四-5 拉起人类 [V] 裁决。
-2. 新登记遗留（详见两份变更文档「未闭合项」）：其他向量后端同类防御、`weaviate_store.update_memory_vector` 的一次冗余删除、`config/env.py` 的 `server.*`/`system.*` 双键并存、`tests/units` 整目录偶发原生崩溃。
+2. 新登记遗留（详见两份变更文档「未闭合项」）：其他向量后端同类防御、`weaviate_store.update_memory_vector` 的一次冗余删除、`config/env.py` 的 `server.*`/`system.*` 双键并存、`tests/units` 整目录偶尔原生崩溃（已于 2026-09-26 修复，见下节）。
+
+---
+
+## 〇、最新变更（2026-09-26 01:10）：修复后台去重线程与连接池关闭竞态（原生崩溃）
+
+> 关联变更文档：`.trae/documents/20260926_模块1_修复后台去重线程与连接池关闭竞态.md`（issue_id `模块1-20260926-01`）
+> 关联调试记录：`debug-pytest-teardown-segv.md`（sessionId `pytest-teardown-segv`）
+> 授权来源：人类「继续」→ 本轮优先处理已登记的最高优先级项（`tests/units` 偶发原生崩溃，属测试闸门隐患）
+
+### 工程过程
+
+1. 复现与定位：`test_router.py` 单文件 **3/5** 崩、整目录 **1/3** 崩；三个用例**各自单跑 0/4**；
+   faulthandler 崩点固定在**第 2 个用例 PASSED 之后**（fixture teardown / 下一用例 setup 窗口）。
+2. 代码定位根因（结构性）：`write_memory` 每次 `_start_async_dedup_check` 都 spawn **不可追踪的 `DedupCheck` daemon 线程**，
+   该 worker 随后经 `get_memory` / `delete_memory` / 去重检索使用**本线程自己的 sqlite 连接**；
+   而 `shutdown()` **完全不等待**它即 `close_all_connections()`（关闭并清空连接池）→ sqlite3 C 层 use-after-free。
+3. 实验（**含失败实验，如实登记**）：HTTP 探针组 0/4、禁用去重线程组 0/6、而**对照组也无插件 0/4**（基线原为 3/5）
+   → 崩溃率随负载/时序剧烈波动 + 探针的观察者效应 → **因果无法统计证明，实验失去分辨力**。
+4. 战略转向（经 AdvisorTool 建议）：放弃"统计证明归因"，改为**消除确定性的结构风险**。
+5. 按 rules-6 先写变更文档 → 最小修复 `manager.py` 三处（登记表 / worker 早退 + 自我注销 / `shutdown` 等待）。
+6. 验证：新增确定性单测 3 passed；`test_router.py` 连续 12 次 **0 崩溃**；整目录连续 3 次 **0 崩溃（141 passed）**；
+   `tests/contracts` 620、`tests/simulation` 50+1 无回归。
+
+### 交接状态
+
+| 项 | 状态 |
+|----|------|
+| 根因定位（结构性 use-after-free） | 已闭合 |
+| 最小修复（`manager.py` 3 处） | 已闭合 |
+| 确定性单测（`test_dedup_thread_lifecycle.py`） | 已闭合（4 passed；含「早退也须注销」「超时仍有界」两例，由 GN-004 第七轮要求补强） |
+| 崩溃率置信度检查（12 次 + 3 次整目录） | 已闭合（0 崩溃） |
+| 崩溃的**统计证明** | **当前不可判定**（观察者效应，已如实登记，以确定性断言替代） |
+| H3：`_run_async_sync` 共享 executor 路径未单独排除 | 未闭合（观察清单） |
+| 本轮变更文档 GN-004 审查 + 人类 [V] | 已闭合（GN-004 第七轮：警示放行 → 2 软阻断修正 → **复审通过**；人类 [V]：**批准交付**） |
+| 本轮调试产物 `.dbg/segv/` + 7777 端口 Debug Server | 已闭合（人类授权后已清理；结论落变更文档与 `debug-pytest-teardown-segv.md`） |
+
+### 最终结果
+
+**改动**：`backend/core/memory/manager.py` 三处 —— `__init__` 加 `_dedup_threads` 登记表；
+`_start_async_dedup_check` 加 `_stop_event` 早退 + 先登记后启动 + worker `finally` 自我注销；
+`shutdown()` 新增 `_join_dedup_threads(timeout=5)` 并在 `close_all_connections()` **之前**调用。
+新增测试 `tests/units/test_dedup_thread_lifecycle.py`（3 用例，确定性断言：关闭晚于 worker 结束 / 关闭中 worker 不访问 DB / 登记表不泄漏）。
+
+**关键数字**：修复前 `test_router.py` 最高 **3/5** 崩溃 → 修复后 **0/12**；整目录修复前 **1/3** → 修复后 **0/3（141 passed）**。
+
+**归因修正**：`current-note.md` 2026-07-16 段把同一退出码归为「C 扩展问题」；本轮在**未更换 Python 版本**的前提下显著改善，
+且机制可静态确证 → 正确归因是**业务侧线程生命周期缺陷**（fire-and-forget 守护线程 vs 连接池关闭竞态）。
+
+**未彻底闭环**：崩溃的必然复现路径不可构造（观察者效应），故无法给出统计证明；已用确定性单测锁定机制。
+
+### 接续入口
+
+1. 主线程对 `manager.py` + 新测试文件 + 变更文档 + 调试记录拉起 GN-004 独立审查，并按 rules-0 §四-5 拉起人类 [V]。
+2. 待人类授权后清理 `.dbg/segv/`（探针插件）并停止 7777 端口 Debug Server。
+3. 观察清单（非阻塞）：H3 的共享 executor 路径；其他向量后端同类防御；`config/env.py` 双键并存。
 
 ---
 

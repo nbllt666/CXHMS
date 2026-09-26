@@ -11,10 +11,14 @@
        ``insert`` 从未被调用。
     5. ``delete_by_memory_id`` 删干净：循环删除所有匹配 memory_id 的对象，
        返回值语义为「删过至少 1 个 → True；一个都没有 → False」。
+    6. chroma 后端：空向量防御（不调用 ``collection.add``）；正常写入「先删后插」。
+    7. milvus_lite 后端：空向量防御（不调用 ``client.insert``）；正常写入「先删后插」。
+    8. weaviate ``update_memory_vector``：幂等下沉在 ``add_memory_vector`` 内，
+       不再手动重复删除。
 
 设计原则：
-    - 全部使用 ``unittest.mock`` 伪造，**绝不向真实 Weaviate 写入任何对象**。
-    - 裸实例用 ``object.__new__`` 构造，不触发 SQLite / Weaviate 真实初始化。
+    - 全部使用 ``unittest.mock`` 伪造，**绝不向真实 Weaviate / Chroma / Milvus 写入任何对象**。
+    - 裸实例用 ``object.__new__`` 构造，不触发 SQLite / 向量库真实初始化。
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -80,6 +84,43 @@ def _make_fake_store(collection: MagicMock):
     client.collections.get.return_value = collection
     store._client = client
     return store, client
+
+
+def _make_fake_chroma_store(collection: MagicMock):
+    """构造裸 ChromaVectorStore（``_collection`` 用 MagicMock 伪造，不连真实服务）。
+
+    ``add_memory_vector`` / ``delete_by_memory_id`` 仅依赖 ``_collection`` 与 ``_client`` 判空，
+    故只需提供伪 collection（含 add / delete）。
+
+    Args:
+        collection: 伪 collection（含 ``add`` / ``delete``）。
+
+    Returns:
+        ChromaVectorStore 裸实例。
+    """
+    from backend.core.memory.chroma_store import ChromaVectorStore
+
+    store = object.__new__(ChromaVectorStore)
+    store._collection = collection
+    store._client = MagicMock()
+    return store
+
+
+def _make_fake_milvus_store(client: MagicMock):
+    """构造裸 MilvusLiteVectorStore（``_client`` 用 MagicMock 伪造，不连真实服务）。
+
+    Args:
+        client: 伪 MilvusClient（含 ``insert`` / ``delete``）。
+
+    Returns:
+        MilvusLiteVectorStore 裸实例。
+    """
+    from backend.core.memory.milvus_lite_store import MilvusLiteVectorStore
+
+    store = object.__new__(MilvusLiteVectorStore)
+    store.collection_name = "memory_vectors"
+    store._client = client
+    return store
 
 
 # --------------------------------------------------------------------------- #
@@ -213,3 +254,112 @@ async def test_delete_by_memory_id_returns_false_when_nothing_found():
 
     assert result is False
     collection.data.delete_by_id.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# 6: chroma 后端空向量防御 + 先删后插
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_chroma_rejects_empty_embedding():
+    """chroma 空向量防御：``embedding=None`` 返回 False 且 collection.add 从未被调用。"""
+    collection = MagicMock()
+    store = _make_fake_chroma_store(collection)
+
+    result = await store.add_memory_vector(memory_id=1, content="x", embedding=None)
+
+    assert result is False
+    collection.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_chroma_deletes_before_add():
+    """chroma 先删后插：delete_by_memory_id 的调用发生在 collection.add 之前，返回 True。"""
+    calls = []
+    collection = MagicMock()
+    collection.delete.side_effect = lambda **kwargs: calls.append("delete")
+    collection.add.side_effect = lambda **kwargs: calls.append("add")
+
+    store = _make_fake_chroma_store(collection)
+
+    result = await store.add_memory_vector(
+        memory_id=1, content="x", embedding=[0.1] * 4
+    )
+
+    assert result is True
+    collection.add.assert_called_once()
+    collection.delete.assert_called_once()
+    assert calls == ["delete", "add"], "chroma 必须先删后插"
+
+
+# --------------------------------------------------------------------------- #
+# 7: milvus_lite 后端空向量防御 + 先删后插
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_milvus_rejects_empty_embedding():
+    """milvus_lite 空向量防御：``embedding=None`` 返回 False 且 client.insert 从未被调用。"""
+    client = MagicMock()
+    store = _make_fake_milvus_store(client)
+
+    result = await store.add_memory_vector(memory_id=1, content="x", embedding=None)
+
+    assert result is False
+    client.insert.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_milvus_deletes_before_insert():
+    """milvus_lite 先删后插：client.delete 的调用发生在 client.insert 之前，返回 True。"""
+    calls = []
+    client = MagicMock()
+    client.delete.side_effect = lambda **kwargs: calls.append("delete")
+    client.insert.side_effect = lambda **kwargs: calls.append("insert")
+
+    store = _make_fake_milvus_store(client)
+
+    result = await store.add_memory_vector(
+        memory_id=1, content="x", embedding=[0.1] * 4
+    )
+
+    assert result is True
+    client.insert.assert_called_once()
+    client.delete.assert_called_once()
+    assert calls == ["delete", "insert"], "milvus_lite 必须先删后插"
+
+
+# --------------------------------------------------------------------------- #
+# 8: weaviate update_memory_vector 不再重复删除
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_weaviate_update_does_not_double_delete():
+    """update_memory_vector：delete_by_memory_id 未被直接调用（幂等下沉在 add 内），
+    add_memory_vector 被调用 1 次且 agent_id 透传正确。"""
+    store = object.__new__(_import_weaviate_store())
+    store._client = MagicMock()
+    store.delete_by_memory_id = AsyncMock(return_value=True)
+    store.add_memory_vector = AsyncMock(return_value=True)
+
+    result = await store.update_memory_vector(
+        memory_id=7,
+        content="更新内容",
+        embedding=[0.1] * 4,
+        metadata={"agent_id": "agent-b"},
+    )
+
+    assert result is True
+    store.delete_by_memory_id.assert_not_called()
+    store.add_memory_vector.assert_awaited_once()
+    call_kwargs = store.add_memory_vector.call_args.kwargs
+    assert call_kwargs["agent_id"] == "agent-b", "metadata 中的 agent_id 应透传到 add"
+
+
+def _import_weaviate_store():
+    """延迟导入 WeaviateVectorStore 类型（供 object.__new__ 使用）。"""
+    from backend.core.memory.weaviate_store import WeaviateVectorStore
+
+    return WeaviateVectorStore
