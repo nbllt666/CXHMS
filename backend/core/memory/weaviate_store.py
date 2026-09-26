@@ -506,25 +506,30 @@ class WeaviateVectorStore:
                         if existing is None:
                             if self.embedding_model:
                                 embedding = await self.embedding_model.get_embedding(content)
-                                await self.add_memory_vector(
+                                ok = await self.add_memory_vector(
                                     memory_id=memory_id,
                                     content=content,
                                     embedding=embedding,
                                     metadata=memory,
                                     agent_id=mem_agent_id,
                                 )
-                                return "created", memory_id
+                                # 未写入（空向量防御等返回 False）如实归为 error，不虚报 synced（对齐 chroma 口径）
+                                return ("created" if ok else "error"), memory_id
+                            # embedding 模型缺失：无法生成向量，如实归为 error（对齐 chroma 口径；GN-004 第十轮 R-1）
+                            return "error", memory_id
                         elif existing.get("content") != content:
                             if self.embedding_model:
                                 embedding = await self.embedding_model.get_embedding(content)
-                                await self.update_memory_vector(
+                                ok = await self.update_memory_vector(
                                     memory_id=memory_id,
                                     content=content,
                                     embedding=embedding,
                                     metadata=memory,
                                     agent_id=mem_agent_id,
                                 )
-                                return "updated", memory_id
+                                return ("updated" if ok else "error"), memory_id
+                            # embedding 模型缺失：无法生成向量，如实归为 error（对齐 chroma 口径；GN-004 第十轮 R-1）
+                            return "error", memory_id
 
                         return None, memory_id
 

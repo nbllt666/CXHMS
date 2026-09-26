@@ -137,6 +137,13 @@ class QdrantVectorStore(VectorStoreBase):
     ):
         if not self._client:
             return False
+        if not embedding:
+            # 空向量防御：不写入无向量对象（与 weaviate / chroma / milvus 口径一致；
+            # qdrant 用 upsert 天然幂等，无需先删后插）
+            logger.warning(
+                f"Qdrant 空向量防御: memory_id={memory_id}, 原因=embedding 为空（None 或空序列），未写入"
+            )
+            return False
 
         try:
             from qdrant_client.models import PointStruct
@@ -288,27 +295,42 @@ class QdrantVectorStore(VectorStoreBase):
                         logger.info(f"向量不存在，创建: memory_id={memory_id}")
                         if self.embedding_model:
                             embedding = await self.embedding_model.get_embedding(content)
-                            await self.add_memory_vector(
+                            success = await self.add_memory_vector(
                                 memory_id=memory_id,
                                 content=content,
                                 embedding=embedding,
                                 metadata=memory,
                             )
-                            result.synced += 1
-                            result.details.append(f"创建: {memory_id}")
+                            if success:
+                                result.synced += 1
+                                result.details.append(f"创建: {memory_id}")
+                            else:
+                                # 未写入（空向量防御等返回 False）：如实计 errors，不虚报 synced（对齐 chroma 口径）
+                                result.errors += 1
+                        else:
+                            # embedding 模型缺失：无法生成向量，如实计 errors（对齐 chroma 口径；GN-004 第十轮 R-1）
+                            result.errors += 1
                     elif existing.get("content") != content:
                         logger.info(f"内容不一致，更新: memory_id={memory_id}")
                         if self.embedding_model:
                             embedding = await self.embedding_model.get_embedding(content)
-                            await self.delete_by_memory_id(memory_id)
-                            await self.add_memory_vector(
+                            # qdrant 使用 upsert（同 id 覆盖，天然幂等），无需先删后插；
+                            # 原 delete 属冗余调用，且 delete 成功而 upsert 失败会「旧已删、新未写」（GN-004 第十轮 R-3）
+                            success = await self.add_memory_vector(
                                 memory_id=memory_id,
                                 content=content,
                                 embedding=embedding,
                                 metadata=memory,
                             )
-                            result.synced += 1
-                            result.details.append(f"更新: {memory_id}")
+                            if success:
+                                result.synced += 1
+                                result.details.append(f"更新: {memory_id}")
+                            else:
+                                # 未写入（空向量防御等返回 False）：如实计 errors，不虚报 synced（对齐 chroma 口径）
+                                result.errors += 1
+                        else:
+                            # embedding 模型缺失：无法生成向量，如实计 errors（对齐 chroma 口径；GN-004 第十轮 R-1）
+                            result.errors += 1
 
                 except Exception as e:
                     result.errors += 1

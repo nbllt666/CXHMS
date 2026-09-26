@@ -11,11 +11,14 @@
     ``server`` 为配置契约口径的键名（validation/repair 表与 public 契约测试均
     以 ``server.*`` 为准），``system`` 为 dataclass 字段名的历史命名。
 
-覆盖 4 组场景：
+覆盖 7 组场景：
     1) 仅 ``server`` 段 → 各字段被读到（等价性）；
     2) 仅 ``system`` 段 → 字段被读到（回归，修复前也应通过）；
     3) 两段并存 → ``server`` 同名键优先，且 ``system`` 独有字段不丢失；
-    4) 两段皆无 → 全部走默认值。
+    4) 两段皆无 → 全部走默认值；
+    5) ``server`` 段为非 dict + ``system`` 合法 → 不抛异常、system 字段仍生效（修复前 TypeError）；
+    6) 两段均为非 dict → 不抛异常、全部回退默认（修复前 TypeError）；
+    7) 段「显式存在但为空」记 warning、键不存在不告警（GN-004 第十轮 R-4）。
 
 设计原则：直接构造 raw dict 调用 ``CXHMSConfig.from_dict``（不触碰 config 单例），
 不依赖 yaml / 环境变量，保证用例确定性。
@@ -117,3 +120,47 @@ def test_no_section_uses_defaults():
     assert system.debug is False
     assert system.log_level == "INFO"
     assert system.workers == 1
+
+
+# --------------------------------------------------------------------------- #
+# 场景 5/6：非 dict 段防御（GN-004 第九轮 N-5）
+# --------------------------------------------------------------------------- #
+
+
+def test_non_dict_server_section_ignored_with_valid_system():
+    """``server`` 段为非 dict（标量）时：不抛异常，且合法的 ``system`` 段仍生效。
+
+    修复前：``**`` 展开非 dict 抛 ``TypeError``，整个配置加载失败。
+    """
+    system = _load({"server": 8090, "system": {"host": "7.7.7.7", "workers": 4}})
+    assert system.host == "7.7.7.7", "system 段不应因 server 非法而被丢弃"
+    assert system.workers == 4
+    # 非 dict 的 server 段被忽略 → 其未覆盖字段走默认值
+    assert system.port == 8001
+
+
+def test_non_dict_sections_fallback_to_defaults():
+    """两段均为非 dict（字符串 / 列表）时：不抛异常，全部回退默认值。"""
+    system = _load({"server": "8001", "system": ["x", "y"]})
+    assert system.host == "0.0.0.0"
+    assert system.port == 8001
+    assert system.debug is False
+    assert system.log_level == "INFO"
+    assert system.workers == 1
+
+
+def test_explicit_empty_section_logs_warning(caplog):
+    """R-4：段「显式存在但为空」（如 `server: ""`）也应记 warning；
+    而「键不存在」不告警（等价旧行为）。"""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="config.settings"):
+        system = _load({"server": ""})  # 显式空值
+
+    assert system.port == 8001  # 空值段被忽略 → 默认值
+    assert "配置段 server 不是字典" in caplog.text, "显式存在的非法段必须留痕"
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="config.settings"):
+        _load({})  # 键不存在
+    assert "不是字典" not in caplog.text, "键不存在不应告警（等价旧行为）"

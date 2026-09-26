@@ -243,27 +243,41 @@ class MilvusLiteVectorStore:
                         logger.info(f"向量不存在，创建: memory_id={memory_id}")
                         if self.embedding_model:
                             embedding = await self.embedding_model.get_embedding(content)
-                            await self.add_memory_vector(
+                            success = await self.add_memory_vector(
                                 memory_id=memory_id,
                                 content=content,
                                 embedding=embedding,
                                 metadata=memory,
                             )
-                            result.synced += 1
-                            result.details.append(f"创建: {memory_id}")
+                            if success:
+                                result.synced += 1
+                                result.details.append(f"创建: {memory_id}")
+                            else:
+                                # 未写入（空向量防御等返回 False）：如实计 errors，不虚报 synced（对齐 chroma 口径）
+                                result.errors += 1
+                        else:
+                            # embedding 模型缺失：无法生成向量，如实计 errors（对齐 chroma 口径；GN-004 第十轮 R-1）
+                            result.errors += 1
                     elif existing.get("content") != content:
                         logger.info(f"内容不一致，更新: memory_id={memory_id}")
                         if self.embedding_model:
                             embedding = await self.embedding_model.get_embedding(content)
                             await self.delete_by_memory_id(memory_id)
-                            await self.add_memory_vector(
+                            success = await self.add_memory_vector(
                                 memory_id=memory_id,
                                 content=content,
                                 embedding=embedding,
                                 metadata=memory,
                             )
-                            result.synced += 1
-                            result.details.append(f"更新: {memory_id}")
+                            if success:
+                                result.synced += 1
+                                result.details.append(f"更新: {memory_id}")
+                            else:
+                                # 未写入（空向量防御等返回 False）：如实计 errors，不虚报 synced（对齐 chroma 口径）
+                                result.errors += 1
+                        else:
+                            # embedding 模型缺失：无法生成向量，如实计 errors（对齐 chroma 口径；GN-004 第十轮 R-1）
+                            result.errors += 1
 
                 except Exception as e:
                     result.errors += 1

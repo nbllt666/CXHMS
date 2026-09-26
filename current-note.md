@@ -1,7 +1,7 @@
 # 当前交接状态（current-note.md）
 
-> 最后更新：2026-09-26 16:52
-> 状态：**竞态修复（模块1-20260926-01）+ GN-004 第八轮警示放行后的补强批次已交付**：向量后端防线（chroma/milvus 空向量 + 幂等）/ 配置 `server`·`system` 合并读取 / H3 判定与残留窗口加固（`skip_thread_ids`）均已落地，新增单测 14 + 4 + 6 passed；整目录 **153 passed 0 崩溃**（含本轮新增第 6 例；此前 152 × 3 次 0 崩溃）、contracts 620、simulation 50+1。**本轮产出已提交 `6884301`**（另：`875219a` 遗留项批处理、`d8de6b4` 门控，均已提交——此前头部"均未 git 提交"的描述已失效）；本轮修正 4 文件（`manager.py` 注释/注解、本 note、`debug-memory-recall-zero-relevance.md` §9、`test_dedup_thread_lifecycle.py` 新增用例）已获批准并提交 `645afd0`；`.dbg/` 实验产物已清理。**人类 [V] 已裁决（16:52）：批准交付 + 授权清理 `.dbg/` 全部产物 + 批准现在提交**；GN-004 第九轮警示放行（无 SOFT_BLOCK）。本轮全部闭合。
+> 最后更新：2026-09-26 17:36
+> 状态：**竞态修复（模块1-20260926-01）+ GN-004 第八轮警示放行后的补强批次已交付**：向量后端防线（chroma/milvus 空向量 + 幂等）/ 配置 `server`·`system` 合并读取 / H3 判定与残留窗口加固（`skip_thread_ids`）均已落地，新增单测 14 + 4 + 6 passed；整目录 **153 passed 0 崩溃**（含本轮新增第 6 例；此前 152 × 3 次 0 崩溃）、contracts 620、simulation 50+1。**本轮产出已提交 `6884301`**（另：`875219a` 遗留项批处理、`d8de6b4` 门控，均已提交——此前头部"均未 git 提交"的描述已失效）；本轮修正 4 文件（`manager.py` 注释/注解、本 note、`debug-memory-recall-zero-relevance.md` §9、`test_dedup_thread_lifecycle.py` 新增用例）已获批准并提交 `645afd0`；`.dbg/` 实验产物已清理。**人类 [V] 已裁决（16:52）：批准交付 + 授权清理 `.dbg/` 全部产物 + 批准现在提交**；GN-004 第九轮警示放行（无 SOFT_BLOCK）。该轮全部闭合。**其后新批次（17:36）：N-4/N-5 挂账观察项已修复（同步计数虚报横向拉平 milvus/weaviate/qdrant + 配置段非 dict 防御），GN-004 第十轮警示放行（无 SOFT_BLOCK）；人类 [V] 第一轮裁决「要求修正 → R-1+R-3+R-4 三项全修」已全部完成并经 GN-004 第十一轮复审（警示放行 / 无 SOFT_BLOCK）；待第二轮 [V]（交付 + 提交裁决，人类已指示暂不提交）。**
 > （此前状态：**去重键空 content 误合并修复已闭合（模块1-20260925-03：复现确认 → 修复 + 单测 → GN-004 警示放行（无 SOFT_BLOCK）→ 观察项已处置；定向 11 / units 138 / contracts 620 passed）**）
 > （此前状态：遗留项批处理已交付（P1 关键词 2 字滑窗召回 / P2 向量写入链路 / P3 配置类型规整 / P5 会话路径 / compose 服务名；GN-004 第六轮警示放行 + 人类 [V] 批准交付 + 验证产物已清理））
 > （此前状态：记忆召回相关度门控修复已交付（GN-004 五轮审查 + 人类 [V] 批准，commit `d8de6b4`））
@@ -1863,6 +1863,58 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
 1. ~~读 `.dbg/vecprobe/evidence.md` 落后台实验结论~~ **已完成（16:30）**：`evidence.md` 已补齐（主线程接手），§9 已追加至 `debug-memory-recall-zero-relevance.md`，P2/P4 已关闭。
 2. GN-004 复审（resume `d7750a5c-e119-4c2b-804b-10e329a78c3b`）。
 3. 人类 [V]（AskUserQuestion：交付批准 + `.dbg/` 清理授权）。
+
+---
+
+## 〇、最新变更（2026-09-26 17:36）：N-4/N-5 挂账观察项修复（同步计数虚报 / 配置段非 dict 防御）
+
+> 关联变更文档：`.trae/documents/20260926_模块1_修复同步计数虚报.md`（模块1-20260926-03）、
+> `.trae/documents/20260926_模块0_加固配置段非字典防御.md`（模块0-20260926-02）
+> 来源：GN-004 第九轮观察项 N-4 / N-5（人类指令「先处置 N-4 和 N-5 两项挂账观察」）
+> GN-004：第十轮警示放行（无 SOFT_BLOCK）→ R-1~R-5 观察项，R-2/R-4 已处置、R-1/R-3 登记、R-5 即本节补写
+
+### 工程过程
+
+1. 调查（含横向排查）：N-4 同源缺陷不只在 milvus——**weaviate** 与 **qdrant** 同样存在；
+   qdrant 实现在 `vector_store.py`（`QdrantVectorStore`，与基类同文件），**推翻了此前「qdrant 无独立实现」的误判**；chroma 写法正确（作对齐参照）。
+2. s0401 写前闸门判定 → `ALLOWED`（普通业务模块 + 工程交接锚点格式合规）→ 按 rules-6 先写两份变更文档。
+3. 实施：四处计数统一为「取返回值 → 成功计 synced / 失败计 errors」（milvus 2 处 / qdrant 2 处 / weaviate 1 处复用既有 `"error"` 汇总分支）；
+   qdrant `add_memory_vector` 补空向量防御（upsert 天然幂等，不加先删后插）；N-5 新增 `_as_section_dict` 兜底非 dict 段（warning + 回退默认）。
+4. 测试：修复前对照 **6 failed, 6 passed**（4 例 synced 虚报为 1 + 2 例 TypeError 实锤）→ 修复后定向 30 passed；
+   回归 units **165 passed** / contracts **620** / simulation **50+1**。
+5. GN-004 第十轮（resume `d7750a5c`）：**警示放行 / 无 SOFT_BLOCK**；观察项 R-1~R-5。
+6. **人类 [V] 裁决（17:36）：要求修正 → 指定「R-1 + R-3 + R-4 三项全修」，暂不提交 git** → 已全部处置：
+   - R-1：milvus / qdrant / weaviate 在 `embedding_model` 缺失时改为计 `errors`（原静默跳过），与 chroma 对齐（+3 参数化测试）
+   - R-3：qdrant 更新分支移除冗余 `delete_by_memory_id`（upsert 幂等），并消除「旧已删、新未写」缺口（+1 测试）
+   - R-4：配置段引入 `_SECTION_MISSING` 哨兵，「显式存在但非 dict」必告警、「键不存在」静默（+1 双向测试）
+   - R-2（qdrant 测试判别力）此前已顺手处置；R-5（note 补写）本节即完成
+   - 回归：定向 **35 passed**；units **170 passed**；contracts **620**；simulation **50+1**
+
+### 交接状态
+
+| 项 | 状态 |
+|----|------|
+| N-4 同步计数虚报（milvus / weaviate / qdrant 横向拉平） | 已闭合（9 例新单测；未闭合项已登记） |
+| N-5 配置段非 dict 防御 | 已闭合（2 例新单测 + 620 契约回归未回归） |
+| qdrant 空向量防御补齐（附带发现） | 已闭合（mock + `caplog` 断言；真实服务未验证，已登记） |
+| 历史文档「qdrant 无独立实现」更正 | 已闭合（`20260926_模块1_修复向量后端空向量与幂等缺口.md` 范围澄清节） |
+| GN-004 第十轮 R-1~R-5 | **R-1 / R-2 / R-3 / R-4 已修**（人类指定三项全修 + 判别力改进）；R-5（本 note 补写）已闭合 |
+| 人类 [V] 第一轮 | 已裁决（17:36）：**要求修正 → 指定「R-1 + R-3 + R-4 三项全修」**；暂不提交 |
+| GN-004 第十一轮复审 | **已闭合**（警示放行 / 无 SOFT_BLOCK；R-1/R-3/R-4 三项修正经独立核验真实落地；O-1~O-3 观察项，O-1 已顺手处置） |
+| 人类 [V] 第二轮（交付 + 提交裁决） | 待拉起 |
+
+### 最终结果
+
+- 产物：变更文档 ×2（已完成）、代码 4 文件（`milvus_lite_store.py` / `weaviate_store.py` / `vector_store.py` / `config/settings.py`）、
+  测试 3 文件（新增 15 例并升级 1 例判别力）。
+- 验证结论：修复前对照实锤（6 failed）→ 修正后定向 **35 passed**；units **170** / contracts 620 / simulation 50+1；`synced` 消费点无逻辑依赖（仅日志/透传）。
+- 未提交（人类裁决「暂不提交」；待修正后复审 + 第二轮 [V] 提交裁决）。
+
+### 接续入口
+
+1. GN-004 第十一轮复审（本修正批次的 R 项处置）→ 人类 [V] 第二轮（交付 + 提交裁决）。
+2. 挂账观察（登记，未修）：真实后端端到端验证（qdrant / chroma / milvus）、「先删后插」异常语义
+   （chroma / milvus 侧仍在，qdrant 侧已因 R-3 消除）。
 
 ---
 

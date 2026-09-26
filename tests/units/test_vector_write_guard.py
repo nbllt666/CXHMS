@@ -15,6 +15,8 @@
     7. milvus_lite 后端：空向量防御（不调用 ``client.insert``）；正常写入「先删后插」。
     8. weaviate ``update_memory_vector``：幂等下沉在 ``add_memory_vector`` 内，
        不再手动重复删除。
+    9. qdrant 后端：空向量防御（``embedding=None`` 时不调用 ``client.upsert``；
+       实现位于 vector_store.py）。
 
 设计原则：
     - 全部使用 ``unittest.mock`` 伪造，**绝不向真实 Weaviate / Chroma / Milvus 写入任何对象**。
@@ -356,6 +358,38 @@ async def test_weaviate_update_does_not_double_delete():
     store.add_memory_vector.assert_awaited_once()
     call_kwargs = store.add_memory_vector.call_args.kwargs
     assert call_kwargs["agent_id"] == "agent-b", "metadata 中的 agent_id 应透传到 add"
+
+
+# --------------------------------------------------------------------------- #
+# 9: qdrant 后端空向量防御（实现位于 vector_store.py 的 QdrantVectorStore）
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_qdrant_rejects_empty_embedding(caplog):
+    """qdrant 空向量防御：``embedding=None`` 返回 False、``client.upsert`` 未被调用，
+    且日志出现防御 warning。
+
+    判别力说明（GN-004 第十轮 R-2）：仅断言 ``upsert`` 未调用在本仓环境**无判别力**——
+    ``qdrant_client`` 未安装时，修复前也会因 ``PointStruct`` 导入失败
+    （ModuleNotFoundError 被 except 捕获）而不调用 upsert。追加 ``caplog`` 对防御
+    warning 的断言后，「修复前走 except 分支、无该 warning」→ 必失败，判别力恢复。
+    """
+    import logging
+
+    from backend.core.memory.vector_store import QdrantVectorStore
+
+    store = object.__new__(QdrantVectorStore)
+    store.collection_name = "memory_vectors"
+    client = MagicMock()
+    store._client = client
+
+    with caplog.at_level(logging.WARNING, logger="backend.core.memory.vector_store"):
+        result = await store.add_memory_vector(memory_id=1, content="x", embedding=None)
+
+    assert result is False
+    client.upsert.assert_not_called()
+    assert "Qdrant 空向量防御" in caplog.text, "必须记录防御 warning（判别力锚点）"
 
 
 def _import_weaviate_store():

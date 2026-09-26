@@ -172,6 +172,34 @@ def coerce_config_types(raw: Dict[str, Any], model_cls: type) -> Dict[str, Any]:
     return result
 
 
+# 哨兵：用于区分「键不存在」（不告警）与「键存在但值非法」（告警）（GN-004 第十轮 R-4）
+_SECTION_MISSING = object()
+
+
+def _as_section_dict(value: Any, section_name: str) -> Dict[str, Any]:
+    """把配置段规范为 dict；非 dict 的值忽略并记 warning。
+
+    配置段（如 ``server`` / ``system``）若被写成非 dict，直接 ``**`` 展开会抛
+    ``TypeError`` 并导致整个配置加载失败；此处回退为「该段不存在」语义
+    （配合 SystemConfig 默认值），并以 warning 如实留痕。
+
+    Args:
+        value: 配置段原始值；键不存在时传 ``_SECTION_MISSING`` 哨兵
+        section_name: 段名（仅用于 warning 文案）
+
+    Returns:
+        dict 段原样返回；非 dict（含显式空值）返回空 dict。
+        「键不存在」静默，「键存在但非 dict」（含 ``""`` / ``[]`` / ``None`` 显式赋值）均记 warning
+    """
+    if isinstance(value, dict):
+        return value
+    if value is not _SECTION_MISSING:
+        logger.warning(
+            f"配置段 {section_name} 不是字典（实际 {type(value).__name__}），已忽略"
+        )
+    return {}
+
+
 @dataclass
 class ModelConfig:
     provider: str = "ollama"
@@ -721,7 +749,10 @@ class CXHMSConfig:
         # validation/repair 表），system 为历史字段名；二者合并读取，server 同名键优先，
         # 避免两段并存时 system 段独有字段被整体丢弃
         server_data = coerce_config_types(
-            {**(data.get("system") or {}), **(data.get("server") or {})},
+            {
+                **_as_section_dict(data.get("system", _SECTION_MISSING), "system"),
+                **_as_section_dict(data.get("server", _SECTION_MISSING), "server"),
+            },
             SystemConfig,
         )
         return cls(
