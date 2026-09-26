@@ -520,3 +520,35 @@ id IN (1414,1415) 行 = []（期望 []）
 - **最终结果**：collection `CXHMSMemory` 对象数恢复为 **13**，1414/1415 与全部 6 类测试内容均无残留。
 - **产出物**：`.dbg/reallink/cleanup_weaviate_verify_objects.py`、`cleanup_verify_report.txt`、
   `cleanup_verify.stdout.log`。
+
+---
+
+## 附加验证（2026-09-26）：embedding 失败路径「真实 weaviate 零写入」实验 + P2/P4 未闭合项关闭
+
+> 本节为**仅追加**记录。目的：对第 7.5 / 8.6 节登记的未闭合项（P2：embedding 失败仍静默写入且日志谎报；P4：`insert` 非 upsert 导致重复插入）做**真实环境实证关闭**。
+> 完整证据：`.dbg/vecprobe/evidence.md`（含原始产物清单与三时点计数）。
+
+### 9.1 工程过程
+
+| 顺序 | 动作 | 结果 |
+|------|------|------|
+| 1 | 探针脚本（真实 `VLLMClient` 模型名指错 → HTTP 404 → `embedding=None`；真实 weaviate；db 用副本 `.dbg/vecprobe/memories.db`） | `.dbg/vecprobe/probe_no_vector_write.py` |
+| 2 | 写前基线（只读计数） | `COUNT[CXHMSMemory] = 13`（`baseline_raw.txt`，15:55） |
+| 3 | `write_memory`（内部触发 `_sync_vector_for_memory`）+ 直接调用取返回值 | manager 层：`向量同步跳过（embedding 为空）` + `返回 False`；store 层：`add_memory_vector(None/[]) -> False` |
+| 4 | 写后计数 | `vectors_count=13`（与基线相同，无 `memory_id=1410` 对象） |
+| 5 | 实验后复核（30 分钟后，独立执行只读计数） | `COUNT = 13`，uuid 清单逐条一致，仍无 1410 |
+
+### 9.2 未闭合项关闭判定
+
+| 项 | 原登记 | 现状 | 判定 |
+|----|--------|------|------|
+| P2（embedding 失败静默写入 + 日志谎报成功） | 7.5 / 8.6 未闭合 | 本次实验：两道防线均拦截且**日志如实**（"跳过/未写入"，无"同步成功"虚报）；真实 weaviate 零写入 | **已闭合**（修复见 `20260925_模块1_修复向量写入与关键词召回.md`，本次为真实环境实证） |
+| P4（`insert` 非 upsert → 重复插入） | 7.5 / 8.6 未闭合 | 存储层幂等已下沉（插入前先 `delete_by_memory_id`），weaviate / chroma / milvus_lite 三后端横向拉平（见 `20260926_模块1_修复向量后端空向量与幂等缺口.md`） | **已闭合**（mock 单测锁行为；真实环境重复写入场景未端到端构造，如实标注） |
+
+### 9.3 交接状态与最终结果
+
+- **交接状态**：P2 已闭合（真实环境实证）；P4 已闭合（代码层面 + mock 单测，真实重复写入未构造）。
+- **最终结果**：真实 weaviate 在 embedding 失败路径下零写入（三时点计数恒 13）；日志如实。
+- **产出物**：`.dbg/vecprobe/`（probe 脚本 / 基线 / 运行日志 / stdout / evidence.md）。
+- **补偿说明**：本节由主线程撰写（原后台 subagent 完成脚本执行后未产出 evidence.md）；
+  证据全部来自既有原始产物，未做任何清理或删改。

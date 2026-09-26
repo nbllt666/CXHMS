@@ -1,7 +1,7 @@
 # 当前交接状态（current-note.md）
 
-> 最后更新：2026-09-26 01:10
-> 状态：**后台去重线程与连接池关闭竞态（`tests/units` 偶发原生崩溃）修复已实施（模块1-20260926-01：复现定位 → 实验（含失败实验如实登记，观察者效应导致因果不可统计证明）→ 最小修复 `manager.py` 3 处 → 确定性单测 3 passed + 单文件 12 次 0 崩溃 + 整目录 3 次 0 崩溃（141 passed）+ contracts 620 + simulation 50+1）；待 GN-004 与人类 [V]。注意：工作区并行存在他轮改动（去重键修复 + 遗留批处理），均未 git 提交。**
+> 最后更新：2026-09-26 16:52
+> 状态：**竞态修复（模块1-20260926-01）+ GN-004 第八轮警示放行后的补强批次已交付**：向量后端防线（chroma/milvus 空向量 + 幂等）/ 配置 `server`·`system` 合并读取 / H3 判定与残留窗口加固（`skip_thread_ids`）均已落地，新增单测 14 + 4 + 6 passed；整目录 **153 passed 0 崩溃**（含本轮新增第 6 例；此前 152 × 3 次 0 崩溃）、contracts 620、simulation 50+1。**本轮产出已提交 `6884301`**（另：`875219a` 遗留项批处理、`d8de6b4` 门控，均已提交——此前头部"均未 git 提交"的描述已失效）；本轮修正 4 文件（`manager.py` 注释/注解、本 note、`debug-memory-recall-zero-relevance.md` §9、`test_dedup_thread_lifecycle.py` 新增用例）已获批准提交；`.dbg/` 实验产物已清理。**人类 [V] 已裁决（16:52）：批准交付 + 授权清理 `.dbg/` 全部产物 + 批准现在提交**；GN-004 第九轮警示放行（无 SOFT_BLOCK）。本轮全部闭合。
 > （此前状态：**去重键空 content 误合并修复已闭合（模块1-20260925-03：复现确认 → 修复 + 单测 → GN-004 警示放行（无 SOFT_BLOCK）→ 观察项已处置；定向 11 / units 138 / contracts 620 passed）**）
 > （此前状态：遗留项批处理已交付（P1 关键词 2 字滑窗召回 / P2 向量写入链路 / P3 配置类型规整 / P5 会话路径 / compose 服务名；GN-004 第六轮警示放行 + 人类 [V] 批准交付 + 验证产物已清理））
 > （此前状态：记忆召回相关度门控修复已交付（GN-004 五轮审查 + 人类 [V] 批准，commit `d8de6b4`））
@@ -1786,10 +1786,10 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
 |----|------|
 | 根因定位（结构性 use-after-free） | 已闭合 |
 | 最小修复（`manager.py` 3 处） | 已闭合 |
-| 确定性单测（`test_dedup_thread_lifecycle.py`） | 已闭合（4 passed；含「早退也须注销」「超时仍有界」两例，由 GN-004 第七轮要求补强） |
+| 确定性单测（`test_dedup_thread_lifecycle.py`） | 已闭合（现 **6 passed**：第七轮补强「早退也须注销」「超时仍有界」+ 第八轮「跳过未结束 worker 连接」+ 默认路径清空回归） |
 | 崩溃率置信度检查（12 次 + 3 次整目录） | 已闭合（0 崩溃） |
 | 崩溃的**统计证明** | **当前不可判定**（观察者效应，已如实登记，以确定性断言替代） |
-| H3：`_run_async_sync` 共享 executor 路径未单独排除 | 未闭合（观察清单） |
+| H3：`_run_async_sync` 共享 executor 路径 | 已闭合（第八轮独立审查判定「不构成同源竞态风险」+ 残留窗口已加固 `skip_thread_ids`；详见变更文档「H3 独立审查结论与残留窗口加固」节） |
 | 本轮变更文档 GN-004 审查 + 人类 [V] | 已闭合（GN-004 第七轮：警示放行 → 2 软阻断修正 → **复审通过**；人类 [V]：**批准交付**） |
 | 本轮调试产物 `.dbg/segv/` + 7777 端口 Debug Server | 已闭合（人类授权后已清理；结论落变更文档与 `debug-pytest-teardown-segv.md`） |
 
@@ -1811,7 +1811,58 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
 
 1. 主线程对 `manager.py` + 新测试文件 + 变更文档 + 调试记录拉起 GN-004 独立审查，并按 rules-0 §四-5 拉起人类 [V]。
 2. 待人类授权后清理 `.dbg/segv/`（探针插件）并停止 7777 端口 Debug Server。
-3. 观察清单（非阻塞）：H3 的共享 executor 路径；其他向量后端同类防御；`config/env.py` 双键并存。
+3. 观察清单（2026-09-26 全部处置）：H3 共享 executor 路径 → 已闭合（独立审查判定 + `skip_thread_ids` 加固）；
+   其他向量后端同类防御 → 已补（chroma / milvus_lite，见 `20260926_模块1_修复向量后端空向量与幂等缺口.md`）；
+   配置 `server`/`system` 双键 → 已修（合并读取且 `server` 优先，见 `20260926_模块0_修复配置server_system双键读取.md`）。
+
+---
+
+## 〇、最新变更续（2026-09-26 16:25）：第八轮审查后的补强批次（向量后端防线 / 配置双键 / H3 加固）
+
+> 关联变更文档：`.trae/documents/20260926_模块1_修复向量后端空向量与幂等缺口.md`（模块1-20260926-02）、
+> `.trae/documents/20260926_模块0_修复配置server_system双键读取.md`（模块0-20260926-01）、
+> `.trae/documents/20260926_模块1_修复后台去重线程与连接池关闭竞态.md`（模块1-20260926-01，追加「H3 独立审查结论与残留窗口加固」节）
+> 关联 commit：`6884301`（本轮）+ `875219a`（遗留项批处理）+ `d8de6b4`（召回门控）
+> GN-004：第八轮警示放行（无 SOFT_BLOCK）→ 4 软阻断 + 2 建议 + 1 观察，本轮逐条闭合
+
+### 工程过程
+
+1. GN-004 第八轮独立审查（resume id `d7750a5c-e119-4c2b-804b-10e329a78c3b`，lineage 第 8 轮）对竞态修复 + 变更文档 + 测试给出**警示放行**。
+2. 逐条闭合：
+   - 向量后端横向拉平：`chroma_store` / `milvus_lite_store` 的 `add_memory_vector` 补「空向量防御 + 先删后插幂等」；`weaviate_store.update_memory_vector` 清理冗余删除（幂等已下沉存储层）。
+   - 配置双键：`config/settings.py` 由「`server`/`system` 二选一」改为「合并且 `server` 优先」；**判定 `server` 为契约键**（validation/repair 表与 `public/test_cases/test_config_template.py` 均以 `server.*` 为准），未按原登记方向改名。
+   - H3 判定与加固：独立审查判定 H3「不构成同源竞态风险」（DedupCheck 无 event loop → 不走共享 executor；`future.result()` 无超时；executor 侧不访问 sqlite 连接）；残留窗口加固 —— `close_all_connections(skip_thread_ids=...)` + `shutdown()` 传入未结束 worker 的 ident，连带修正「末尾 `clear()` 使跳过失效」实现缺陷（由新单测当场发现）。
+   - 文档同步：两份新变更文档 status→已完成、步骤勾选；`manager.py` docstring/返回注解修正；竞态文档补 2 条未闭合项（跳过连接的资源滞留代价 /「先删后插」异常语义代价）。
+3. 测试（真实输出）：`test_vector_write_guard.py` **14 passed**、`test_config_server_system_merge.py` **4 passed**（修复前对照 `..F.`）、`test_dedup_thread_lifecycle.py` **6 passed**（新增默认路径清空回归）；`tests/units` 整目录 **153 passed 0 崩溃**（新增第 6 例后复跑；此前 152 passed × 3 次 0 崩溃）；`tests/contracts` **620 passed**；`tests/simulation` **50 passed + 1 skipped**。
+4. git：`6884301 fix(memory,config): 补齐向量后端写入防线并加固线程关闭竞态`；本轮 GN-004 修正（`manager.py` 注释/注解、本 note、测试新增用例）待提交；未跟踪 `.dbg/`（后台零写入实验产物）。
+5. 后台零写入实验收尾：原 subagent（id `885d396b`）完成脚本执行后**未产出 `evidence.md`** → 主线程补位（`evidence.md` 起草 + `debug-memory-recall-zero-relevance.md` §9 追加 + 只读复核并落盘 `recheck_post_review.txt`）；登记 `.dbg/` 清理授权请求。
+6. GN-004 第九轮复审（resume `d7750a5c`）：**警示放行 / 无 SOFT_BLOCK**；N-1~N-6 观察项，其中 N-1/N-2/N-3/N-6 已顺手处置，N-4/N-5 登记待人类裁量。
+
+### 交接状态
+
+| 项 | 状态 |
+|----|------|
+| 向量后端防线（chroma/milvus 空向量 + 幂等） | 已闭合（未闭合项已登记：真实服务端到端未做、「先删后插」异常语义代价） |
+| 配置双键合并读取（`server` 优先） | 已闭合（contracts 620 + public 契约测试 9 passed 未回归） |
+| H3 判定 + 残留窗口加固 | 已闭合（判定 + `skip_thread_ids` + 单测 6 例） |
+| 第八轮 4 软阻断 / 2 建议 / 1 观察闭合 | 已闭合（逐条落代码/文档/测试） |
+| 后台零写入实验（`.dbg/vecprobe/`） | **已闭合**（真实 weaviate 零写入：三时点计数恒 13 —— 基线 15:55 / 写后 15:59 / 独立复核 16:30；双防线各自返回 `False`；`evidence.md` 由主线程接手补齐（原后台 subagent 未产出），结论已追加至 `debug-memory-recall-zero-relevance.md` §9，并关闭该文档中登记的 P2/P4 未闭合项（P2=真实环境实证；P4=代码层闭合 + mock 单测，真实重复写入未构造） |
+| `.dbg/` 清理 | **已闭合**（人类授权后已清理 `.dbg/vecprobe/` 全部 8 个文件并移除空目录；结论已落本文档与 `debug-memory-recall-zero-relevance.md` §9） |
+| GN-004 复审（第九轮） | **已闭合**（警示放行 / 无 SOFT_BLOCK；5 项修正均有代码 + 独立复跑测试佐证；N-1~N-6 观察项） |
+| GN-004 第九轮观察项处置 | N-1（复核落盘 `recheck_post_review.txt`）/ N-2（P2·P4 口径统一）/ N-3（竞态文档追加节口径说明）/ N-6（待提交清单补全）**已处置**；N-4（milvus `synced` 计数偏乐观）/ N-5（配置合并非 dict 无防御）**未闭合（登记，低风险既有缺陷，由 [V] 裁量）** |
+| 人类 [V]（交付批准 + `.dbg/` 清理授权 + 提交） | **已闭合**（2026-09-26 16:52：批准交付 / 授权清理全部 vecprobe / 批准现在提交） |
+
+### 最终结果
+
+- 产物清单：变更文档 ×2（已完成）+ 竞态文档追加节；测试 3 文件（14 / 4 / 6 passed）；代码 5 文件（`chroma_store.py` / `milvus_lite_store.py` / `weaviate_store.py` / `config/settings.py` / `backend/core/memory/manager.py`）；commit `6884301`。
+- 验证结论：整目录 **153 passed 0 崩溃**（新增第 6 例后复跑；此前 152 × 3 次 0 崩溃）；contracts 620；simulation 50+1；修复前对照失败用例（配置第③组 `..F.`）证明缺陷真实存在。
+- 真实链路实证：embedding 失败路径下真实 weaviate **零写入**（`.dbg/vecprobe/evidence.md`；复核产物 `recheck_post_review.txt` @16:47）；同时关闭 `debug-memory-recall-zero-relevance.md` §7.5/§8.6 的 P2/P4 未闭合项（P2=真实环境实证；P4=代码层闭合 + mock 单测，真实重复写入未构造）。
+
+### 接续入口
+
+1. ~~读 `.dbg/vecprobe/evidence.md` 落后台实验结论~~ **已完成（16:30）**：`evidence.md` 已补齐（主线程接手），§9 已追加至 `debug-memory-recall-zero-relevance.md`，P2/P4 已关闭。
+2. GN-004 复审（resume `d7750a5c-e119-4c2b-804b-10e329a78c3b`）。
+3. 人类 [V]（AskUserQuestion：交付批准 + `.dbg/` 清理授权）。
 
 ---
 

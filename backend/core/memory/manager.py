@@ -665,7 +665,7 @@ class MemoryManager:
         except Exception as e:
             logger.warning(f"重新初始化向量存储失败: {e}")
 
-    def _join_dedup_threads(self, timeout: float = 5.0) -> None:
+    def _join_dedup_threads(self, timeout: float = 5.0) -> list:
         """等待在途后台去重线程结束（有界超时）。
 
         必须在 ``close_all_connections()`` **之前**调用：worker 会使用本线程自己的
@@ -676,6 +676,10 @@ class MemoryManager:
 
         Args:
             timeout: 总等待上限（秒），超时仅记 warning 后继续关闭流程
+
+        Returns:
+            超时后仍存活的 worker 线程列表（调用方应把它们的 ``ident`` 传给
+            ``close_all_connections(skip_thread_ids=...)`` 以跳过其连接）
         """
         deadline = time.monotonic() + timeout
         with self._lock:
@@ -1024,7 +1028,11 @@ class MemoryManager:
         pass
 
     def close_all_connections(self, skip_thread_ids: Optional[set] = None):
-        """关闭连接池中的连接（清空池）。
+        """关闭连接池中的连接，并把「已关闭」的条目从池中移除。
+
+        默认（``skip_thread_ids=None``）等价于「关闭并清空整个连接池」；
+        传入 ``skip_thread_ids`` 时，这些线程的连接**被保留在池中且不关闭**
+        （等进程退出回收），这些条目也不会被移除——优先保证不触发 C 层崩溃。
 
         Args:
             skip_thread_ids: 需**跳过**的线程 ident 集合。用于 shutdown 场景下

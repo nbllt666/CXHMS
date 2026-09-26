@@ -12,6 +12,7 @@
     3. worker 结束后从登记表自我注销
 """
 
+import sqlite3
 import threading
 import time
 from unittest.mock import MagicMock
@@ -179,3 +180,26 @@ def test_dedup_worker_self_deregisters(memory_manager):
     with mm._lock:
         remaining = set(mm._dedup_threads)
     assert remaining == set(), f"worker 结束后登记表应清空，实际残留 {remaining}"
+
+
+def test_close_all_connections_default_clears_pool(memory_manager):
+    """默认路径（``skip_thread_ids=None``）：连接池被关闭并清空。
+
+    回归守护：为修竞态新增的「跳过」语义**不得改变默认行为**——
+    不传参时仍应关闭全部连接并从池中移除（否则会掩盖连接泄漏）。
+    """
+    mm = memory_manager
+    conn = mm._get_connection()
+    with mm._lock:
+        assert threading.get_ident() in mm._connection_pool, (
+            "前置条件：本线程应在池中持有连接"
+        )
+
+    mm.close_all_connections()  # 默认路径：不传 skip_thread_ids
+
+    with mm._lock:
+        remaining = set(mm._connection_pool.keys())
+    assert remaining == set(), f"默认路径应清空连接池，实际残留 {remaining}"
+    # 该连接确实已被关闭（不是"只从池中摘除、连接仍打开"）
+    with pytest.raises(sqlite3.ProgrammingError):
+        conn.execute("SELECT 1").fetchone()
