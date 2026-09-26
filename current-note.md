@@ -1921,7 +1921,7 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
 | 修复方向裁决（维度不匹配） | 人类 [V] 第七轮：**「B-1 配置驱动」+「授权启动 embedding 容器」** |
 | 维度对齐修复（模块1-20260926-08） | **已修复并经真实验证 PASS**：① `config/default.yaml` 新增 `vector.embedding_dimension: 1024` + 6 处维度 768→1024；② `model_router._create_client` 把 `dimension` 接上配置（原被客户端默认 768 静默覆盖）；③ 新增单测 4 例。真实探针 `RESULT: PASS`（幂等 1 条 / 更新生效 / 空向量不写 / 清理归零，真实库零残留）；回归 units 190 / contracts 620 / simulation 50+1。详见 `.trae/documents/20260926_模块1_发现向量维度不匹配.md` |
 | GN-004 第十八轮复审 | **已闭合**（警示放行 / 无 SOFT_BLOCK；真实验证证据链与 verdict 逻辑经独立核验成立、契约边界守住）；**V-1（探针绕过装配链）与 V-2（实测未落盘）已补强闭环**：新增 `probe_app_chain.py` 走完整装配路径实测 `client.dimension=1024 → STORE vector_size=1024 → SYNC True → RESULT PASS`，证据落盘 `evidence_app_chain.txt`；V-3/V-4 已登记 |
-| 人类 [V] 第八轮（交付 + 提交裁决） | 待拉起 |
+| 人类 [V] 第八轮 | **已闭合**（批准交付 + 提交 `88e7346` + 「保持现状」：embedding 容器保持运行、`.dbg/weavreal/` 产物保留） |
 
 ### 最终结果
 
