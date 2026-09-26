@@ -691,3 +691,53 @@ async def test_milvus_search_degrades_then_returns_empty_on_double_failure():
 
     assert results == []
     assert client.search.call_count == 2
+
+
+# --------------------------------------------------------------------------- #
+# 13: 回填日志标注降级状态（GN-004 第十五轮 P-3）
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_milvus_rollback_logs_degraded_when_metadata_incomplete(caplog):
+    """P-3：降级取回后的回填，日志须**明确标注实体不完整**（与完整回填可区分）。"""
+    import logging
+
+    client = MagicMock()
+    # 首次（扩展字段）查询异常 → 降级为仅基础字段
+    client.query.side_effect = [
+        RuntimeError("未知输出字段 agent_id（模拟 schema 缺字段）"),
+        [{"vector": [7.7], "content": "旧", "memory_id": 11}],
+    ]
+    client.insert.side_effect = [RuntimeError("模拟插入失败"), None]
+    store = _make_fake_milvus_store(client)
+
+    with caplog.at_level(logging.WARNING, logger="backend.core.memory.milvus_lite_store"):
+        await store.add_memory_vector(memory_id=11, content="新", embedding=[0.1])
+
+    assert "实体不完整" in caplog.text, "降级回填必须标注实体不完整（否则无法区分完整/降级）"
+    # 降级标记本身不得写入 Milvus（仅用于日志）
+    rollback_data = client.insert.call_args_list[1].kwargs["data"][0]
+    assert "degraded" not in rollback_data, "degraded 为日志专用标记，不得进入写入 data"
+
+
+@pytest.mark.asyncio
+async def test_milvus_rollback_logs_normal_when_metadata_complete(caplog):
+    """P-3 对照：完整取回后的回填，日志**不得**出现「降级」字样。"""
+    import logging
+
+    client = MagicMock()
+    client.query.return_value = [
+        {"vector": [8.8], "content": "旧", "memory_id": 12, "created_at": "2026-01-01",
+         "agent_id": "agent-x", "type": "long_term", "importance": 3}
+    ]
+    client.insert.side_effect = [RuntimeError("模拟插入失败"), None]
+    store = _make_fake_milvus_store(client)
+
+    with caplog.at_level(logging.WARNING, logger="backend.core.memory.milvus_lite_store"):
+        await store.add_memory_vector(memory_id=12, content="新", embedding=[0.1])
+
+    assert "已回填旧向量" in caplog.text
+    assert "实体不完整" not in caplog.text, "完整回填不应标注降级"
+    rollback_data = client.insert.call_args_list[1].kwargs["data"][0]
+    assert rollback_data["agent_id"] == "agent-x", "完整回填应保留 metadata 投影"

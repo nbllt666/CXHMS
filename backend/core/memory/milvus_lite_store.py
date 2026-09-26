@@ -157,12 +157,13 @@ class MilvusLiteVectorStore:
         try:
             return fn(**kwargs)
         except Exception as e:  # noqa: BLE001
-            degraded = {k: v for k, v in kwargs.items() if k != "output_fields"}
-            degraded["output_fields"] = [
+            # 变量名用 degraded_kwargs，避免与回滚材料的 degraded 标记（语义：取回是否降级）混淆
+            degraded_kwargs = {k: v for k, v in kwargs.items() if k != "output_fields"}
+            degraded_kwargs["output_fields"] = [
                 f for f in kwargs.get("output_fields", []) if f not in optional_fields
             ]
             logger.warning(f"{label}调用失败，已降级为仅必需字段重试: {e}")
-            return fn(**degraded)
+            return fn(**degraded_kwargs)
 
     async def _get_vector_with_embedding(self, memory_id: int) -> Optional[Dict]:
         """取回含向量的既有实体（供「先删后插」失败回滚使用）。
@@ -203,6 +204,9 @@ class MilvusLiteVectorStore:
                         "vector": r.get("vector"),
                         "content": r.get("content"),
                         "metadata": r,
+                        # 降级标记（GN-004 第十五轮 P-3）：回填侧据此告知「实体不完整」，
+                        # 仅用于日志可观测性，不参与 Milvus 写入
+                        "degraded": is_fallback,
                     }
                 return None
             except Exception as e:  # noqa: BLE001
@@ -230,7 +234,7 @@ class MilvusLiteVectorStore:
             payload = {
                 k: v
                 for k, v in meta.items()
-                if k not in ("id", "vector", "memory_id", "created_at", "content")
+                if k not in ("id", "vector", "memory_id", "created_at", "content", "degraded")
             }
             self._client.insert(
                 collection_name=self.collection_name,
@@ -245,7 +249,14 @@ class MilvusLiteVectorStore:
                     }
                 ],
             )
-            logger.warning(f"插入失败后已回填旧向量: memory_id={memory_id}")
+            if previous.get("degraded"):
+                msg = (
+                    f"插入失败后已回填旧向量（降级：metadata 投影未保留，实体不完整）: "
+                    f"memory_id={memory_id}"
+                )
+            else:
+                msg = f"插入失败后已回填旧向量: memory_id={memory_id}"
+            logger.warning(msg)
         except Exception as e:  # noqa: BLE001
             logger.error(f"回填旧向量失败（旧向量已丢失）: {e}")
 
