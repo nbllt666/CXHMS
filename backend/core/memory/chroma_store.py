@@ -15,6 +15,7 @@ class SyncResult:
     synced: int = 0
     removed: int = 0
     errors: int = 0
+    skipped: int = 0
     details: List[str] = None
 
 
@@ -98,10 +99,13 @@ class ChromaVectorStore:
             )
             return False
 
+        previous = None  # 前置初始化：except 中引用时不受「被调函数是否抛异常」影响（GN-004 第十二轮 N-3）
         try:
             # 写入幂等：chroma 的 add 非幂等（重复 id 会冲突/报错），
             # 故插入前先删除同 memory_id 的既存对象（先删后插），使同一 memory_id 至多保留 1 个实体。
             # 无旧实体时 delete_by_memory_id 返回 False 属正常，不作为失败处理。
+            # 回滚材料：删除前先取回旧实体，若插入抛异常则回填——避免「旧已删、新未写」（GN-004 第十一轮 / 人类 [V] 第二轮）
+            previous = await self.get_vector_by_id(memory_id)
             await self.delete_by_memory_id(memory_id)
 
             self._collection.add(
@@ -120,7 +124,28 @@ class ChromaVectorStore:
             return True
         except Exception as e:
             logger.error(f"添加向量失败: {e}")
+            await self._rollback_to_previous(memory_id, previous)
             return False
+
+    async def _rollback_to_previous(self, memory_id: int, previous: Optional[Dict]) -> None:
+        """插入失败后尽力回填删除前的旧实体（best-effort，失败仅记日志）。
+
+        Args:
+            memory_id: 记忆 ID
+            previous: 删除前取回的旧实体（含 embedding / content / metadata）；为空则无旧实体可回填
+        """
+        if not previous or not previous.get("embedding"):
+            return
+        try:
+            self._collection.add(
+                ids=[str(memory_id)],
+                embeddings=[previous["embedding"]],
+                documents=[previous.get("content") or ""],
+                metadatas=[previous.get("metadata") or {"memory_id": memory_id}],
+            )
+            logger.warning(f"插入失败后已回填旧向量: memory_id={memory_id}")
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"回填旧向量失败（旧向量已丢失）: memory_id={memory_id}, {e}")
 
     async def search_similar(
         self,
@@ -218,7 +243,8 @@ class ChromaVectorStore:
         result = SyncResult()
 
         if not self._collection or not sqlite_manager:
-            return result
+            # 存储不可用与 milvus / qdrant / weaviate 口径统一：计 errors（GN-004 第十二轮 N-5）
+            return SyncResult(errors=1, details=["Chroma 不可用"])
 
         try:
             if last_sync_time:
@@ -266,7 +292,8 @@ class ChromaVectorStore:
                         else:
                             result.errors += 1
                     else:
-                        result.errors += 1
+                        # embedding 模型缺失：未尝试写入，计 skipped（区别于写入失败的 errors；GN-004 第十/十一轮 O-2）
+                        result.skipped += 1
                         if result.details is None:
                             result.details = []
                         result.details.append(f"无法生成嵌入: memory_id={memory_id}")
@@ -276,7 +303,8 @@ class ChromaVectorStore:
                         if self.embedding_model:
                             embedding = await self.embedding_model.get_embedding(content)
                             if embedding:
-                                await self.delete_by_memory_id(memory_id)
+                                # 不再在此处 delete：add_memory_vector 内部已「先删后插」并持有回滚材料；
+                                # 外层 delete 会使内部取回的 previous 恒为 None，回滚被架空（GN-004 第十二轮 N-1）
                                 success = await self.add_memory_vector(
                                     memory_id=memory_id,
                                     content=content,
@@ -292,7 +320,8 @@ class ChromaVectorStore:
                                     result.errors += 1
 
             logger.info(
-                f"同步完成: checked={result.total_checked}, synced={result.synced}, errors={result.errors}"
+                f"同步完成: checked={result.total_checked}, synced={result.synced}, "
+                f"errors={result.errors}, skipped={result.skipped}"
             )
             return result
         except Exception as e:

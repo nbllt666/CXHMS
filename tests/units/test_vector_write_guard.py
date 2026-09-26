@@ -17,6 +17,8 @@
        不再手动重复删除。
     9. qdrant 后端：空向量防御（``embedding=None`` 时不调用 ``client.upsert``；
        实现位于 vector_store.py）。
+    10. 「先删后插」异常窗口回滚：删除前的旧向量在插入失败后被回填
+        （chroma / milvus_lite；无旧实体时不回填）。
 
 设计原则：
     - 全部使用 ``unittest.mock`` 伪造，**绝不向真实 Weaviate / Chroma / Milvus 写入任何对象**。
@@ -397,3 +399,115 @@ def _import_weaviate_store():
     from backend.core.memory.weaviate_store import WeaviateVectorStore
 
     return WeaviateVectorStore
+
+
+# --------------------------------------------------------------------------- #
+# 10: 「先删后插」异常窗口回滚（chroma / milvus_lite）
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_chroma_rolls_back_previous_vector_on_insert_failure():
+    """chroma 回滚：删除前的旧实体在插入失败后被回填（避免「旧已删、新未写」）。
+
+    mock 层级（GN-004 第十二轮 N-4）：mock ``collection.get`` 的**真实返回结构**
+    （``{"ids": [...], "documents": [...], "metadatas": [...], "embeddings": [...]}``），
+    而非直接 mock ``get_vector_by_id``，以覆盖真实的返回值转换逻辑。
+    """
+    added = []
+
+    collection = MagicMock()
+
+    def _fail_then_succeed(**kwargs):
+        added.append(kwargs["embeddings"][0])
+        if len(added) == 1:
+            raise RuntimeError("模拟插入失败")
+
+    collection.add.side_effect = _fail_then_succeed
+    # 真实结构：get_vector_by_id 会取 ids/documents/metadatas/embeddings[0]
+    collection.get.return_value = {
+        "ids": ["1"],
+        "documents": ["旧内容"],
+        "metadatas": [{"memory_id": 1}],
+        "embeddings": [[9.9, 9.8]],
+    }
+
+    store = _make_fake_chroma_store(collection)
+
+    result = await store.add_memory_vector(memory_id=1, content="新内容", embedding=[0.1, 0.2])
+
+    assert result is False, "插入失败应返回 False"
+    assert len(added) == 2, "应发生「插入失败 → 回填旧向量」两次 add"
+    assert added[1] == [9.9, 9.8], "回填的必须是删除前的旧向量"
+
+
+@pytest.mark.asyncio
+async def test_chroma_no_rollback_when_no_previous_vector():
+    """chroma 回滚边界：无旧实体时不回填（仅一次 add 且失败）。"""
+    collection = MagicMock()
+    collection.add.side_effect = RuntimeError("模拟插入失败")
+
+    store = _make_fake_chroma_store(collection)
+    store.get_vector_by_id = AsyncMock(return_value=None)  # 无旧实体
+
+    result = await store.add_memory_vector(memory_id=1, content="新内容", embedding=[0.1, 0.2])
+
+    assert result is False
+    assert collection.add.call_count == 1, "无旧实体可回填，不应有第二次 add"
+
+
+@pytest.mark.asyncio
+async def test_milvus_rolls_back_previous_vector_on_insert_failure():
+    """milvus 回滚：删除前的旧实体（含 vector）在插入失败后被回填。"""
+    inserted = []
+    client = MagicMock()
+
+    def _fail_then_succeed(**kwargs):
+        inserted.append(kwargs["data"][0]["vector"])
+        if len(inserted) == 1:
+            raise RuntimeError("模拟插入失败")
+
+    client.insert.side_effect = _fail_then_succeed
+    # 私有取回方法返回含 vector 的旧实体（含 metadata 投影字段与 created_at）
+    client.query.return_value = [
+        {"id": 1, "vector": [9.9, 9.8], "content": "旧内容", "memory_id": 1,
+         "created_at": "2026-01-01T00:00:00", "agent_id": "agent-x",
+         "type": "long_term", "importance": 5}
+    ]
+
+    store = _make_fake_milvus_store(client)
+
+    result = await store.add_memory_vector(memory_id=1, content="新内容", embedding=[0.1, 0.2])
+
+    assert result is False
+    assert len(inserted) == 2, "应发生「插入失败 → 回填旧向量」两次 insert"
+    assert inserted[1] == [9.9, 9.8], "回填的必须是删除前的旧向量"
+
+
+@pytest.mark.asyncio
+async def test_milvus_rollback_preserves_metadata_fields():
+    """F-2/F-3/F-4：milvus 回填须保留 metadata 投影字段（agent_id / type / importance）与原 created_at。"""
+    rows = []
+    client = MagicMock()
+
+    def _capture(**kwargs):
+        rows.append(kwargs["data"][0])
+        if len(rows) == 1:
+            raise RuntimeError("模拟插入失败")
+
+    client.insert.side_effect = _capture
+    client.query.return_value = [
+        {"id": 7, "vector": [1.5, 2.5], "content": "旧内容", "memory_id": 7,
+         "created_at": "2026-01-01T00:00:00", "agent_id": "agent-x",
+         "type": "long_term", "importance": 5}
+    ]
+
+    store = _make_fake_milvus_store(client)
+
+    await store.add_memory_vector(memory_id=7, content="新内容", embedding=[0.1, 0.2])
+
+    restored = rows[1]
+    assert restored["agent_id"] == "agent-x", "回填必须保留 agent_id（否则 agent 隔离过滤漏检）"
+    assert restored["type"] == "long_term"
+    assert restored["importance"] == 5
+    assert restored["created_at"] == "2026-01-01T00:00:00", "回填应保留原 created_at（非 now()）"

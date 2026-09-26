@@ -95,7 +95,8 @@ async def test_milvus_update_failure_not_counted_as_synced():
 
     assert result.synced == 0, "更新分支写入失败不得计 synced"
     assert result.errors == 1
-    store.delete_by_memory_id.assert_awaited_once()
+    # N-1：更新分支不再外层先删（delete 由 add_memory_vector 内部承担，以便持有回滚材料）
+    store.delete_by_memory_id.assert_not_called()
 
 
 # --------------------------------------------------------------------------- #
@@ -221,8 +222,11 @@ async def test_qdrant_update_failure_not_counted_as_synced():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("backend", ["milvus", "qdrant", "weaviate"])
-async def test_missing_embedding_model_counted_as_errors(backend):
-    """R-1：``embedding_model`` 缺失 → ``errors == 1`` 且 ``synced == 0``（原先静默跳过、两者皆 0）。"""
+async def test_missing_embedding_model_counted_as_skipped(backend):
+    """R-1 / O-2：``embedding_model`` 缺失 → ``skipped == 1`` 且 ``errors == 0`` / ``synced == 0``。
+
+    语义分离：未尝试写入（依赖缺失）计 ``skipped``，与写入失败的 ``errors`` 区分。
+    """
     if backend == "milvus":
         store = _make_milvus_store(add_return=True)
     elif backend == "qdrant":
@@ -234,7 +238,8 @@ async def test_missing_embedding_model_counted_as_errors(backend):
     result = await store.sync_with_sqlite(_fake_sqlite_manager())
 
     assert result.synced == 0, "无 embedding 模型不可能写入成功"
-    assert result.errors == 1, "无法生成向量应如实计 errors（对齐 chroma 口径）"
+    assert result.skipped == 1, "未尝试写入应计 skipped"
+    assert result.errors == 0, "依赖缺失不是写入失败，不得计 errors（O-2 语义分离）"
 
 
 # --------------------------------------------------------------------------- #
@@ -257,3 +262,46 @@ async def test_qdrant_update_does_not_delete_before_upsert():
     assert result.synced == 1 and result.errors == 0
     store.delete_by_memory_id.assert_not_called()
     store.add_memory_vector.assert_awaited_once()
+
+
+# --------------------------------------------------------------------------- #
+# N-1（GN-004 第十二轮）：sync 更新分支不再先删，回滚材料可取到
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend", ["chroma", "milvus"])
+async def test_sync_update_branch_does_not_predelete(backend):
+    """N-1：sync 更新分支**不得**在 `add_memory_vector` 之前先 delete。
+
+    外层 delete 会使 `add_memory_vector` 内部取回的 `previous` 恒为 None，
+    导致「先删后插」的回滚被架空（旧已删、新未写）。修复后更新分支只调 add。
+    """
+    if backend == "chroma":
+        from backend.core.memory.chroma_store import ChromaVectorStore
+
+        store = object.__new__(ChromaVectorStore)
+        store.collection_name = "memory_vectors"
+        store._collection = MagicMock()
+        store._client = MagicMock()
+        store.embedding_model = MagicMock()
+        store.embedding_model.get_embedding = AsyncMock(return_value=[0.1, 0.2])
+        store.get_vector_by_id = AsyncMock(return_value={"content": "旧内容", "id": 1})
+        store.add_memory_vector = AsyncMock(return_value=True)
+        store.delete_by_memory_id = AsyncMock(return_value=True)
+    else:
+        store = _make_milvus_store(add_return=True)
+        store.embedding_model.get_embedding = AsyncMock(return_value=[0.1, 0.2])
+        store.get_vector_by_id = AsyncMock(return_value={"content": "旧内容"})
+
+    sm = _fake_sqlite_manager()
+    sm.search_memories.return_value = [
+        {"id": 1, "content": "新内容", "agent_id": "default"}
+    ]
+
+    result = await store.sync_with_sqlite(sm)
+
+    assert result.synced == 1, "更新成功应计 synced"
+    store.add_memory_vector.assert_awaited_once()
+    # 外层 delete 必须移除，否则 add 内部取回的 previous 恒为 None、回滚被架空
+    store.delete_by_memory_id.assert_not_called()

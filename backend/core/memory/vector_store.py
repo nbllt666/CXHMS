@@ -14,6 +14,7 @@ class SyncResult:
     synced: int = 0
     removed: int = 0
     errors: int = 0
+    skipped: int = 0
     details: List[str] = None
 
 
@@ -280,13 +281,11 @@ class QdrantVectorStore(VectorStoreBase):
                 ]
                 logger.info(f"增量同步: 筛选出 {len(memories)} 条需要同步的记忆")
 
-            qdrant_ids = set()
             result.total_checked = len(memories)
 
             for memory in memories:
                 memory_id = memory["id"]
                 content = memory["content"]
-                qdrant_ids.add(memory_id)
 
                 try:
                     existing = await self.get_vector_by_id(memory_id)
@@ -308,8 +307,8 @@ class QdrantVectorStore(VectorStoreBase):
                                 # 未写入（空向量防御等返回 False）：如实计 errors，不虚报 synced（对齐 chroma 口径）
                                 result.errors += 1
                         else:
-                            # embedding 模型缺失：无法生成向量，如实计 errors（对齐 chroma 口径；GN-004 第十轮 R-1）
-                            result.errors += 1
+                            # embedding 模型缺失：未尝试写入，计 skipped（区别于写入失败的 errors；GN-004 第十/十一轮 O-2）
+                            result.skipped += 1
                     elif existing.get("content") != content:
                         logger.info(f"内容不一致，更新: memory_id={memory_id}")
                         if self.embedding_model:
@@ -329,15 +328,16 @@ class QdrantVectorStore(VectorStoreBase):
                                 # 未写入（空向量防御等返回 False）：如实计 errors，不虚报 synced（对齐 chroma 口径）
                                 result.errors += 1
                         else:
-                            # embedding 模型缺失：无法生成向量，如实计 errors（对齐 chroma 口径；GN-004 第十轮 R-1）
-                            result.errors += 1
+                            # embedding 模型缺失：未尝试写入，计 skipped（区别于写入失败的 errors；GN-004 第十/十一轮 O-2）
+                            result.skipped += 1
 
                 except Exception as e:
                     result.errors += 1
                     logger.error(f"同步记忆失败: {memory_id}, {e}")
 
             logger.info(
-                f"同步完成: checked={result.total_checked}, synced={result.synced}, errors={result.errors}"
+                f"同步完成: checked={result.total_checked}, synced={result.synced}, "
+                f"errors={result.errors}, skipped={result.skipped}"
             )
 
         except Exception as e:

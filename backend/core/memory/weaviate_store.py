@@ -515,8 +515,8 @@ class WeaviateVectorStore:
                                 )
                                 # 未写入（空向量防御等返回 False）如实归为 error，不虚报 synced（对齐 chroma 口径）
                                 return ("created" if ok else "error"), memory_id
-                            # embedding 模型缺失：无法生成向量，如实归为 error（对齐 chroma 口径；GN-004 第十轮 R-1）
-                            return "error", memory_id
+                            # embedding 模型缺失：未尝试写入，归为 skipped（区别于写入失败的 error；GN-004 第十/十一轮 O-2）
+                            return "skipped", memory_id
                         elif existing.get("content") != content:
                             if self.embedding_model:
                                 embedding = await self.embedding_model.get_embedding(content)
@@ -528,8 +528,8 @@ class WeaviateVectorStore:
                                     agent_id=mem_agent_id,
                                 )
                                 return ("updated" if ok else "error"), memory_id
-                            # embedding 模型缺失：无法生成向量，如实归为 error（对齐 chroma 口径；GN-004 第十轮 R-1）
-                            return "error", memory_id
+                            # embedding 模型缺失：未尝试写入，归为 skipped（区别于写入失败的 error；GN-004 第十/十一轮 O-2）
+                            return "skipped", memory_id
 
                         return None, memory_id
 
@@ -552,9 +552,12 @@ class WeaviateVectorStore:
                     result.details.append(f"更新: {sr[1]}")
                 elif sr[0] == "error":
                     result.errors += 1
+                elif sr[0] == "skipped":
+                    result.skipped += 1
 
             logger.info(
-                f"Weaviate 同步完成: checked={result.total_checked}, synced={result.synced}, errors={result.errors}"
+                f"Weaviate 同步完成: checked={result.total_checked}, synced={result.synced}, "
+                f"errors={result.errors}, skipped={result.skipped}"
             )
 
         except Exception as e:
