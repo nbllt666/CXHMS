@@ -511,3 +511,79 @@ async def test_milvus_rollback_preserves_metadata_fields():
     assert restored["type"] == "long_term"
     assert restored["importance"] == 5
     assert restored["created_at"] == "2026-01-01T00:00:00", "回填应保留原 created_at（非 now()）"
+
+
+# --------------------------------------------------------------------------- #
+# 11: 回滚取回的字段降级（GN-004 第十四轮 O-1）
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_milvus_rollback_query_falls_back_to_base_fields():
+    """O-1：扩展字段查询异常时，应降级为基础字段重试，仍取回向量回滚材料。
+
+    修复前：单一硬编码字段查询失败即返回 None → 回滚静默失效。
+    """
+    calls = []
+
+    def _query(**kwargs):
+        calls.append(list(kwargs["output_fields"]))
+        if len(calls) == 1:
+            raise RuntimeError("未知输出字段 agent_id（模拟 schema 缺字段）")
+        return [{"vector": [9.9, 9.8], "content": "旧内容", "memory_id": 1}]
+
+    client = MagicMock()
+    client.query.side_effect = _query
+    store = _make_fake_milvus_store(client)
+
+    result = await store._get_vector_with_embedding(1)
+
+    assert result is not None, "降级后仍应取回回滚材料"
+    assert result["vector"] == [9.9, 9.8], "向量必须取回（回滚的核心材料）"
+    assert len(calls) == 2, "应发生「扩展字段 → 基础字段」两次查询"
+    assert "agent_id" in calls[0], "首次查询应含扩展字段"
+    assert "agent_id" not in calls[1], "降级查询只含基础字段"
+
+
+@pytest.mark.asyncio
+async def test_milvus_rollback_query_returns_none_when_both_fail(caplog):
+    """O-1 边界：两次查询均失败 → 返回 None（回滚跳过）并记 warning（非静默）。
+
+    P-1（GN-004 第十五轮）：补 `call_count == 2` 断言，锁住「确经两次查询」语义
+    （原断言在修复前的单次实现下亦成立，判别力不足）。
+    """
+    import logging
+
+    client = MagicMock()
+    client.query.side_effect = RuntimeError("查询持续失败")
+    store = _make_fake_milvus_store(client)
+
+    with caplog.at_level(logging.WARNING, logger="backend.core.memory.milvus_lite_store"):
+        result = await store._get_vector_with_embedding(1)
+
+    assert result is None
+    assert client.query.call_count == 2, "应确经「扩展字段 → 基础字段」两次查询后才放弃"
+    assert "将无法回滚" in caplog.text, "能力边界必须留痕"
+
+
+@pytest.mark.asyncio
+async def test_milvus_rollback_query_no_fallback_on_first_success():
+    """P-2（GN-004 第十五轮）：首次（扩展字段）查询成功时**不得**触发降级——只查一次。
+
+    锁住「降级仅在首次失败时发生」这一不变量。
+    """
+    calls = []
+
+    def _query(**kwargs):
+        calls.append(list(kwargs["output_fields"]))
+        return [{"vector": [1.1], "content": "旧", "memory_id": 3, "agent_id": "a"}]
+
+    client = MagicMock()
+    client.query.side_effect = _query
+    store = _make_fake_milvus_store(client)
+
+    result = await store._get_vector_with_embedding(3)
+
+    assert result is not None
+    assert client.query.call_count == 1, "首次成功不应触发降级（只查一次）"
+    assert "agent_id" in calls[0], "首次查询应含扩展字段（可直接取回 metadata 投影）"

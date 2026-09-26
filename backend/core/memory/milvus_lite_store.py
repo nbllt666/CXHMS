@@ -22,6 +22,17 @@ class SyncResult:
 class MilvusLiteVectorStore:
     COLLECTION_NAME = "memory_vectors"
 
+    # 回滚取回查询的字段分级（GN-004 第十四轮 O-1）：
+    # 基础字段 = 向量回滚材料（必需）；扩展字段 = metadata 投影（可选，schema 缺失时降级丢弃）
+    _BASE_OUTPUT_FIELDS = ["vector", "content", "memory_id"]
+    _EXTENDED_OUTPUT_FIELDS = [
+        *_BASE_OUTPUT_FIELDS,
+        "created_at",
+        "agent_id",
+        "type",
+        "importance",
+    ]
+
     def __init__(
         self,
         db_path: str = "data/milvus_lite.db",
@@ -126,41 +137,50 @@ class MilvusLiteVectorStore:
 
         ``get_vector_by_id`` 的 ``output_fields`` 不含向量字段，故此处单独查询。
 
+        字段分级 + 降级重试（GN-004 第十四轮 O-1）：先按扩展字段查询（向量 + metadata 投影），
+        若因 schema 缺字段而失败，则降级为仅基础字段重试——**保证向量回滚材料仍可得**，
+        避免「为保留 metadata 反而使向量回滚一并失效」。
+
         Args:
             memory_id: 记忆 ID
 
         Returns:
-            含 ``vector`` / ``content`` / ``metadata`` 的字典；不存在或查询失败时返回 None
+            含 ``vector`` / ``content`` / ``metadata`` 的字典；不存在或两次查询均失败时返回 None
         """
         if not self._client:
             return None
-        try:
-            results = self._client.query(
-                collection_name=self.collection_name,
-                filter=f'memory_id == "{memory_id}"',
-                # 必须取回 metadata 投影字段与 created_at，否则回填后会丢 agent 隔离字段 / 原时间戳
-                # （GN-004 第十三轮 F-2 / F-3）
-                output_fields=[
-                    "vector",
-                    "content",
-                    "memory_id",
-                    "created_at",
-                    "agent_id",
-                    "type",
-                    "importance",
-                ],
-            )
-            if results:
-                r = results[0]
-                return {
-                    "vector": r.get("vector"),
-                    "content": r.get("content"),
-                    "metadata": r,
-                }
-            return None
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"取回旧向量失败（将无法回滚）: memory_id={memory_id}, {e}")
-            return None
+
+        for fields, is_fallback in (
+            (self._EXTENDED_OUTPUT_FIELDS, False),
+            (self._BASE_OUTPUT_FIELDS, True),
+        ):
+            try:
+                results = self._client.query(
+                    collection_name=self.collection_name,
+                    filter=f'memory_id == "{memory_id}"',
+                    output_fields=list(fields),
+                )
+                if results:
+                    r = results[0]
+                    if is_fallback:
+                        logger.warning(
+                            f"扩展字段查询失败，已降级为仅取回向量（metadata 投影无法保留）: "
+                            f"memory_id={memory_id}"
+                        )
+                    return {
+                        "vector": r.get("vector"),
+                        "content": r.get("content"),
+                        "metadata": r,
+                    }
+                return None
+            except Exception as e:  # noqa: BLE001
+                if is_fallback:
+                    logger.warning(f"取回旧向量失败（将无法回滚）: memory_id={memory_id}, {e}")
+                    return None
+                logger.warning(
+                    f"扩展字段查询异常，尝试降级为仅取回向量: memory_id={memory_id}, {e}"
+                )
+        return None
 
     async def _rollback_to_previous(self, previous: Optional[Dict]) -> None:
         """插入失败后尽力回填删除前的旧实体（best-effort，失败仅记日志）。
