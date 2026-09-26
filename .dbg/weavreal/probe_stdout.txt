@@ -1,0 +1,21 @@
+Weaviate 添加向量失败: Object was not added! Unexpected status code: 500, with response body: {'error': [{'message': 'put object: import into index cxhmsmemory: put local object: shard="Tz5YuzhpPmhE": store object in LSM store: Validate vector index for 4c6ad629-d1d0-4a04-a7b5-b54190cbd38b: new node has a vector with length 768. Existing nodes have vectors with length 1024: vector dimensions do not match the index dimensions'}]}.
+Weaviate 添加向量失败: Object was not added! Unexpected status code: 500, with response body: {'error': [{'message': 'put object: import into index cxhmsmemory: put local object: shard="Tz5YuzhpPmhE": store object in LSM store: Validate vector index for bccf81b7-eba8-4d99-8ee0-ec31935e9b25: new node has a vector with length 768. Existing nodes have vectors with length 1024: vector dimensions do not match the index dimensions'}]}.
+Weaviate 添加向量失败: Object was not added! Unexpected status code: 500, with response body: {'error': [{'message': 'put object: import into index cxhmsmemory: put local object: shard="Tz5YuzhpPmhE": store object in LSM store: Validate vector index for ff3af8b2-3a4a-48a9-805b-c6af9f69680c: new node has a vector with length 768. Existing nodes have vectors with length 1024: vector dimensions do not match the index dimensions'}]}.
+Weaviate 空向量防御: memory_id=9901, 原因=embedding 为空（None 或空序列），未写入
+is_available=True
+BASELINE: total=13, target(9901)=0
+ADD x2: r1=False r2=False | target=0 -> 0
+UPDATE: ok=False | target=0 | content=None
+EMPTY-DEFENSE: ret=False | target=0
+CLEANUP: deleted=False | total=13 | target=0
+============================================================
+  baseline_total = 13
+  add_ok = False
+  idempotent_target_count = 0
+  update_ok = False
+  updated_content_ok = False
+  empty_defense_returns_false = True
+  empty_defense_no_write = True
+  cleanup_ok = True
+  baseline_restored = True
+RESULT: CHECK-FAILED

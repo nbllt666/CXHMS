@@ -1,0 +1,15 @@
+EMBED SERVICE models = ['nomic-embed-text']
+REAL EMBEDDING DIM = 1024
+CONFIG vector.embedding_dimension = 1024
+CONFIG memory.weaviate.vector_size = 1024
+ASSEMBLED client.type = VLLMClient
+ASSEMBLED client.dimension = 1024
+ASSEMBLED client.embedding_host = http://localhost:8101
+ASSEMBLED client.embedding_model = nomic-embed-text
+STORE vector_size = 1024
+BASELINE total=13 target(9903)=0
+SYNC -> True
+AFTER total=14 target=1
+CONTENT = [appchain] 装配链路端到端验证
+CLEANUP deleted=True total=13 target=0
+RESULT: PASS

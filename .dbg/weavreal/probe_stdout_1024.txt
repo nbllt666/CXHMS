@@ -1,0 +1,18 @@
+Weaviate 空向量防御: memory_id=9901, 原因=embedding 为空（None 或空序列），未写入
+is_available=True
+BASELINE: total=13, target(9901)=0
+ADD x2: r1=True r2=True | target=1 -> 1
+UPDATE: ok=True | target=1 | content=[weavreal] 更新后内容
+EMPTY-DEFENSE: ret=False | target=1
+CLEANUP: deleted=True | total=13 | target=0
+============================================================
+  baseline_total = 13
+  add_ok = True
+  idempotent_target_count = 1
+  update_ok = True
+  updated_content_ok = True
+  empty_defense_returns_false = True
+  empty_defense_no_write = True
+  cleanup_ok = True
+  baseline_restored = True
+RESULT: PASS
