@@ -80,6 +80,11 @@ class ModelRouter:
             return None
 
         provider = config.provider.lower()
+        # 嵌入维度以配置为唯一真相源（vector.embedding_dimension）。
+        # 客户端默认 dimension=768 会经 enable_vector_search 的
+        # `embedding_model.dimension` 优先规则决定向量库 collection 维度，
+        # 若不注入配置值，配置将被默认值静默覆盖（曾导致真实写入维度不匹配）。
+        dimension = getattr(settings.config.vector, "embedding_dimension", None)
 
         if provider == "ollama":
             return OllamaClient(
@@ -87,6 +92,7 @@ class ModelRouter:
                 model=config.model,
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
+                dimension=dimension if dimension else 768,
                 api_key=getattr(config, "api_key", None),
             )
         elif provider == "vllm":
@@ -95,6 +101,7 @@ class ModelRouter:
                 model=config.model,
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
+                dimension=dimension if dimension else 768,
                 api_key=getattr(config, "api_key", None),
                 supports_tools=getattr(config, "supports_tools", True),
             )

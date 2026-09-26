@@ -80,6 +80,13 @@ models:
 model_defaults:
   summary: main
   memory: main
+vector:
+  # 嵌入模型维度：唯一真相源（由 model_router 注入各 LLM/嵌入客户端，
+  # 并经 enable_vector_search 决定向量库 collection 维度）。
+  # 本环境 embedding 服务实际为 Qwen3-Embedding-0.6B（hidden_size=1024），
+  # 仅以别名 nomic-embed-text 对外服务，故维度必须为 1024。
+  embedding_model: nomic-embed-text
+  embedding_dimension: 1024
 agent:
   agent_id: cxhms_agent_001
   name: CXHMS Agent
@@ -108,20 +115,20 @@ memory:
   chroma:
     db_path: data/chroma_db
     collection_name: memory_vectors
-    vector_size: 768
+    vector_size: 1024
   milvus_lite:
     db_path: data/milvus_lite.db
-    vector_size: 768
+    vector_size: 1024
   qdrant:
     host: localhost
     port: 6333
-    vector_size: 768
+    vector_size: 1024
   weaviate:
     host: localhost
     port: 8090
     grpc_port: 50061
     embedded: false
-    vector_size: 768
+    vector_size: 1024
     schema_class: CXHMSMemory
     api_key: null
   hybrid_search_enabled: false
@@ -165,12 +172,12 @@ graph:
   auto_create_schema: true
   pool_size: 10
   timeout: 30
-  vector_size: 768
+  vector_size: 1024
   weaviate:
     url: http://localhost:8090
     api_key: null
     grpc_port: 50061
-    vector_dim: 768
+    vector_dim: 1024
     batch_size: 100
     ef_construction: 128
     max_connections: 16

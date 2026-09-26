@@ -1916,7 +1916,12 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
 | 人类 [V] 第五轮 | 已裁决：**批准交付（第五批）+ 「继续修 P-3」**；第五批已提交 `811c7c6` |
 | 第六批（P-3 回填日志标注降级） | 已实施并回归（`previous["degraded"]` 传递 + 日志二分 + payload 排除；定向 29 passed / units 186 / contracts 620 / simulation 50+1）；详见 `20260926_模块1_回填日志标注降级.md` |
 | GN-004 第十七轮复审 | **已闭合**（警示放行 / 无 SOFT_BLOCK；`degraded` 传递链完整、两路径日志可区分、不泄漏进 Milvus）；R-1/R-4 已顺手修（**R-1 首次修改被回读校验发现未持久化 → 已重做确认**），R-2/R-3 已登记 |
-| 人类 [V] 第六轮（交付 + 提交裁决） | 待拉起 |
+| 人类 [V] 第六轮 | 已裁决：**批准交付（第六批）+ 「真实后端验证」**；第六批已提交 `93e2445` |
+| 真实验证（weaviate，已授权写入+清理） | **已完成，发现环境级缺陷**：真实 `CXHMSMemory` 索引要求 **1024 维**，而配置/代码全仓为 **768 维**（`nomic-embed-text`）→ 真实写入 500 失败。空向量防御 **PASS**；清理/基线还原 **PASS**（无残留）；「先删后插」幂等与更新路径**因写入失败未能验证**。详见 `.trae/documents/20260926_模块1_发现向量维度不匹配.md` |
+| 修复方向裁决（维度不匹配） | 人类 [V] 第七轮：**「B-1 配置驱动」+「授权启动 embedding 容器」** |
+| 维度对齐修复（模块1-20260926-08） | **已修复并经真实验证 PASS**：① `config/default.yaml` 新增 `vector.embedding_dimension: 1024` + 6 处维度 768→1024；② `model_router._create_client` 把 `dimension` 接上配置（原被客户端默认 768 静默覆盖）；③ 新增单测 4 例。真实探针 `RESULT: PASS`（幂等 1 条 / 更新生效 / 空向量不写 / 清理归零，真实库零残留）；回归 units 190 / contracts 620 / simulation 50+1。详见 `.trae/documents/20260926_模块1_发现向量维度不匹配.md` |
+| GN-004 第十八轮复审 | **已闭合**（警示放行 / 无 SOFT_BLOCK；真实验证证据链与 verdict 逻辑经独立核验成立、契约边界守住）；**V-1（探针绕过装配链）与 V-2（实测未落盘）已补强闭环**：新增 `probe_app_chain.py` 走完整装配路径实测 `client.dimension=1024 → STORE vector_size=1024 → SYNC True → RESULT PASS`，证据落盘 `evidence_app_chain.txt`；V-3/V-4 已登记 |
+| 人类 [V] 第八轮（交付 + 提交裁决） | 待拉起 |
 
 ### 最终结果
 
