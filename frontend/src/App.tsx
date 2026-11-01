@@ -16,6 +16,9 @@ const ChatPage = React.lazy(() =>
 const MemoriesPage = React.lazy(() =>
   import('./pages/MemoriesPage').then((m) => ({ default: m.MemoriesPage }))
 );
+const KnowledgePage = React.lazy(() =>
+  import('./pages/KnowledgePage').then((m) => ({ default: m.KnowledgePage }))
+);
 const ArchivePage = React.lazy(() =>
   import('./pages/ArchivePage').then((m) => ({ default: m.ArchivePage }))
 );
@@ -86,6 +89,14 @@ function App() {
               element={
                 <LazyRoute>
                   <MemoriesPage />
+                </LazyRoute>
+              }
+            />
+            <Route
+              path="knowledge"
+              element={
+                <LazyRoute>
+                  <KnowledgePage />
                 </LazyRoute>
               }
             />

@@ -2,6 +2,32 @@
 
 > 遵循 AC 范式 v6 rules-3 §六 契约版本化规则。所有契约变更必须记录版本号、变更内容、变更原因、影响范围。
 
+## [1.3.0] - 2026-11-01
+
+### 变更内容
+- **数据契约新增（MINOR）**：新增 `knowledge.json`（@version 1.0.0，draft-07）
+  - 6 个 definitions：`parse_status`（5 状态枚举）/ `item_type`（doc_chunk、experience）/ `error_codes`（8 个全局错误码）
+  - 3 类实体：`knowledge_document` / `knowledge_item` / `knowledge_search_hit`，顶层 `oneOf` 三选一
+- **接口契约新增（MINOR）**：新增 `knowledge_service.pyi`
+  - `KnowledgeManager` 10 个公开方法 + `__init__`（共 11 个类签名）
+  - 模块级 `parse(source_path, filename, mime, config=None) -> "ParseResult"`
+  - 7 个异常类（仅类头，无方法）：`KnowledgeError` / `KnowledgeValidationError` / `KnowledgeParseError` / `KnowledgeUnsupportedMediaError` / `KnowledgeStoreError` / `KnowledgeASRUnavailableError` / `KnowledgeFFmpegUnavailableError`
+- **配置契约新增（MINOR）**：新增 `knowledge_config.json`（39 个配置键，每个 property 带 default，`additionalProperties: false`）
+- **预生成 Mock 新增**：`mock_knowledge_service.py`（`MockKnowledgeService`，10 个公开方法，与 `.pyi` 同名同参）
+- **异常契约实现**：`backend/core/knowledge/exceptions.py`（7 类继承 `CXHMSException`，挂接 error_code / http_status）
+- **模块规则新增**：`modules/模块11_独立知识库/AGENTS.md`（s0301 生成，含优先级/上下文保留/AC 通用约束/三段交接）
+- **测试套件新增**：`tests/contract/knowledge_contract_test.py`、`tests/units/test_knowledge_exceptions.py`
+
+### 变更原因
+- spec `add-standalone-knowledge-base` 实施 Task 1：新增与记忆解耦的独立知识库（per-agent 隔离、多模态解析、LLM 自主沉淀经验）；按 rules-3 冻结三层契约与预生成 Mock
+- 人类显式授权（V-20261101-03/05/06）：仅新建上述 4 个 public 文件 + 追加本 CHANGELOG 条目，不修改 `public/` 既有正文
+- Task 1 契约测试与异常测试全绿，为 S2 契约冻结闸门提供可验证证据
+
+### 影响范围
+- MINOR 变更（新增可选契约）：不阻断既有模块。`knowledge.json` / `knowledge_service.pyi` / `knowledge_config.json` / `mock_knowledge_service.py` 独立于现有 16 schema、13 .pyi、5 config 与 11 预生成 Mock（另含包 `__init__.py`）
+- `public/pre_generated_mock/__init__.py` 未修改；消费方直接按模块路径导入 `mock_knowledge_service.py`
+- 版本序列：`1.2.0` → `1.3.0`（MINOR）。后续 `KnowledgeManager` 实现（Task 10）落地时，`tests/contracts/test_interface_stub.py` 的 `STUB_BACKEND_LOCATOR` 将新增该类的后端定位项
+
 ## [1.2.0] - 2026-07-16
 
 ### 变更内容

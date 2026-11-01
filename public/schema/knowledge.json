@@ -1,0 +1,327 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cxhms.local/schema/knowledge.json",
+  "title": "CXHMS 独立知识库数据契约",
+  "description": "模块11 独立知识库数据契约（@version 1.0.0）。定义知识文档（knowledge_document）、知识条目（knowledge_item）、检索命中（knowledge_search_hit）三类实体，以及解析状态枚举、条目类型枚举与全局错误码。所有知识库数据读写必须通过本契约校验，不符合契约的数据禁止入库（rules-3 §一）。",
+  "version": "1.0.0",
+  "type": "object",
+  "definitions": {
+    "parse_status": {
+      "type": "string",
+      "enum": ["pending", "parsing", "parsed", "failed", "unsupported"],
+      "description": "文档解析状态：pending=等待解析 / parsing=解析中 / parsed=解析成功 / failed=解析失败 / unsupported=不支持的格式"
+    },
+    "item_type": {
+      "type": "string",
+      "enum": ["doc_chunk", "experience"],
+      "description": "知识条目类型：doc_chunk=文档分块 / experience=主 LLM 或用户沉淀的可复用经验"
+    },
+    "error_codes": {
+      "type": "object",
+      "description": "知识库全局错误码清单（与 backend/core/knowledge/exceptions.py 及解析 parse_error 取值一一对应）",
+      "additionalProperties": false,
+      "required": [
+        "KNOWLEDGE_ERROR",
+        "KNOWLEDGE_VALIDATION_ERROR",
+        "KNOWLEDGE_PARSE_FAILED",
+        "KNOWLEDGE_UNSUPPORTED_MIME",
+        "KNOWLEDGE_STORE_UNAVAILABLE",
+        "KNOWLEDGE_ASR_UNAVAILABLE",
+        "KNOWLEDGE_FFMPEG_UNAVAILABLE",
+        "KNOWLEDGE_MEDIA_TOO_LONG"
+      ],
+      "properties": {
+        "KNOWLEDGE_ERROR": {
+          "type": "string",
+          "description": "知识库通用错误（KnowledgeError，HTTP 500）"
+        },
+        "KNOWLEDGE_VALIDATION_ERROR": {
+          "type": "string",
+          "description": "知识库数据不符合数据契约（KnowledgeValidationError，HTTP 400）"
+        },
+        "KNOWLEDGE_PARSE_FAILED": {
+          "type": "string",
+          "description": "文档/媒体解析失败（KnowledgeParseError，HTTP 500）"
+        },
+        "KNOWLEDGE_UNSUPPORTED_MIME": {
+          "type": "string",
+          "description": "MIME 不在允许白名单（KnowledgeUnsupportedMediaError，HTTP 415）"
+        },
+        "KNOWLEDGE_STORE_UNAVAILABLE": {
+          "type": "string",
+          "description": "知识库存储不可用或未启用（KnowledgeStoreError，HTTP 503）"
+        },
+        "KNOWLEDGE_ASR_UNAVAILABLE": {
+          "type": "string",
+          "description": "ASR 依赖不可用或转写超时（KnowledgeASRUnavailableError，HTTP 503）"
+        },
+        "KNOWLEDGE_FFMPEG_UNAVAILABLE": {
+          "type": "string",
+          "description": "ffmpeg 不可用导致音视频抽取失败（KnowledgeFFmpegUnavailableError，HTTP 503）"
+        },
+        "KNOWLEDGE_MEDIA_TOO_LONG": {
+          "type": "string",
+          "description": "媒体时长超过 max_media_duration_seconds（不抛异常，写入 parse_error，上传阶段返回 HTTP 413）"
+        }
+      }
+    },
+    "knowledge_document": {
+      "type": "object",
+      "description": "知识库文档实体（knowledge_documents 表）。按 agent 隔离，同一 agent 内 sha256 唯一。",
+      "additionalProperties": false,
+      "required": [
+        "document_id",
+        "agent_id",
+        "filename",
+        "mime",
+        "size_bytes",
+        "sha256",
+        "parse_status",
+        "created_at"
+      ],
+      "properties": {
+        "document_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "文档唯一标识"
+        },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "所属 agent（隔离维度，default 表示主库）"
+        },
+        "filename": {
+          "type": "string",
+          "minLength": 1,
+          "description": "原始文件名（已做 basename 与非法字符清洗）"
+        },
+        "mime": {
+          "type": "string",
+          "minLength": 1,
+          "description": "MIME 类型（上传为 application/octet-stream 时按扩展名推断）"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "文件字节数"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$",
+          "description": "文件内容 SHA-256（十六进制 64 位），用于同 agent 内去重"
+        },
+        "parse_status": {
+          "$ref": "#/definitions/parse_status",
+          "description": "解析状态"
+        },
+        "created_at": {
+          "type": "string",
+          "description": "创建时间（ISO 8601 字符串）"
+        },
+        "storage_path": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "服务端落盘绝对路径，可为 null"
+        },
+        "parse_error": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "解析错误码或错误摘要，可为 null"
+        },
+        "metadata": {
+          "type": "object",
+          "default": {},
+          "description": "解析元数据（时长、语言、transcript_chars、vision_degraded 等）"
+        },
+        "updated_at": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "更新时间，可为 null"
+        },
+        "is_deleted": {
+          "type": "integer",
+          "enum": [0, 1],
+          "default": 0,
+          "description": "软删除标记：0=正常 / 1=已删除"
+        }
+      }
+    },
+    "knowledge_item": {
+      "type": "object",
+      "description": "知识条目实体（knowledge_items 表）。doc_chunk 指纹为 md5(document_id:chunk_index:规范化内容)，experience 指纹为 md5(规范化内容)。",
+      "additionalProperties": false,
+      "required": [
+        "item_id",
+        "agent_id",
+        "item_type",
+        "content",
+        "fingerprint",
+        "created_at"
+      ],
+      "properties": {
+        "item_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "条目唯一标识"
+        },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "所属 agent"
+        },
+        "item_type": {
+          "$ref": "#/definitions/item_type",
+          "description": "条目类型"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "description": "条目正文"
+        },
+        "fingerprint": {
+          "type": "string",
+          "minLength": 1,
+          "description": "内容指纹（MD5 十六进制），用于去重"
+        },
+        "created_at": {
+          "type": "string",
+          "description": "创建时间（ISO 8601 字符串）"
+        },
+        "document_id": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "来源文档 ID（experience 为 null）"
+        },
+        "title": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "条目标题，可为 null"
+        },
+        "tags": {
+          "type": "array",
+          "items": {"type": "string"},
+          "default": [],
+          "description": "标签数组"
+        },
+        "importance": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "default": 3,
+          "description": "重要度 1..5，默认 3"
+        },
+        "chunk_index": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "default": null,
+          "description": "分块序号（experience 为 null）"
+        },
+        "updated_at": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "更新时间，可为 null"
+        },
+        "is_deleted": {
+          "type": "integer",
+          "enum": [0, 1],
+          "default": 0,
+          "description": "软删除标记：0=正常 / 1=已删除"
+        }
+      }
+    },
+    "knowledge_search_hit": {
+      "type": "object",
+      "description": "混合检索命中实体。在 knowledge_item 字段基础上追加 score（RRF 融合分数）。",
+      "additionalProperties": false,
+      "required": [
+        "item_id",
+        "agent_id",
+        "item_type",
+        "content",
+        "fingerprint",
+        "created_at",
+        "score"
+      ],
+      "properties": {
+        "item_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "条目唯一标识"
+        },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "所属 agent"
+        },
+        "item_type": {
+          "$ref": "#/definitions/item_type",
+          "description": "条目类型"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "description": "条目正文"
+        },
+        "fingerprint": {
+          "type": "string",
+          "minLength": 1,
+          "description": "内容指纹（MD5 十六进制）"
+        },
+        "created_at": {
+          "type": "string",
+          "description": "创建时间（ISO 8601 字符串）"
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "description": "检索分数（向量 + FTS 的 RRF 融合结果）"
+        },
+        "document_id": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "来源文档 ID，可为 null"
+        },
+        "title": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "条目标题，可为 null"
+        },
+        "tags": {
+          "type": "array",
+          "items": {"type": "string"},
+          "default": [],
+          "description": "标签数组"
+        },
+        "importance": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "default": 3,
+          "description": "重要度 1..5"
+        },
+        "chunk_index": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "default": null,
+          "description": "分块序号，可为 null"
+        },
+        "updated_at": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "更新时间，可为 null"
+        },
+        "is_deleted": {
+          "type": "integer",
+          "enum": [0, 1],
+          "default": 0,
+          "description": "软删除标记：0=正常 / 1=已删除"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {"$ref": "#/definitions/knowledge_document"},
+    {"$ref": "#/definitions/knowledge_item"},
+    {"$ref": "#/definitions/knowledge_search_hit"}
+  ]
+}

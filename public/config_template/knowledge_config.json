@@ -1,0 +1,263 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cxhms.local/config_template/knowledge_config.json",
+  "title": "CXHMS Knowledge Config",
+  "description": "模块11 独立知识库配置契约（rules-3 §三）。定义 knowledge 段的全部配置参数、默认值与自动补齐规则（auto_fill）：配置加载时按 config/default.yaml::knowledge → 本契约 default → 代码兜底 顺序补齐缺失字段。禁止业务代码硬编码这些配置参数。",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "知识库总开关。false 时所有 /api/knowledge/* 端点返回 503 + KNOWLEDGE_STORE_UNAVAILABLE，应用仍可启动。"
+    },
+    "db_dir": {
+      "type": "string",
+      "minLength": 1,
+      "default": "data",
+      "description": "SQLite 数据库目录（相对项目根或绝对路径）。默认 'data'。"
+    },
+    "db_filename_prefix": {
+      "type": "string",
+      "minLength": 1,
+      "default": "knowledge",
+      "description": "数据库文件名前缀。实际文件为 {prefix}_{safe_agent_id}.db，default 为 'knowledge.db'。"
+    },
+    "files_dir": {
+      "type": "string",
+      "minLength": 1,
+      "default": "data/knowledge_files",
+      "description": "上传原文件与临时产物目录。默认 'data/knowledge_files'。"
+    },
+    "collection_prefix": {
+      "type": "string",
+      "minLength": 1,
+      "default": "CXHMSKnowledge",
+      "description": "Weaviate collection 前缀。实际 collection 为 {prefix}_{safe_agent_id}，default 为 'CXHMSKnowledge'。"
+    },
+    "max_document_size_mb": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 20,
+      "description": "文本类文档大小上限（MB）。默认 20，超限返回 413。"
+    },
+    "max_media_size_mb": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 200,
+      "description": "媒体（图片/音频/视频）大小上限（MB）。默认 200，超限返回 413。"
+    },
+    "allowed_document_mimes": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true,
+      "default": [
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+        "text/plain",
+        "text/markdown"
+      ],
+      "description": "文档 MIME 白名单。默认含 PDF / DOCX / DOC / TXT / MD。"
+    },
+    "allowed_image_mimes": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true,
+      "default": ["image/png", "image/jpeg", "image/webp", "image/bmp"],
+      "description": "图片 MIME 白名单。"
+    },
+    "allowed_audio_mimes": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true,
+      "default": [
+        "audio/mpeg",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/mp4",
+        "audio/flac",
+        "audio/ogg",
+        "audio/aac",
+        "audio/opus"
+      ],
+      "description": "音频 MIME 白名单。"
+    },
+    "allowed_video_mimes": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true,
+      "default": [
+        "video/mp4",
+        "video/quicktime",
+        "video/x-matroska",
+        "video/webm",
+        "video/x-msvideo",
+        "video/x-flv"
+      ],
+      "description": "视频 MIME 白名单。"
+    },
+    "chunk_size": {
+      "type": "integer",
+      "minimum": 100,
+      "default": 800,
+      "description": "文档分块字符数。默认 800。"
+    },
+    "chunk_overlap": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 120,
+      "description": "分块重叠字符数，必须小于 chunk_size。默认 120。"
+    },
+    "max_chunks_per_document": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 2000,
+      "description": "单文档最大分块数。默认 2000，超出截断。"
+    },
+    "parse_max_workers": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8,
+      "default": 2,
+      "description": "后台解析线程池大小。默认 2。"
+    },
+    "asr_provider": {
+      "type": "string",
+      "enum": ["faster_whisper", "openai_compatible"],
+      "default": "faster_whisper",
+      "description": "ASR 提供方。默认 faster_whisper（本地 faster-whisper）；可选 openai_compatible（/audio/transcriptions）。"
+    },
+    "asr_model": {
+      "type": "string",
+      "minLength": 1,
+      "default": "small",
+      "description": "faster-whisper 模型名或远端模型名。默认 'small'。"
+    },
+    "asr_device": {
+      "type": "string",
+      "enum": ["auto", "cpu", "cuda"],
+      "default": "auto",
+      "description": "ASR 运行设备。默认 'auto'。"
+    },
+    "asr_compute_type": {
+      "type": "string",
+      "minLength": 1,
+      "default": "int8",
+      "description": "ASR 计算精度。默认 'int8'。"
+    },
+    "asr_language": {
+      "type": "string",
+      "minLength": 1,
+      "default": "zh",
+      "description": "ASR 语言（ISO 语言码）。默认 'zh'。"
+    },
+    "asr_download_root": {
+      "type": "string",
+      "minLength": 1,
+      "default": "data/models/faster_whisper",
+      "description": "faster-whisper 模型缓存目录。默认 'data/models/faster_whisper'。"
+    },
+    "asr_base_url": {
+      "type": "string",
+      "default": "",
+      "description": "openai_compatible ASR 端点地址。默认空（使用 faster_whisper 时无需填写）。"
+    },
+    "asr_api_key": {
+      "type": "string",
+      "default": "",
+      "description": "openai_compatible ASR API Key。默认空；不得写入日志。"
+    },
+    "asr_timeout_seconds": {
+      "type": "integer",
+      "minimum": 30,
+      "default": 600,
+      "description": "ASR 转写超时秒数。默认 600。"
+    },
+    "ffmpeg_path": {
+      "type": "string",
+      "default": "",
+      "description": "ffmpeg 可执行路径。默认空，自动发现（PATH 或 imageio-ffmpeg）。"
+    },
+    "ffmpeg_fallback_to_imageio": {
+      "type": "boolean",
+      "default": true,
+      "description": "ffmpeg 不在 PATH 时是否回退 imageio-ffmpeg。默认 true。"
+    },
+    "ffmpeg_audio_sample_rate": {
+      "type": "integer",
+      "minimum": 8000,
+      "default": 16000,
+      "description": "抽音轨采样率（Hz）。默认 16000。"
+    },
+    "video_frame_interval_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 10,
+      "description": "视频抽帧间隔秒数。默认 10。"
+    },
+    "video_max_frames": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 12,
+      "description": "视频最多抽帧数。默认 12。"
+    },
+    "max_media_duration_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 3600,
+      "description": "媒体最长时长（秒）。默认 3600；超限上传阶段 413，解析阶段置 unsupported + KNOWLEDGE_MEDIA_TOO_LONG。"
+    },
+    "vector_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "是否启用向量检索。默认 true；不可用时降级 FTS/LIKE。"
+    },
+    "vector_top_k_default": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 8,
+      "description": "向量检索默认 top_k。默认 8。"
+    },
+    "vector_top_k_max": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 50,
+      "description": "向量检索 top_k 上限。默认 50，必须 ≥ vector_top_k_default。"
+    },
+    "vector_rrf_k": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 60,
+      "description": "RRF 融合参数 k。默认 60。"
+    },
+    "fts_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "是否启用 SQLite FTS5 全文检索。默认 true；不可用时降级 LIKE。"
+    },
+    "fts_fallback_like": {
+      "type": "boolean",
+      "default": true,
+      "description": "FTS5 不可用或短查询时是否回退 LIKE。默认 true。"
+    },
+    "search_top_k_default": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 8,
+      "description": "混合检索默认 top_k。默认 8。"
+    },
+    "search_top_k_max": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 50,
+      "description": "混合检索 top_k 上限。默认 50，必须 ≥ search_top_k_default。"
+    },
+    "preview_chars": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 500,
+      "description": "文档详情返回的解析文本预览字符数。默认 500。"
+    }
+  }
+}

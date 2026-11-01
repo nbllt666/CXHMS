@@ -34,3 +34,6 @@ watchdog>=3.0.0
 # Document parsing (AnythingLLM attachments support)
 pypdf>=4.0
 python-docx>=1.1
+faster-whisper>=1.0.3
+imageio-ffmpeg>=0.5.1
+jsonschema>=4.0
