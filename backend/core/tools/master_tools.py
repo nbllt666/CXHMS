@@ -3,10 +3,13 @@
 """
 
 import json
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from .registry import tool_registry
+
+logger = logging.getLogger(__name__)
 
 _MEMORY_MANAGER = None
 _SECONDARY_ROUTER = None
@@ -400,6 +403,14 @@ def register_master_tools():
         tags=["acp", "group", "network"],
         examples=["离开协作群组"],
     )
+
+    # 14. 知识库工具（模块11）：写入经验 / 检索知识
+    try:
+        from backend.core.tools.knowledge_tools import register_knowledge_tools
+
+        register_knowledge_tools()
+    except Exception as e:
+        logger.warning(f"知识库工具注册失败: {e}")
 
 
 def write_long_term_memory(

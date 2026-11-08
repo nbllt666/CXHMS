@@ -205,6 +205,10 @@ class KnowledgeStore:
         self._local = threading.local()
         self._write_lock = threading.RLock()
         self._fts5_available = False
+        # 登记所有线程创建的连接，确保 close() 能释放全部句柄
+        # （Windows 下残留连接会导致 db 文件无法删除）
+        self._conns_lock = threading.Lock()
+        self._all_conns: set[sqlite3.Connection] = set()
 
         parent_dir = os.path.dirname(os.path.abspath(self.db_path))
         if parent_dir:
@@ -276,11 +280,14 @@ class KnowledgeStore:
                 conn.execute("SELECT 1")
                 return conn
             except sqlite3.Error:
-                self._safe_close(conn)
+                self._discard_conn(conn)
                 self._local.conn = None
 
         try:
-            conn = sqlite3.connect(self.db_path, timeout=30)
+            # check_same_thread=False：连接仍按线程独占使用（threading.local），
+            # 仅允许 close() 在其它线程释放句柄（Windows 下删除 db 文件所需），
+            # 否则跨线程 close 会抛 ProgrammingError 导致文件句柄泄漏。
+            conn = sqlite3.connect(self.db_path, timeout=30, check_same_thread=False)
         except sqlite3.Error as exc:
             raise KnowledgeStoreError(
                 f"打开知识库失败: {self.db_path}", {"error": str(exc)}
@@ -293,6 +300,8 @@ class KnowledgeStore:
         except sqlite3.Error as exc:  # pragma: no cover - 文件系统异常
             logger.warning("设置 SQLite PRAGMA 失败: %s", exc)
         self._local.conn = conn
+        with self._conns_lock:
+            self._all_conns.add(conn)
         return conn
 
     @staticmethod
@@ -305,11 +314,24 @@ class KnowledgeStore:
         except sqlite3.Error:  # pragma: no cover
             pass
 
+    def _discard_conn(self, conn: sqlite3.Connection | None) -> None:
+        """关闭并从全局登记表移除连接。"""
+        self._safe_close(conn)
+        if conn is None:
+            return
+        with self._conns_lock:
+            self._all_conns.discard(conn)
+
     def close(self) -> None:
-        """关闭当前线程连接（供测试 fixture / 管理器关闭使用，可重复调用）。"""
+        """关闭全部线程连接（供测试 fixture / 管理器关闭使用，可重复调用）。"""
         conn = getattr(self._local, "conn", None)
         self._safe_close(conn)
         self._local.conn = None
+        with self._conns_lock:
+            pending = list(self._all_conns)
+            self._all_conns.clear()
+        for other in pending:
+            self._safe_close(other)
 
     def _init_db(self) -> None:
         """建表、建索引、建 FTS5 表并回填索引。"""
@@ -850,6 +872,76 @@ class KnowledgeStore:
             (str(document_id),),
         ).fetchone()
         return int(row[0])
+
+    def update_document_status(
+        self,
+        document_id: str,
+        parse_status: str,
+        parse_error: str | None = None,
+        metadata: dict | None = None,
+    ) -> dict | None:
+        """更新文档解析状态（可选覆盖 parse_error / metadata）。
+
+        Args:
+            document_id: 文档 ID
+            parse_status: 新状态（`pending` / `parsing` / `parsed` / `failed` / `unsupported`）
+            parse_error: 解析错误码；传 None 表示清空
+            metadata: 新元数据；传 None 表示保持原值
+
+        Returns:
+            更新后的文档字典；文档不存在或已删除时返回 None
+        """
+        target = str(document_id)
+        with self._write_lock:
+            conn = self._get_conn()
+            try:
+                assignments = ["parse_status = ?", "parse_error = ?", "updated_at = ?"]
+                params: list[object] = [str(parse_status), parse_error, _iso_now()]
+                if metadata is not None:
+                    assignments.append("metadata = ?")
+                    params.append(json.dumps(metadata, ensure_ascii=False))
+                params.append(target)
+                cursor = conn.execute(
+                    f"UPDATE knowledge_documents SET {', '.join(assignments)} "
+                    "WHERE document_id = ? AND is_deleted = 0",
+                    params,
+                )
+                conn.commit()
+            except sqlite3.Error as exc:
+                conn.rollback()
+                raise KnowledgeStoreError(
+                    "更新知识文档状态失败", {"error": str(exc)}
+                ) from exc
+            if cursor.rowcount <= 0:
+                return None
+        return self.get_document(target)
+
+    def list_items_by_document(
+        self, document_id: str, limit: int | None = None
+    ) -> list[dict]:
+        """按 document_id 列出未删除条目（`chunk_index` 升序）。"""
+        conn = self._get_conn()
+        sql = (
+            "SELECT * FROM knowledge_items WHERE document_id = ? AND is_deleted = 0 "
+            "ORDER BY chunk_index ASC, item_id ASC"
+        )
+        params: list[object] = [str(document_id)]
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(max(0, int(limit)))
+        rows = conn.execute(sql, params).fetchall()
+        return [KnowledgeItem.from_row(row).to_dict() for row in rows]
+
+    def list_item_ids_by_document(self, document_id: str) -> list[str]:
+        """列出文档下全部未删除条目 ID（供向量索引清理使用）。"""
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT item_id FROM knowledge_items "
+            "WHERE document_id = ? AND is_deleted = 0 "
+            "ORDER BY chunk_index ASC, item_id ASC",
+            (str(document_id),),
+        ).fetchall()
+        return [str(row["item_id"]) for row in rows]
 
     # ------------------------------------------------------------------ #
     # 关键词检索

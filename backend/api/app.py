@@ -28,6 +28,7 @@ from backend.api.routers import (
     context,
     cxfc as cxfc_router,
     graph as graph_router,
+    knowledge as knowledge_router,
     memory,
     memory_chat,
     service,
@@ -220,6 +221,27 @@ async def _build_sim_service_state(app: FastAPI):
     service_state.cxfc_manager = cxfc_manager
     service_state.document_memory_manager = document_memory_manager
 
+    # 9. 知识库注册表：tmpdir 隔离 + FakeEmbeddingModel（向量不可用时自动降级 FTS）
+    try:
+        from backend.core.knowledge import KnowledgeRegistry
+        from backend.core.knowledge.config import load_knowledge_config
+        from tests.fakes.fake_embedding import FakeEmbeddingModel
+
+        service_state.knowledge_registry = KnowledgeRegistry(
+            config=load_knowledge_config(
+                {
+                    "db_dir": tmpdir,
+                    "files_dir": os.path.join(tmpdir, "knowledge_files"),
+                    "asr_download_root": os.path.join(tmpdir, "models"),
+                    "vector_enabled": False,
+                }
+            ),
+            embedding_model=FakeEmbeddingModel(),
+        )
+        logger.info("模拟模式：知识库注册表已装配")
+    except Exception as e:
+        logger.warning(f"模拟模式：知识库注册表装配失败（/api/knowledge/* 将返回 503）: {e}")
+
     return service_state, tmpdir
 
 
@@ -258,6 +280,12 @@ async def lifespan(app: FastAPI):
         try:
             if service_state.document_memory_manager:
                 service_state.document_memory_manager.close()
+        except Exception:
+            pass
+        # 模块11: 关闭知识库注册表（不删除向量 collection）
+        try:
+            if getattr(service_state, "knowledge_registry", None):
+                service_state.knowledge_registry.close_all()
         except Exception:
             pass
         # T11: 关闭 ContextManager 后台 flush 线程，避免 lifespan 退出时 daemon 线程被强杀
@@ -728,6 +756,25 @@ async def lifespan(app: FastAPI):
     service_state.model_router = model_router
     service_state.cxfc_manager = cxfc_manager
     service_state.document_memory_manager = document_memory_manager
+
+    # 模块11: 独立知识库注册表（embedding 复用 llm_client；失败不影响主服务）
+    try:
+        from backend.core.knowledge import KnowledgeRegistry
+        from backend.core.knowledge.config import load_knowledge_config
+
+        embedding_model = (
+            llm_client
+            if llm_client is not None
+            and (hasattr(llm_client, "get_embeddings") or hasattr(llm_client, "get_embedding"))
+            else None
+        )
+        service_state.knowledge_registry = KnowledgeRegistry(
+            config=load_knowledge_config(), embedding_model=embedding_model
+        )
+        logger.info("知识库注册表已装配")
+    except Exception as e:
+        logger.warning(f"知识库注册表装配失败（/api/knowledge/* 将返回 503）: {e}")
+
     app.state.services = service_state
     set_service_state(service_state)
 
@@ -864,6 +911,13 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
+    # 模块11: 关闭知识库注册表（不删除向量 collection）
+    if getattr(service_state, "knowledge_registry", None):
+        try:
+            service_state.knowledge_registry.close_all()
+        except Exception:
+            pass
+
     # T11: 关闭 ContextManager 后台 flush 线程，避免 lifespan 退出时 daemon 线程被强杀
     if context_manager:
         try:
@@ -941,6 +995,7 @@ app.include_router(config_router.router, prefix="/api")
 app.include_router(vector_router.router, prefix="/api")
 app.include_router(graph_router.router, prefix="/api")
 app.include_router(cxfc_router.router, prefix="/api")
+app.include_router(knowledge_router.router, prefix="/api")
 app.include_router(anythingllm.router, prefix="/api")
 
 # RADIX-Lite v1.3.0：DistillationService 路由静态注册（实例在 lifespan 中初始化）

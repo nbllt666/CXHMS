@@ -202,3 +202,66 @@ llm_params:
   maxTokens: 0
   topP: 0.9
   timeout: 30
+knowledge:
+  enabled: true
+  db_dir: data
+  db_filename_prefix: knowledge
+  files_dir: data/knowledge_files
+  collection_prefix: CXHMSKnowledge
+  max_document_size_mb: 20
+  max_media_size_mb: 200
+  allowed_document_mimes:
+  - application/pdf
+  - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+  - application/msword
+  - text/plain
+  - text/markdown
+  allowed_image_mimes:
+  - image/png
+  - image/jpeg
+  - image/webp
+  - image/bmp
+  allowed_audio_mimes:
+  - audio/mpeg
+  - audio/wav
+  - audio/x-wav
+  - audio/mp4
+  - audio/flac
+  - audio/ogg
+  - audio/aac
+  - audio/opus
+  allowed_video_mimes:
+  - video/mp4
+  - video/quicktime
+  - video/x-matroska
+  - video/webm
+  - video/x-msvideo
+  - video/x-flv
+  chunk_size: 800
+  chunk_overlap: 120
+  max_chunks_per_document: 2000
+  parse_max_workers: 2
+  asr_provider: faster_whisper
+  asr_model: small
+  asr_device: auto
+  asr_compute_type: int8
+  asr_language: zh
+  asr_download_root: data/models/faster_whisper
+  asr_base_url: ''
+  asr_api_key: ''
+  asr_timeout_seconds: 600
+  ffmpeg_path: ''
+  ffmpeg_fallback_to_imageio: true
+  ffmpeg_audio_sample_rate: 16000
+  video_frame_interval_seconds: 10
+  video_max_frames: 12
+  max_media_duration_seconds: 3600
+  vector_enabled: true
+  vector_top_k_default: 8
+  vector_top_k_max: 50
+  vector_rrf_k: 60
+  fts_enabled: true
+  fts_fallback_like: true
+  search_top_k_default: 8
+  search_top_k_max: 50
+  preview_chars: 500

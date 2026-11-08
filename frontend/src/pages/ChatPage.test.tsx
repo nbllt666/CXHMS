@@ -9,6 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import type { ButtonHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react';
 import type { StreamChunk } from '../types/chat';
 
 // ---------- Mock i18n ----------
@@ -96,12 +97,17 @@ vi.mock('../api', () => ({
 
 // ---------- Mock UI 组件（避免引入样式 + 复杂交互） ----------
 vi.mock('../components/ui', () => ({
-  Button: ({ children, onClick, disabled, ...rest }: any) => (
-    <button onClick={onClick} disabled={disabled} data-testid={`btn-${String(rest['data-testid'] || children).slice(0, 20)}`}>
+  Button: ({
+    children,
+    onClick,
+    disabled,
+    'data-testid': testId,
+  }: ButtonHTMLAttributes<HTMLButtonElement> & { 'data-testid'?: string }) => (
+    <button onClick={onClick} disabled={disabled} data-testid={`btn-${String(testId || children).slice(0, 20)}`}>
       {children}
     </button>
   ),
-  Textarea: ({ value, onChange, onKeyDown, placeholder, ...rest }: any) => (
+  Textarea: ({ value, onChange, onKeyDown, placeholder, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) => (
     <textarea
       value={value}
       onChange={onChange}
@@ -111,11 +117,13 @@ vi.mock('../components/ui', () => ({
       {...rest}
     />
   ),
-  Card: ({ children, className }: any) => <div className={className} data-testid="card">{children}</div>,
+  Card: ({ children, className }: { children?: ReactNode; className?: string }) => (
+    <div className={className} data-testid="card">{children}</div>
+  ),
 }));
 
 vi.mock('../components/layout', () => ({
-  PageHeader: ({ title, actions }: any) => (
+  PageHeader: ({ title, actions }: { title?: ReactNode; actions?: ReactNode }) => (
     <div data-testid="page-header">
       <h1>{title}</h1>
       <div data-testid="header-actions">{actions}</div>

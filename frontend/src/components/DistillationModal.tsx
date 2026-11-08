@@ -78,8 +78,10 @@ export function DistillationModal({ isOpen, onClose }: DistillationModalProps) {
       try {
         const { agentApi } = await import('../api/agent');
         const resp = await agentApi.getAgents();
-        const agents = Array.isArray(resp) ? resp : (resp as any).agents || [];
-        setAgentsList(agents.map((a: any) => ({ id: a.id, name: a.name })));
+        type AgentLite = { id: string; name: string };
+        const payload = resp as AgentLite[] | { agents?: AgentLite[] };
+        const agents: AgentLite[] = Array.isArray(payload) ? payload : payload.agents ?? [];
+        setAgentsList(agents.map((a) => ({ id: a.id, name: a.name })));
       } catch (e) {
         console.error('加载 agent 列表失败:', e);
       }
@@ -384,8 +386,12 @@ export function DistillationModal({ isOpen, onClose }: DistillationModalProps) {
   // 自动轮询组状态（蒸馏过程中）
   useEffect(() => {
     if (step !== 'distill' || !batchResult) return;
+    const groupId = batchResult.session_group_id;
     const timer = setInterval(() => {
-      void refreshGroupStatus();
+      distillationApi
+        .getGroupStatus(groupId)
+        .then((status) => setGroupStatus(status))
+        .catch((err) => console.error('刷新组状态失败:', err));
       setGroupRefreshKey((k) => k + 1);
     }, 5000);
     return () => clearInterval(timer);

@@ -1,7 +1,7 @@
 # 当前交接状态（current-note.md）
 
-> 最后更新：2026-09-26 17:36
-> 状态：**竞态修复（模块1-20260926-01）+ GN-004 第八轮警示放行后的补强批次已交付**：向量后端防线（chroma/milvus 空向量 + 幂等）/ 配置 `server`·`system` 合并读取 / H3 判定与残留窗口加固（`skip_thread_ids`）均已落地，新增单测 14 + 4 + 6 passed；整目录 **153 passed 0 崩溃**（含本轮新增第 6 例；此前 152 × 3 次 0 崩溃）、contracts 620、simulation 50+1。**本轮产出已提交 `6884301`**（另：`875219a` 遗留项批处理、`d8de6b4` 门控，均已提交——此前头部"均未 git 提交"的描述已失效）；本轮修正 4 文件（`manager.py` 注释/注解、本 note、`debug-memory-recall-zero-relevance.md` §9、`test_dedup_thread_lifecycle.py` 新增用例）已获批准并提交 `645afd0`；`.dbg/` 实验产物已清理。**人类 [V] 已裁决（16:52）：批准交付 + 授权清理 `.dbg/` 全部产物 + 批准现在提交**；GN-004 第九轮警示放行（无 SOFT_BLOCK）。该轮全部闭合。**其后新批次（17:36）：N-4/N-5 挂账观察项已修复（同步计数虚报横向拉平 milvus/weaviate/qdrant + 配置段非 dict 防御），GN-004 第十轮警示放行（无 SOFT_BLOCK）；人类 [V] 第一轮裁决「要求修正 → R-1+R-3+R-4 三项全修」已全部完成并经 GN-004 第十一轮复审（警示放行 / 无 SOFT_BLOCK）；待第二轮 [V]（交付 + 提交裁决，人类已指示暂不提交）。**
+> 最后更新：2026-11-08
+> 状态：**模块11 独立知识库（spec `add-standalone-knowledge-base`）Task 0~15 已闭合；GN-004 第 3 轮交付前审查为警示放行（无 SOFT_BLOCK）；音视频真机正向与项目级 lint 已收口**；三重闸门证据见 `.trae/documents/test_reports/frontend_gate_20261108_103000/`，补验收证据见 `.trae/documents/test_reports/media_gate_20261108/`。详见本文件末尾「最新变更（2026-11-01）：独立知识库」章节。**（此前状态：竞态修复（模块1-20260926-01）+ GN-004 第八轮警示放行后的补强批次已交付**：向量后端防线（chroma/milvus 空向量 + 幂等）/ 配置 `server`·`system` 合并读取 / H3 判定与残留窗口加固（`skip_thread_ids`）均已落地，新增单测 14 + 4 + 6 passed；整目录 **153 passed 0 崩溃**（含本轮新增第 6 例；此前 152 × 3 次 0 崩溃）、contracts 620、simulation 50+1。**本轮产出已提交 `6884301`**（另：`875219a` 遗留项批处理、`d8de6b4` 门控，均已提交——此前头部"均未 git 提交"的描述已失效）；本轮修正 4 文件（`manager.py` 注释/注解、本 note、`debug-memory-recall-zero-relevance.md` §9、`test_dedup_thread_lifecycle.py` 新增用例）已获批准并提交 `645afd0`；`.dbg/` 实验产物已清理。**人类 [V] 已裁决（16:52）：批准交付 + 授权清理 `.dbg/` 全部产物 + 批准现在提交**；GN-004 第九轮警示放行（无 SOFT_BLOCK）。该轮全部闭合。**其后新批次（17:36）：N-4/N-5 挂账观察项已修复（同步计数虚报横向拉平 milvus/weaviate/qdrant + 配置段非 dict 防御），GN-004 第十轮警示放行（无 SOFT_BLOCK）；人类 [V] 第一轮裁决「要求修正 → R-1+R-3+R-4 三项全修」已全部完成并经 GN-004 第十一轮复审（警示放行 / 无 SOFT_BLOCK）；待第二轮 [V]（交付 + 提交裁决，人类已指示暂不提交）。**
 > （此前状态：**去重键空 content 误合并修复已闭合（模块1-20260925-03：复现确认 → 修复 + 单测 → GN-004 警示放行（无 SOFT_BLOCK）→ 观察项已处置；定向 11 / units 138 / contracts 620 passed）**）
 > （此前状态：遗留项批处理已交付（P1 关键词 2 字滑窗召回 / P2 向量写入链路 / P3 配置类型规整 / P5 会话路径 / compose 服务名；GN-004 第六轮警示放行 + 人类 [V] 批准交付 + 验证产物已清理））
 > （此前状态：记忆召回相关度门控修复已交付（GN-004 五轮审查 + 人类 [V] 批准，commit `d8de6b4`））
@@ -1994,13 +1994,12 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
 
 ### 交接状态
 
-- 做到哪了：Task 0 已闭合；Task 1 已闭合（契约/Mock/异常/模块规则产出，32 passed）；S2 [V] 闸门进行中（GN-004 警示放行，观察项 O1/O2/O4/O6/O7 已处置）。
-- 为什么：按 rules-6 先文档后代码；按 rules-0 §四-6 登记请示闭环；按 S2 契约冻结规则先审后开工。
+- 做到哪了：Task 0~15 全部闭合（最后一次更新 2026-11-08）；音视频真机正向已补环境验证、项目级 lint 已清零；GN-004 第 2 轮复审为警示放行（`a0f423ed-d4e9-4be1-93e4-be960f96ddb3`），观察项 O-A/O-B/O-C 已处置。
+- 为什么：按 rules-6 先文档后代码；按 rules-0 §四-6 登记请示闭环；按 S2 契约冻结规则先审后开工；按 s0402 三重闸门留证；媒体链路缺陷按 rules-6 单独留痕（`20261108_模块11_修复音轨抽取命令.md`）。
 - 未闭合项：
-  1. S2 [V] 人类批准（V-20261101-07）待裁决。
-  2. 第一波 Task 2~9 尚未启动。
-  3. `faster-whisper` / ffmpeg / PaddleOCR 环境可用性待 Task 5/6 验证。
-- 接续入口：S2 [V] 人类批准后启动第一波 8 个 `[P]` 任务（Task 2~9）。
+  1. 真实 vLLM/Weaviate 语义检索链路未验证（当前仅验证 FTS 降级路径）。
+  2. 根 `AGENTS.md` 待同步清单需人类/s0301 处理（AI 不自行修改）。
+- 接续入口：人类最终验收 → 后续如接入 vLLM/Weaviate，按 `tests/units/test_knowledge_*.py` 补语义检索正向用例。
 
 ### 请示闭环追踪（rules-0 §四-6）
 
@@ -2013,4 +2012,20 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
 | V-20261101-05 | 预生成 Mock 授权 | 授权新增 mock 文件 | 已闭合 |
 | V-20261101-06 | CHANGELOG 授权 | 授权追加 1.3.0 | 已闭合 |
 | V-20261101-07 | S2 契约冻结批准 | 用户跳过确认（视为批准） | 已闭合 |
+| V-20261108-01 | 音视频真机正向未验证如何验收 | 先补环境再验收（ffmpeg + faster-whisper），已补装并从真实链路取得正向证据 | 已闭合 |
+| V-20261108-02 | 项目级 lint 17 errors 如何处置 | 本次一并修复，已清零（0 error / 0 warning） | 已闭合 |
+| V-20261108-03 | 视频帧描述因 PaddleOCR 无 py3.14 wheel 无法验证 | 另装 Python 3.12 + 隔离 venv 验证，已取得真实 OCR 帧描述证据 | 已闭合 |
+
+### 最终结果（2026-11-08）
+
+- 产出物清单：
+  - 契约：`public/schema/knowledge.json`、`public/interface_stub/knowledge_service.pyi`、`public/config_template/knowledge_config.json`、`public/pre_generated_mock/mock_knowledge_service.py`、`public/schema/CHANGELOG.md`（1.3.0）
+  - 后端内核：`backend/core/knowledge/`（models / store / config / chunker / manager / vector_index / media / asr / parsers/* / exceptions）
+  - API 与工具：`backend/api/routers/knowledge.py`（10 端点）、`backend/core/tools/knowledge_tools.py`
+  - 前端：`frontend/src/api/knowledge.ts`、`frontend/src/pages/KnowledgePage.tsx`、`frontend/src/components/knowledge/*`
+  - 测试：`tests/contract/knowledge_contract_test.py`、`tests/units/test_knowledge_*.py`、`tests/e2e/test_knowledge_api.py`、`tests/e2e/test_knowledge_agent_isolation.py`
+  - 证据：`.trae/documents/test_reports/frontend_gate_20261108_103000/`、`.trae/documents/test_reports/media_gate_20261108/`
+- 验证结论：合同/单元/契约回归 **1093 passed / 0 skipped**；媒体正向 21 passed（0 skip，含真实 ffmpeg 抽音轨）；音频真机转写 `parsed`；视频真机链路（Python 3.12 隔离 venv）`parsed`，含音轨转写与 `[帧 0 @ 0s] HELLOOCR2026` / `[帧 1 @ 1s] HELLOOCR2026`；知识库 E2E 13 passed；前端 typecheck 通过、lint 0 error / 0 warning、vitest 325 passed；Mock 回归 13 passed。
+- 状态：Task 0~15 `已闭合`（GN-004 首轮 `2c76836c-93ab-4d94-8235-165481d5fd59` 阻断 → 第 2 轮 `a0f423ed-d4e9-4be1-93e4-be960f96ddb3` 警示放行 → 第 3 轮复核 `fa6ebf78-420a-4d48-9079-dbafcc3888e1` 警示放行，无 SOFT_BLOCK）；音视频真机正向与项目级 lint 已收口，待人类最终验收。
+- 审查记录（第 3 轮观察项处置）：O1 证据刷新（`media_gate_20261108/` 新增修复后 typecheck/lint/vitest 与脚本、旧 summary 标 superseded）、O2 note 头部状态统一、O3 变更文档 §8.3/§8.4/§10.3 状态与数字统一、O4 spec 头部改 r6 且数字统一 1093、O5 验证脚本与 venv 环境清单落盘；O6（`SummaryModal.agentId` 死 prop、`ffmpeg_path` 预热设计）为非回归项，保留观察。
 

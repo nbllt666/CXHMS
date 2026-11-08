@@ -103,6 +103,12 @@ STUB_BACKEND_LOCATOR: Dict[str, Dict[str, str]] = {
         "backend_class": "TemplateEngine",
         "kind": "class",
     },
+    # 模块11 独立知识库（Task 10，2026-11-08 补全 locator）
+    "KnowledgeManager": {
+        "backend_module": "backend.core.knowledge.manager",
+        "backend_class": "KnowledgeManager",
+        "kind": "class",
+    },
 }
 
 
@@ -277,6 +283,11 @@ def _types_compatible(stub_type_str: str, backend_type: Any) -> bool:
         return "list" in str(backend_type).lower() or "List" in str(backend_type)
     if "optional" in stub_lower or "union" in stub_lower:
         # Optional/Union 宽松
+        return True
+    # PEP 604（`str | None`）与 Sequence/Mapping 容器同样按容器宽容处理
+    if "|" in stub_lower or "none" in stub_lower:
+        return True
+    if "sequence" in stub_lower or "mapping" in stub_lower:
         return True
     if "any" in stub_lower:
         return True

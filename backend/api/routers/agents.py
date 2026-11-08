@@ -496,11 +496,66 @@ def _cleanup_agent_memory_tables(agent_id: str) -> None:
         logger.warning(f"清理 agent 记忆表失败 (agent_id={agent_id}): {e}")
 
 
+def _cleanup_agent_knowledge(agent_id: str) -> None:
+    """清理指定 agent 的独立知识库资源（default 受保护，不清理）。
+
+    - 关闭并移除 KnowledgeManager（非 default 同时删除其 Weaviate collection）
+    - 删除 `data/knowledge_{safe}.db`（含 -wal/-shm）
+    - 删除 `data/knowledge_files/{safe}/` 目录
+    """
+    import shutil
+
+    try:
+        from backend.core.knowledge.config import resolve_project_path
+        from backend.core.knowledge.manager import DEFAULT_AGENT_ID, safe_agent_id
+        from backend.dependencies import _resolve_state
+
+        safe = safe_agent_id(agent_id)
+        if safe == DEFAULT_AGENT_ID:
+            logger.debug(f"默认 agent 不清理知识库 (agent_id={agent_id})")
+            return
+
+        state = _resolve_state()
+        registry = getattr(state, "knowledge_registry", None)
+        if registry is None:
+            logger.debug(f"知识库注册表未就绪，跳过知识库清理 (agent_id={agent_id})")
+            return
+
+        config = registry.config
+        # 1. 关闭管理器并删除 per-agent collection（default 保护在 close_agent 内部）
+        registry.close_agent(agent_id)
+
+        # 2. 删除 per-agent SQLite 数据库文件（含 WAL/SHM）
+        db_path = os.path.join(
+            resolve_project_path(str(config["db_dir"])),
+            f"{config['db_filename_prefix']}_{safe}.db",
+        )
+        for suffix in ("", "-wal", "-shm"):
+            candidate = f"{db_path}{suffix}"
+            if os.path.exists(candidate):
+                try:
+                    os.remove(candidate)
+                    logger.info(f"已删除 agent 知识库数据库文件: {candidate}")
+                except OSError as exc:
+                    logger.warning(f"删除 agent 知识库数据库文件失败 ({candidate}): {exc}")
+
+        # 3. 删除 per-agent 文件目录
+        files_root = os.path.join(
+            resolve_project_path(str(config["files_dir"])), safe
+        )
+        if os.path.isdir(files_root):
+            shutil.rmtree(files_root, ignore_errors=True)
+            logger.info(f"已删除 agent 知识库文件目录: {files_root}")
+    except Exception as e:
+        logger.warning(f"清理 agent 知识库失败 (agent_id={agent_id}): {e}")
+
+
 def _cleanup_agent_resources(agent_id: str) -> None:
-    """清理指定助手的全部 per-agent 资源（图数据库 + Weaviate collection + 记忆表）。"""
+    """清理指定助手的全部 per-agent 资源（图数据库 + Weaviate collection + 记忆表 + 知识库）。"""
     _cleanup_agent_graph_db(agent_id)
     _cleanup_agent_weaviate_collection(agent_id)
     _cleanup_agent_memory_tables(agent_id)
+    _cleanup_agent_knowledge(agent_id)
 
 
 @router.delete("/agents/{agent_id}")

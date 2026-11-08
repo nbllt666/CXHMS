@@ -622,14 +622,11 @@ export function ChatPage() {
 
   // 摘要完成且后端已替换目标会话上下文时，重新加载聊天历史以反映被替换后的消息列表。
   // 不强制关闭 SummaryModal，用户可继续查看摘要助手的输出。
-  const handleSummaryComplete = useCallback(
-    (_targetSessionId: string, _summarizedUpTo: number) => {
-      if (currentAgentId) {
-        loadAgentHistory(currentAgentId);
-      }
-    },
-    [currentAgentId, loadAgentHistory]
-  );
+  const handleSummaryComplete = useCallback(() => {
+    if (currentAgentId) {
+      loadAgentHistory(currentAgentId);
+    }
+  }, [currentAgentId, loadAgentHistory]);
 
   return (
     <div className="w-full h-[calc(100vh-var(--header-height)-3rem)] flex flex-col">

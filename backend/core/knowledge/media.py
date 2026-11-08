@@ -204,6 +204,8 @@ def extract_audio(src: str, dst: str, sample_rate: int = 16000) -> str:
     cmd = [
         exe,
         "-y",
+        "-i",
+        src_abs,
         "-vn",
         "-ac",
         "1",
@@ -211,7 +213,6 @@ def extract_audio(src: str, dst: str, sample_rate: int = 16000) -> str:
         str(rate),
         "-f",
         "wav",
-        src_abs,
         dst_abs,
     ]
     completed = _run_ffmpeg(cmd, FFMPEG_TIMEOUT_SECONDS, "extract audio")

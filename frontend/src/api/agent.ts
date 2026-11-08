@@ -123,8 +123,12 @@ export const agentApi = {
     // G4 对齐：后端补了 PUT /api/tools/{name} update_tool 端点（对齐 interface_stub 契约）。
     // 字段映射：status→enabled, config→parameters, type/icon 后端不支持更新（忽略）。
     // 注意：后端按 name 索引，不支持重命名——data.name 仅用于调用方语义，不发送给后端。
-    const { name: _name, type: _type, icon: _icon, status, config, ...rest } = data;
+    const { status, config, ...rest } = data;
     const payload: Record<string, unknown> = { ...rest };
+    // name/type/icon 后端不支持更新，显式剔除
+    delete payload.name;
+    delete payload.type;
+    delete payload.icon;
     if (status !== undefined) {
       payload.enabled = status === 'active';
     }

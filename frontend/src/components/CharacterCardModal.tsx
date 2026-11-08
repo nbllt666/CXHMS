@@ -180,7 +180,8 @@ export function CharacterCardModal({ isOpen, onClose, onCreated }: CharacterCard
         use_tools: true,
         memory_scene: 'default',
       });
-      const agentId = (resp as any)?.id || (resp as any)?.agent_id || '';
+      const created = resp as { id?: string; agent_id?: string } | undefined;
+      const agentId = created?.id || created?.agent_id || '';
       const agentName = form.name.trim();
       setSuccess({ agentId, agentName });
       if (onCreated && agentId) {

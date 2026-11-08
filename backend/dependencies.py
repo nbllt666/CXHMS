@@ -26,6 +26,8 @@ class ServiceState:
         self.cxfc_manager: Optional[Any] = None
         # Phase 2: 文档记忆管理器（独立管理器，注入 memory_manager 实例）
         self.document_memory_manager: Optional[Any] = None
+        # 模块11: 独立知识库注册表（按 agent 懒创建 KnowledgeManager）
+        self.knowledge_registry: Optional[Any] = None
         # 组件原子替换锁：保护并发场景下的属性赋值
         self._lock = threading.Lock()
 
@@ -250,3 +252,35 @@ def get_document_memory_manager(state: ServiceState = Depends(get_service_state)
 
 def get_cxfc_manager(state: ServiceState = Depends(get_service_state)) -> Optional[Any]:
     return _resolve_state(state).cxfc_manager
+
+
+def get_knowledge_registry(state: ServiceState = Depends(get_service_state)) -> Any:
+    """获取知识库注册表；未装配时返回 503。"""
+    state = _resolve_state(state)
+    if state.knowledge_registry is None:
+        raise HTTPException(status_code=503, detail="知识库服务不可用")
+    return state.knowledge_registry
+
+
+def get_knowledge_manager(
+    agent_id: str = "default",
+    state: ServiceState = Depends(get_service_state),
+) -> Any:
+    """按 agent_id 获取知识库管理器（懒创建）；初始化失败返回 503。"""
+    registry = get_knowledge_registry(state)
+    try:
+        return registry.get_manager(agent_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning(f"知识库管理器初始化失败 (agent_id={agent_id}): {exc}")
+        raise HTTPException(status_code=503, detail="知识库服务不可用") from exc
+
+
+def remove_knowledge_manager(
+    agent_id: str = "default",
+    state: ServiceState = Depends(get_service_state),
+) -> None:
+    """关闭并移除指定 agent 的知识库管理器（default 不删除主 collection）。"""
+    registry = get_knowledge_registry(state)
+    registry.close_agent(agent_id)

@@ -12,6 +12,7 @@ CXHMS (CX-O History & Memory Service) 是一个智能记忆管理平台，提供
   - **模块8 多模态管线**: 3 worker（OCR / 视觉 / 文本）+ 模态融合 + 降级开关
   - **模块9 蒸馏服务**: 7 状态机多轮蒸馏（draft→collecting→distilling→refining→reviewing→finalizing→finalized）+ 4 API 端点
   - **模块10 管理Agent扩展**: 6 决策点自主决策（distill_start / distill_collect / distill_advance / distill_finalize / storage_decision / content_merge）+ 8 工具方法 + rubric 驱动
+  - **模块11 独立知识库**（v1.3.0 新增）: 每 Agent 独立知识库（独立 SQLite + 独立向量 collection，default 回退主库）；多模态文档解析（文本 / 图片 OCR+视觉 / 音频 ASR / 视频抽音轨+抽帧）；主 LLM 可自主写入经验（`write_knowledge_experience` / `search_knowledge` 工具）；用户上传接口（10 个 REST 端点）+ 前端知识库页面；向量 + FTS 混合检索（RRF 融合）
 - **图数据库**: 知识图谱、语义搜索、路径分析、社区检测、PageRank、GraphML/DOT 导出、**per-agent 懒加载**（每个 agent 独立 `data/graph_{agent_id}.db`，首次使用图功能时创建，agent 删除时清理）
 - **ACP 协议**: 局域网自动发现、点对点通信、群组协同
 - **CXFC 插件协议**: 插件发现、技能注册、心跳管理、事件推送
@@ -154,7 +155,8 @@ CXHMS/
 │   ├── 模块7_模板引擎/        # Jinja2 DSL 模板引擎（RADIX-Lite）
 │   ├── 模块8_多模态管线/      # 3 worker 多模态预处理（RADIX-Lite）
 │   ├── 模块9_蒸馏服务/        # 7 状态机多轮蒸馏（RADIX-Lite）
-│   └── 模块10_管理Agent扩展/  # 6 决策点 + 8 工具方法（RADIX-Lite）
+│   ├── 模块10_管理Agent扩展/  # 6 决策点 + 8 工具方法（RADIX-Lite）
+│   └── 模块11_独立知识库/     # per-agent 独立知识库 + 多模态解析 + 混合检索
 ├── interfaces/             # 入口层（app.py / main.py / start.bat）
 ├── workspace/              # 用户数据区
 ├── public/                 # 全局公共资源区（只读契约载体，AC 范式真相源）

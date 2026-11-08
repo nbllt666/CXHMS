@@ -67,7 +67,6 @@ export function SummaryModal({
   isOpen,
   onClose,
   contextText,
-  agentId,
   autoStart = false,
   targetSessionId,
   onSummaryComplete,
@@ -291,7 +290,7 @@ ${contextText}
       });
       setIsLoading(false);
     }
-  }, [isLoading, contextText, agentId, targetSessionId]);
+  }, [isLoading, contextText, targetSessionId]);
 
   // 初始系统消息
   useEffect(() => {

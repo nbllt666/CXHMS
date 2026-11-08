@@ -214,7 +214,7 @@ export function MemoriesPage() {
 
   const batchDeleteMutation = useMutation({
     mutationFn: (ids: number[]) => api.batchDeleteMemories(ids, currentAgentId),
-    onSuccess: (data: any) => {
+    onSuccess: (data?: { status?: string; result?: { failed?: number; success?: number } }) => {
       queryClient.invalidateQueries({ queryKey: ['memories'] });
       clearSelection();
       if (data?.status === 'error') {
