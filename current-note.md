@@ -1994,11 +1994,10 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
 
 ### 交接状态
 
-- 做到哪了：Task 0~15 全部闭合（最后一次更新 2026-11-08）；音视频真机正向已补环境验证、项目级 lint 已清零；GN-004 第 2 轮复审为警示放行（`a0f423ed-d4e9-4be1-93e4-be960f96ddb3`），观察项 O-A/O-B/O-C 已处置。
-- 为什么：按 rules-6 先文档后代码；按 rules-0 §四-6 登记请示闭环；按 S2 契约冻结规则先审后开工；按 s0402 三重闸门留证；媒体链路缺陷按 rules-6 单独留痕（`20261108_模块11_修复音轨抽取命令.md`）。
+- 做到哪了：Task 0~15 全部闭合（最后一次更新 2026-11-21）；音视频真机正向已补环境验证、项目级 lint 已清零；根 `AGENTS.md` 已按人类授权完成模块11 事实同步；GN-004 第 3 轮复核为警示放行（`fa6ebf78-420a-4d48-9079-dbafcc3888e1`），观察项 O1~O5 已处置。
+- 为什么：按 rules-6 先文档后代码；按 rules-0 §四-6 登记请示闭环；按 S2 契约冻结规则先审后开工；按 s0402 三重闸门留证；媒体链路缺陷按 rules-6 单独留痕（`20261108_模块11_修复音轨抽取命令.md`）；根 `AGENTS.md` 写入按 s0401 闸门 + s0301 流程执行（人类显式授权）。
 - 未闭合项：
   1. 真实 vLLM/Weaviate 语义检索链路未验证（当前仅验证 FTS 降级路径）。
-  2. 根 `AGENTS.md` 待同步清单需人类/s0301 处理（AI 不自行修改）。
 - 接续入口：人类最终验收 → 后续如接入 vLLM/Weaviate，按 `tests/units/test_knowledge_*.py` 补语义检索正向用例。
 
 ### 请示闭环追踪（rules-0 §四-6）
@@ -2015,8 +2014,9 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
 | V-20261108-01 | 音视频真机正向未验证如何验收 | 先补环境再验收（ffmpeg + faster-whisper），已补装并从真实链路取得正向证据 | 已闭合 |
 | V-20261108-02 | 项目级 lint 17 errors 如何处置 | 本次一并修复，已清零（0 error / 0 warning） | 已闭合 |
 | V-20261108-03 | 视频帧描述因 PaddleOCR 无 py3.14 wheel 无法验证 | 另装 Python 3.12 + 隔离 venv 验证，已取得真实 OCR 帧描述证据 | 已闭合 |
+| V-20261121-01 | 根 AGENTS.md 模块11 待同步清单是否授权 AI 写入 | 授权写入；已按 s0401 闸门 + s0301 流程写入，明细见 `20261108_模块11_根AGENTS待同步清单.md` 第四节 | 已闭合 |
 
-### 最终结果（2026-11-08）
+### 最终结果（2026-11-21）
 
 - 产出物清单：
   - 契约：`public/schema/knowledge.json`、`public/interface_stub/knowledge_service.pyi`、`public/config_template/knowledge_config.json`、`public/pre_generated_mock/mock_knowledge_service.py`、`public/schema/CHANGELOG.md`（1.3.0）
@@ -2026,6 +2026,8 @@ spec: `optimize-systematically-and-rewrite-tests` 实施完成，已交付。
   - 测试：`tests/contract/knowledge_contract_test.py`、`tests/units/test_knowledge_*.py`、`tests/e2e/test_knowledge_api.py`、`tests/e2e/test_knowledge_agent_isolation.py`
   - 证据：`.trae/documents/test_reports/frontend_gate_20261108_103000/`、`.trae/documents/test_reports/media_gate_20261108/`
 - 验证结论：合同/单元/契约回归 **1093 passed / 0 skipped**；媒体正向 21 passed（0 skip，含真实 ffmpeg 抽音轨）；音频真机转写 `parsed`；视频真机链路（Python 3.12 隔离 venv）`parsed`，含音轨转写与 `[帧 0 @ 0s] HELLOOCR2026` / `[帧 1 @ 1s] HELLOOCR2026`；知识库 E2E 13 passed；前端 typecheck 通过、lint 0 error / 0 warning、vitest 325 passed；Mock 回归 13 passed。
-- 状态：Task 0~15 `已闭合`（GN-004 首轮 `2c76836c-93ab-4d94-8235-165481d5fd59` 阻断 → 第 2 轮 `a0f423ed-d4e9-4be1-93e4-be960f96ddb3` 警示放行 → 第 3 轮复核 `fa6ebf78-420a-4d48-9079-dbafcc3888e1` 警示放行，无 SOFT_BLOCK）；音视频真机正向与项目级 lint 已收口，待人类最终验收。
+- 状态：Task 0~15 `已闭合`（GN-004 首轮 `2c76836c-93ab-4d94-8235-165481d5fd59` 阻断 → 第 2 轮 `a0f423ed-d4e9-4be1-93e4-be960f96ddb3` 警示放行 → 第 3 轮复核 `fa6ebf78-420a-4d48-9079-dbafcc3888e1` 警示放行，无 SOFT_BLOCK）；音视频真机正向、项目级 lint、根 `AGENTS.md` 同步均已收口，待人类最终验收。
+- 根 `AGENTS.md` 同步（2026-11-21）：模块数 11→12、契约版本 v1.2.0→v1.3.0、新增模块11 闭合条目（per-agent 隔离 / API / 工具 / 多模态真机验证 / 依赖 / Mock / 已知限制 / 变更记录）、追加最新验证数字；写入记录见 `.trae/documents/20261108_模块11_根AGENTS待同步清单.md` 第四节。
 - 审查记录（第 3 轮观察项处置）：O1 证据刷新（`media_gate_20261108/` 新增修复后 typecheck/lint/vitest 与脚本、旧 summary 标 superseded）、O2 note 头部状态统一、O3 变更文档 §8.3/§8.4/§10.3 状态与数字统一、O4 spec 头部改 r6 且数字统一 1093、O5 验证脚本与 venv 环境清单落盘；O6（`SummaryModal.agentId` 死 prop、`ffmpeg_path` 预热设计）为非回归项，保留观察。
+- 审查记录（2026-11-21 根 AGENTS 写入复核，`66d032af-8c14-473c-b2fb-18f72c8a0d50`）：警示放行，无 BLOCK / SOFT_BLOCK；O1 §1.3 事实括注随本次授权修正、O2 core 17 子包与路由 19 校正、O3 spec 升 r7 并移除「根 AGENTS 未修改」表述、O4 待同步清单补 frontmatter/验证与回滚、O5 §2.6 标注历史口径；待同步清单保持「已完成」，不置「已关闭」。
 
